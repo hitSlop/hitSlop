@@ -108,7 +108,7 @@ struct CatalogDetail: View {
 
   private func hero(_ entry: CatalogEntry) -> some View {
     HStack(alignment: .top, spacing: 16) {
-      IconTile(artwork: entry.icons, size: 64, radius: 16)
+      IconTile(artwork: entry.icons, size: 64)
       VStack(alignment: .leading, spacing: 3) {
         Text(entry.displayTitle)
           .font(PopBrand.heading(28, relativeTo: .title))

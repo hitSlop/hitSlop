@@ -206,7 +206,7 @@ private struct CatalogRow: View {
 
   var body: some View {
     HStack(spacing: 11) {
-      IconTile(artwork: entry.icons, size: 50, radius: 13)
+      IconTile(artwork: entry.icons, size: 50)
         .overlay(alignment: .bottomTrailing) {
           if let badge = presentation?.badge {
             CatalogDocumentBadgeView(badge: badge).offset(x: 3, y: 3)

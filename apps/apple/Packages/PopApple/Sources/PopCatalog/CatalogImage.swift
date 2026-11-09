@@ -3,18 +3,15 @@ import PopCore
 import PopFeatures
 import SwiftUI
 
-/// Rounded white tile holding a template or document icon.
+/// Template or document artwork displayed without a backing card.
 struct IconTile: View {
   let artwork: [CatalogArtwork]
   let size: CGFloat
-  let radius: CGFloat
 
   var body: some View {
     CatalogImageView(artwork: artwork, fallback: .applicationIcon)
       .padding(size * 0.1)
       .frame(width: size, height: size)
-      .background(CatalogStyle.card, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
-      .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(CatalogStyle.hairline))
       .shadow(color: .black.opacity(0.05), radius: 3, y: 2)
   }
 }
