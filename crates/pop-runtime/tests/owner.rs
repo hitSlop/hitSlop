@@ -1260,3 +1260,89 @@ fn durable_sync_confirmation_requires_ack_and_save_in_either_order() {
         assert!(confirmed(&connection).is_none(), "a closed owner cannot confirm");
     }
 }
+
+// A relay acknowledgement can arrive while the owner is still missing the history
+// advertised by Welcome. It must not certify that missing history as saved locally.
+#[test]
+fn welcome_push_ack_does_not_confirm_withheld_backfill() {
+    use pop_runtime::{
+        owner::SyncEvent,
+        sync::{Frame, Permission},
+    };
+    fn frame(events: &mpsc::Receiver<SyncEvent>) -> Frame {
+        loop {
+            if let SyncEvent::Send { bytes } = events.recv_timeout(Duration::from_secs(10)).unwrap() {
+                return Frame::decode(&bytes).unwrap();
+            }
+        }
+    }
+
+    let (dir, path) = fixture();
+    let (a, _) = open(&path, Mode::Document);
+    call(&a, Request::Share { share: pop_runtime::store::Share { endpoint: "https://relay.example".into() } }).unwrap();
+    let seed = dir.path().join("offline.pop");
+    call(&a, Request::Backup { destination: seed.clone() }).unwrap();
+    let (a_sink, a_events) = sync_sink();
+    let a_connection = a.sync_connection(a_sink);
+    let hello = frame(&a_events);
+    let Frame::Hello { app_digest, ref version, .. } = hello else { panic!("expected Hello") };
+    let mut relay = support::relay::Relay { app: app_digest, records: vec![], heads: version.clone() };
+    for reply in relay.reply(&hello.encode()).0 {
+        a_connection.frame(reply.encode());
+    }
+    call(&a, theme("#123456", Origin::Agent)).unwrap();
+    let remote = frame(&a_events);
+    assert!(matches!(remote, Frame::Push { .. }));
+    let (replies, stored) = relay.reply(&remote.encode());
+    assert!(!stored.is_empty());
+    for reply in replies {
+        a_connection.frame(reply.encode());
+    }
+    close(&a);
+
+    let (b, _) = open(&seed, Mode::Document);
+    call(&b, set("Own offline title")).unwrap();
+    let (b_sink, b_events) = sync_sink();
+    let b_connection = b.sync_connection(b_sink);
+    let hello = frame(&b_events);
+    let mut backfill = relay.reply(&hello.encode()).0.into_iter();
+    let welcome = backfill.next().unwrap();
+    assert!(matches!(welcome, Frame::Welcome { permission: Permission::Write, .. }));
+    b_connection.frame(welcome.encode());
+
+    // Deliberately deliver only Welcome: the real owner pushes its offline edit
+    // before it has received the earlier remote record or CaughtUp.
+    let own = frame(&b_events);
+    assert!(matches!(own, Frame::Push { .. }));
+    for reply in relay.reply(&own.encode()).0 {
+        b_connection.frame(reply.encode());
+    }
+    call(&b, Request::Flush).unwrap();
+    assert_eq!(state(&b)["theme"]["accent"], "#335577");
+    let (send, confirmation) = mpsc::channel();
+    b_connection.durable_confirmed_version(move |version| {
+        let _ = send.send(version);
+    });
+    assert!(confirmation.recv_timeout(Duration::from_secs(10)).unwrap().is_none());
+
+    let mut received_records = false;
+    for reply in backfill {
+        received_records |= matches!(reply, Frame::Records(_));
+        b_connection.frame(reply.encode());
+    }
+    assert!(received_records);
+    call(&b, Request::Flush).unwrap();
+    assert_eq!(state(&b)["value"]["title"], "Own offline title");
+    assert_eq!(state(&b)["theme"]["accent"], "#123456");
+    let (send, confirmation) = mpsc::channel();
+    b_connection.durable_confirmed_version(move |version| {
+        let _ = send.send(version);
+    });
+    let confirmed = confirmation.recv_timeout(Duration::from_secs(10)).unwrap().expect("saved backfill is confirmed");
+    assert_eq!(state(&b)["version"], confirmed.version);
+    close(&b);
+    let (reopened, _) = open(&seed, Mode::Document);
+    assert_eq!(state(&reopened)["value"]["title"], "Own offline title");
+    assert_eq!(state(&reopened)["theme"]["accent"], "#123456");
+    close(&reopened);
+}

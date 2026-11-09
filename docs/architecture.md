@@ -159,7 +159,7 @@ shallow Loro snapshot alone does not guarantee that hidden mergeable data disapp
 A shared document never rebuilds its history: the relay folds retained updates into one
 opaque base, and a document that outgrows the base cap pauses sharing (see [Relay](#relay)).
 
-Firestore discovers cloud documents across a person's devices. Persistent Document
+An account Durable Object feed discovers cloud documents across a person's devices. Persistent Document
 DOs carry private sync and collaboration through one authority; R2 holds immutable
 payloads. Account identity belongs to the control plane; permission checks
 and resource limits remain server-enforced. The transport carries opaque Loro bytes.
@@ -701,14 +701,14 @@ history keeps nothing alive.
 ### Synced Library
 
 The [persistent cloud document specification](cloud-documents.md) defines cloud
-documents. Firestore is account-scoped discovery; a Document Durable Object keyed by UUID
+documents. Account Durable Objects provide account-scoped discovery; a Document Durable Object keyed by UUID
 is the single cloud authority for permissions and accepted opaque Loro changes. R2 holds
 the seed, app resources and attachments.
 
 A local document requires no account. Enabling sync preserves its UUID and owner and
 stages a durable initial upload, a seed copied from the saved document. Sign-in retrieves
 metadata; opening downloads the file. Rust owns validation, local installation, merge
-and persistence. Swift provides Firebase authentication and typed Firestore listener events.
+and persistence. Swift provides Firebase authentication; Rust owns the account feed and local projection.
 Account changes fence callbacks, flush owners and retain downloaded files while hiding
 account entries.
 
@@ -730,16 +730,16 @@ The relay only folds: `/compact` swaps the retained update records for one opaqu
 The base is capped at 16 MiB, a transport limit (one WebSocket frame under `MAX_FRAME`).
 A document too large to fold pauses its session with `Outgrown`; local edits keep saving
 and the person saves an unshared copy. A full attachment budget (`FilesFull`) stops
-sharing. Clients publish their own Firestore references after cloud acknowledgement, with a
-small durable local retry queue. Stale references are cleaned up when access is checked.
-The Worker never connects to Firestore; the account registry supports discovery repair.
+sharing. Document Objects durably publish library metadata to the owner and current members’
+account Objects. Failed deliveries retry through alarms. Devices receive a complete
+library snapshot on connection, followed by changes; they do not repair a second cloud catalog.
 
 `pop-sync` owns pure reconnect, maintenance and push-budget decisions shared by native
 and browser adapters. Loro replication stays in `pop-core`; the native Tokio transport
 reacts to owner events, socket frames, cancellation and deadlines. Blocking
 resource helpers run off the async runtime while socket controls remain serviced.
 Only durable owner confirmations advance journal receipts. Library invalidation callbacks
-run outside index locks; Swift supplies Firebase IO and publishes native snapshots.
+run outside index locks; Swift supplies Firebase identity and publishes native snapshots.
 
 ### Hosted browser isolation
 
@@ -767,7 +767,7 @@ the ID token and raw nonce to Firebase. The callback page has a script-hash CSP,
 
 The sharing host retains its `/join` universal-link route, Apple callback and AASA
 response. Links identify a document UUID and invitation capability. The browser
-resolves the document service directly and does not require Firestore to render it.
+resolves the document service directly and does not require an account library subscription to render it.
 
 ## Tests and performance
 

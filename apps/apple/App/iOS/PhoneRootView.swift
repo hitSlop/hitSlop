@@ -33,6 +33,13 @@ struct PhoneRootView: View {
   @State private var launchGreeting = true
   @Namespace private var zoom
 
+  private static var versionLabel: String {
+    let info = Bundle.main.infoDictionary
+    let version = info?["CFBundleShortVersionString"] as? String ?? "unknown"
+    let build = info?["CFBundleVersion"] as? String ?? "unknown"
+    return "\(version) (\(build))"
+  }
+
   var body: some View {
     NavigationStack(path: navigationPath) {
       PhoneCatalogView(
@@ -114,6 +121,10 @@ struct PhoneRootView: View {
               Label("Join Discord", systemImage: "bubble.left.and.bubble.right")
             }
             .accessibilityHint("Opens the dotpop Discord community")
+          }
+          Section {
+            LabeledContent("Version", value: Self.versionLabel)
+              .accessibilityElement(children: .combine)
           }
         }
         .navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)

@@ -1,7 +1,7 @@
 //! Device-local document index and account-scoped cloud cache. Bytes synchronize
 //! through the existing owner and persistent cloud protocol, never through catalog assets.
-mod catalog;
 mod changes;
+mod feed;
 mod index;
 use index::IndexedDocument;
 mod paths;
@@ -9,21 +9,13 @@ mod paths;
 #[path = "../tests/support/mod.rs"]
 mod test_support;
 
-/// Result of applying discovery hints; invalid siblings never discard valid entries.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub struct CatalogOutcome {
-    pub applied: u32,
-    pub rejected: u32,
-    pub deferred: u32,
-}
-
 /// These tables. A newer index is refused, and nothing in it is changed.
-const INDEX_VERSION: u32 = 1;
+const INDEX_VERSION: u32 = 2;
 /// The device index, beside the managed `documents` and per-account `accounts` folders.
 const INDEX: &str = "index.sqlite";
 use pop_runtime::owner::{Failure, FailureKind, Owner, Request};
 use pop_sharing_client::{Client, ClientStatus, local};
-pub use pop_sharing_protocol::document::{AccessState, DocumentEntry, DocumentRole};
+pub use pop_sharing_protocol::document::{AccessState, DocumentRole};
 use pop_sharing_protocol::{document::DocumentMetadata, hex};
 use pop_storage::{
     file,
@@ -121,6 +113,9 @@ pub struct Library {
     generation: AtomicU64,
     projections: Mutex<()>,
     notice: changes::Notice,
+    feed: Mutex<Option<Arc<pop_sharing_client::Account>>>,
+    departing: Mutex<std::collections::HashSet<String>>,
+    feed_active: AtomicBool,
 }
 impl Library {
     pub fn open(root: &Path, account: &str) -> Result<Arc<Self>> {
@@ -134,12 +129,13 @@ impl Library {
                 message: "This local index requires a newer pop; existing files are retained".into(),
             });
         }
+        if version == 1 {
+            db.execute_batch("BEGIN; ALTER TABLE documents RENAME COLUMN catalog_seen TO listed; UPDATE documents SET revision=0; DROP TABLE IF EXISTS catalog_writes; DROP TABLE IF EXISTS catalog_clock; DROP TABLE IF EXISTS catalog_tombstones; PRAGMA user_version=2; COMMIT;")?;
+        }
         db.execute_batch(
             "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
-            CREATE TABLE IF NOT EXISTS documents(account TEXT NOT NULL,id TEXT NOT NULL,title TEXT NOT NULL,template TEXT NOT NULL,path TEXT NOT NULL,version TEXT NOT NULL DEFAULT '',role TEXT,revision INTEGER NOT NULL DEFAULT 0,deleted INTEGER NOT NULL DEFAULT 0,problem TEXT,pending_enable INTEGER NOT NULL DEFAULT 0,artwork_version TEXT NOT NULL DEFAULT '',artwork_digest TEXT NOT NULL DEFAULT '',file_stamp TEXT NOT NULL DEFAULT '',catalog_seen INTEGER NOT NULL DEFAULT 0,sharing_enabled INTEGER,opened INTEGER NOT NULL DEFAULT 1,PRIMARY KEY(account,id));
-            CREATE TABLE IF NOT EXISTS catalog_writes(account TEXT NOT NULL,id TEXT NOT NULL,revision INTEGER NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(account,id));
-            CREATE TABLE IF NOT EXISTS catalog_clock(account TEXT PRIMARY KEY,revision INTEGER NOT NULL);
-            CREATE TABLE IF NOT EXISTS catalog_tombstones(account TEXT NOT NULL,id TEXT NOT NULL,payload TEXT NOT NULL,PRIMARY KEY(account,id));",
+            CREATE TABLE IF NOT EXISTS documents(account TEXT NOT NULL,id TEXT NOT NULL,title TEXT NOT NULL,template TEXT NOT NULL,path TEXT NOT NULL,version TEXT NOT NULL DEFAULT '',role TEXT,revision INTEGER NOT NULL DEFAULT 0,deleted INTEGER NOT NULL DEFAULT 0,problem TEXT,pending_enable INTEGER NOT NULL DEFAULT 0,artwork_version TEXT NOT NULL DEFAULT '',artwork_digest TEXT NOT NULL DEFAULT '',file_stamp TEXT NOT NULL DEFAULT '',listed INTEGER NOT NULL DEFAULT 0,sharing_enabled INTEGER,opened INTEGER NOT NULL DEFAULT 1,PRIMARY KEY(account,id));
+            ",
         )?;
         db.pragma_update(None, "user_version", INDEX_VERSION)?;
         let scope = crate::hex(&Sha256::digest(account.as_bytes()));
@@ -160,6 +156,9 @@ impl Library {
             generation: AtomicU64::new(1),
             projections: Mutex::new(()),
             notice: Arc::new(Mutex::new(None)),
+            feed: Mutex::new(None),
+            departing: Mutex::new(std::collections::HashSet::new()),
+            feed_active: AtomicBool::new(true),
         });
         library.reconcile()?;
         Ok(library)
@@ -426,7 +425,7 @@ impl Library {
         inner.clients.insert(id.into(), client.clone());
         Ok(client)
     }
-    pub fn sync(&self, token: &str) -> Result<()> {
+    pub fn sync(self: &Arc<Self>, token: &str) -> Result<()> {
         let _change = self.changing();
         let generation = self.operation()?;
         self.reconcile()?;
@@ -438,7 +437,7 @@ impl Library {
                 .query_map([&self.account], |row| row.get::<_, String>(0))?
                 .collect::<std::result::Result<Vec<_>, _>>()?
         };
-        let mut failure = self.resolve_catalog_tombstones(token).err();
+        let mut failure = None;
         let owners = {
             let mut inner = self.inner.lock().unwrap();
             inner.token = Some(token.into());
@@ -472,8 +471,17 @@ impl Library {
                 failure = Some(error);
             }
         }
-        if let Err(error) = self.repair_catalog(token) {
-            failure = Some(error);
+        self.connect_feed(token)?;
+        let feed = self.feed.lock().unwrap().clone();
+        if let Some(feed) = feed
+            && !feed.wait_snapshot(std::time::Duration::from_secs(20))
+        {
+            failure.get_or_insert_with(|| {
+                failed(
+                    feed.last_error()
+                        .unwrap_or_else(|| "The cloud library is unavailable. Local files are retained.".into()),
+                )
+            });
         }
         failure.map_or(Ok(()), Err)
     }
@@ -525,7 +533,6 @@ impl Library {
             inner.token = Some(token.into());
             inner.live.get(id).and_then(Weak::upgrade)
         };
-        self.queue_catalog(id, false)?;
         if let Some(owner) = live {
             self.attach(id, owner, token)?;
         }
@@ -545,9 +552,7 @@ impl Library {
         let access = pop_sharing_client::authorized_access(id, token).map_err(failed)?;
         self.current_operation(generation)?;
         let Some(access) = access else {
-            let role = entry.role.ok_or_else(|| failed("Local document is not a cloud download"))?;
-            self.apply_authoritative_catalog(&[catalog_entry(id, entry.title, entry.template, role, 0, 0, true)])?;
-            self.queue_catalog(id, true)?;
+            self.apply(pop_sharing_client::LibraryUpdate::Remove(id.into()))?;
             return Err(failed("Cloud document access was removed; local edits were retained"));
         };
         self.remember_access(id, &access)?;
@@ -614,40 +619,55 @@ impl Library {
             let inner = self.inner.lock().unwrap();
             inner.db.execute("INSERT INTO documents(account,id,title,template,path,role,opened,sharing_enabled) VALUES(?1,?2,?3,?4,?5,?6,coalesce((SELECT opened FROM documents WHERE account='' AND id=?2),0),?7) ON CONFLICT(account,id) DO UPDATE SET title=excluded.title,template=excluded.template,role=excluded.role,deleted=0,sharing_enabled=excluded.sharing_enabled",params![self.account,id,metadata.title,metadata.template_id,paths::store(&self.root,&path)?,stored_role(access.role),access.sharing])?;
         }
-        self.queue_catalog(id, false)
+        Ok(())
     }
     pub fn leave(&self, id: &str, token: &str) -> Result<()> {
-        let _change = self.changing();
-        self.cloud()?;
-        self.unregister(id)?;
-        let downloaded = {
-            let inner = self.inner.lock().unwrap();
-            self.row(&inner, id)?.downloaded
-        };
-        if downloaded {
-            self.local_copy(id, "Retained local copy")?;
-        }
-        pop_sharing_client::leave(id, token).map_err(failed)?;
-        self.inner
-            .lock()
-            .unwrap()
-            .db
-            .execute("UPDATE documents SET deleted=1 WHERE account=?1 AND id=?2", params![self.account, id])?;
-        self.queue_catalog(id, true)?;
-        Ok(())
+        self.remove_cloud(id, token, false)
     }
     pub fn delete_everywhere(&self, id: &str, token: &str) -> Result<()> {
+        self.remove_cloud(id, token, true)
+    }
+    fn remove_cloud(&self, id: &str, token: &str, delete: bool) -> Result<()> {
         let _change = self.changing();
-        self.cloud()?;
+        let generation = self.operation()?;
         self.unregister(id)?;
-        pop_sharing_client::delete_document(id, token).map_err(failed)?;
-        self.inner
-            .lock()
-            .unwrap()
-            .db
-            .execute("UPDATE documents SET deleted=1 WHERE account=?1 AND id=?2", params![self.account, id])?;
-        self.queue_catalog(id, true)?;
-        Ok(())
+        if !delete && self.row(&self.inner.lock().unwrap(), id)?.downloaded {
+            self.local_copy(id, "Retained local copy")?;
+        }
+        self.departing.lock().unwrap().insert(id.into());
+        let result = (|| {
+            self.inner.lock().unwrap().db.execute(
+                "UPDATE documents SET deleted=1,listed=1 WHERE account=?1 AND id=?2",
+                params![self.account, id],
+            )?;
+            let result = if delete {
+                pop_sharing_client::delete_document(id, token)
+            } else {
+                pop_sharing_client::leave(id, token)
+            };
+            self.current_operation(generation)?;
+            if let Err(error) = result {
+                self.inner
+                    .lock()
+                    .unwrap()
+                    .db
+                    .execute("UPDATE documents SET deleted=0 WHERE account=?1 AND id=?2", params![self.account, id])?;
+                return Err(failed(error));
+            }
+            Ok(())
+        })();
+        self.departing.lock().unwrap().remove(id);
+        // Discard the connection's queued frames; its next complete snapshot is authoritative.
+        if let Some(feed) = self.feed.lock().unwrap().as_ref() {
+            feed.wake();
+        }
+        result
+    }
+    pub fn set_account_active(&self, active: bool) {
+        self.feed_active.store(active, Ordering::Release);
+        if !active && let Some(feed) = self.feed.lock().unwrap().take() {
+            feed.stop();
+        }
     }
     pub fn remove_download(&self, id: &str) -> Result<()> {
         let _change = self.changing();
@@ -704,111 +724,6 @@ impl Library {
         let stamp = file_stamp(Path::new(&entry.path))?;
         let inner = self.inner.lock().unwrap();
         inner.db.execute("UPDATE documents SET version=?3,artwork_digest=?4,file_stamp=?5,artwork_version=coalesce(?6,artwork_version) WHERE account=?1 AND id=?2",params![if entry.account_bound { &self.account } else { "" },id,info.version,info.artwork_digest,stamp,artwork_source])?;
-        Ok(())
-    }
-    fn repair_catalog(&self, token: &str) -> Result<()> {
-        let generation = self.operation()?;
-        let registered = pop_sharing_client::registered_documents(token).map_err(failed)?;
-        for document in registered {
-            Self::valid(&document.document)?;
-            let needs_repair: bool = self
-                .inner
-                .lock()
-                .unwrap()
-                .db
-                .query_row(
-                    "SELECT catalog_seen=0 AND NOT EXISTS(SELECT 1 FROM catalog_writes WHERE account=?1 AND id=?2) FROM documents WHERE account=?1 AND id=?2",
-                    params![self.account, document.document],
-                    |row| row.get(0),
-                )
-                .optional()?
-                .unwrap_or(true);
-            let access = match pop_sharing_client::authorized_access(&document.document, token) {
-                Ok(access) => access,
-                Err(_) if !needs_repair => {
-                    // An optional cache refresh cannot stop other documents or
-                    // overwrite the last authoritative sharing state.
-                    self.current_operation(generation)?;
-                    continue;
-                }
-                Err(error) => return Err(failed(error)),
-            };
-            self.current_operation(generation)?;
-            if let Some(access) = &access {
-                self.remember_access(&document.document, access)?;
-            }
-            if !needs_repair {
-                continue;
-            }
-            if let Some(access) = access {
-                let Some(metadata) =
-                    pop_sharing_client::ready_document_metadata(&document.document, token).map_err(failed)?
-                else {
-                    continue;
-                };
-                self.current_operation(generation)?;
-                let inner = self.inner.lock().unwrap();
-                inner.db.execute("INSERT INTO documents(account,id,title,template,path,role,opened,sharing_enabled) VALUES(?1,?2,?3,?4,?5,?6,coalesce((SELECT opened FROM documents WHERE account='' AND id=?2),0),?7) ON CONFLICT(account,id) DO UPDATE SET title=excluded.title,template=excluded.template,role=excluded.role,deleted=0",params![self.account,document.document,metadata.title,metadata.template_id,paths::store(&self.root,&self.cached_path(&document.document))?,stored_role(access.role),access.sharing])?;
-                drop(inner);
-                self.queue_catalog(&document.document, false)?;
-            }
-        }
-        Ok(())
-    }
-    fn queue_catalog(&self, id: &str, deleted: bool) -> Result<()> {
-        let _projection = self.projections.lock().unwrap();
-        self.queue_catalog_locked(id, deleted)
-    }
-    fn queue_catalog_locked(&self, id: &str, deleted: bool) -> Result<()> {
-        self.cloud()?;
-        let mut inner = self.inner.lock().unwrap();
-        let entry = self.row(&inner, id)?;
-        let tx = inner.db.transaction()?;
-        let previous: i64 = tx
-            .query_row("SELECT revision FROM catalog_clock WHERE account=?1", [&self.account], |row| row.get(0))
-            .optional()?
-            .unwrap_or(0);
-        let revision = previous.checked_add(1).ok_or_else(|| failed("Catalog revision exhausted"))?;
-        let modified_at = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_err(failed)?
-            .as_millis()
-            .try_into()
-            .map_err(failed)?;
-        let role = entry.role.ok_or_else(|| failed("Local document has no cloud catalog"))?;
-        let desired = catalog_entry(id, entry.title, entry.template, role, modified_at, revision as u64, deleted);
-        tx.execute("INSERT INTO catalog_clock(account,revision) VALUES(?1,?2) ON CONFLICT(account) DO UPDATE SET revision=excluded.revision",params![self.account,revision])?;
-        tx.execute("INSERT INTO catalog_writes(account,id,revision,payload) VALUES(?1,?2,?3,?4) ON CONFLICT(account,id) DO UPDATE SET revision=excluded.revision,payload=excluded.payload",params![self.account,id,revision,serde_json::to_string(&desired).map_err(failed)?])?;
-        tx.commit()?;
-        Ok(())
-    }
-    pub fn pending_catalog_writes(&self) -> Result<Vec<DocumentEntry>> {
-        self.cloud()?;
-        let inner = self.inner.lock().unwrap();
-        let payloads = inner
-            .db
-            .prepare("SELECT payload FROM catalog_writes WHERE account=?1 ORDER BY revision")?
-            .query_map([&self.account], |row| row.get::<_, String>(0))?
-            .collect::<std::result::Result<Vec<_>, _>>()?;
-        payloads.into_iter().map(|payload| serde_json::from_str(&payload).map_err(failed)).collect()
-    }
-    pub fn ack_catalog_write(&self, document_id: &str, catalog_revision: u64) -> Result<()> {
-        let _change = self.changing();
-        self.cloud()?;
-        Self::valid(document_id)?;
-        let mut inner = self.inner.lock().unwrap();
-        let tx = inner.db.transaction()?;
-        let removed = tx.execute(
-            "DELETE FROM catalog_writes WHERE account=?1 AND id=?2 AND revision=?3",
-            params![self.account, document_id, i64::try_from(catalog_revision).map_err(failed)?],
-        )?;
-        if removed != 0 {
-            tx.execute(
-                "UPDATE documents SET catalog_seen=1 WHERE account=?1 AND id=?2",
-                params![self.account, document_id],
-            )?;
-        }
-        tx.commit()?;
         Ok(())
     }
     pub fn account_paths(&self) -> Result<Vec<String>> {
@@ -912,6 +827,9 @@ impl Library {
             let inner = self.inner.lock().unwrap();
             (self.row(&inner, id)?, inner.token.clone())
         };
+        if entry.role == Some(DocumentRole::Editor) {
+            return Err(failed("Only the owner can rename a cloud document"));
+        }
         if entry.role == Some(DocumentRole::Owner) {
             pop_sharing_client::update_document(
                 id,
@@ -928,9 +846,6 @@ impl Library {
             params![if entry.account_bound { &self.account } else { "" }, id, title.trim()],
         )?;
         drop(inner);
-        if !entry.local_only {
-            self.queue_catalog_locked(id, false)?;
-        }
         Ok(())
     }
     pub fn publish_artwork(
@@ -958,6 +873,9 @@ impl Library {
         let _change = self.changing();
         self.generation.fetch_add(1, Ordering::AcqRel);
         self.active.store(false, Ordering::Release);
+        if let Some(feed) = self.feed.lock().unwrap().take() {
+            feed.stop();
+        }
         let (clients, owners) = {
             let mut inner = self.inner.lock().unwrap();
             inner.token = None;
@@ -996,18 +914,6 @@ fn stored_role(role: DocumentRole) -> &'static str {
         DocumentRole::Editor => "editor",
     }
 }
-/// A discovery reference to `id`.
-fn catalog_entry(
-    id: &str,
-    title: String,
-    template: String,
-    role: DocumentRole,
-    modified_at: u64,
-    catalog_revision: u64,
-    deleted: bool,
-) -> DocumentEntry {
-    DocumentEntry { document_id: id.into(), title, template_id: template, modified_at, role, catalog_revision, deleted }
-}
 fn file_stamp(path: &Path) -> Result<String> {
     use std::os::unix::fs::MetadataExt;
     let metadata = std::fs::metadata(path)?;
@@ -1029,207 +935,4 @@ fn random_hex(bytes: usize) -> String {
     let mut value = vec![0; bytes];
     getrandom::getrandom(&mut value).expect("OS random source");
     hex(&value)
-}
-
-#[cfg(test)]
-mod catalog_tests {
-    use super::*;
-    fn reference(id: &str, revision: u64, title: &str) -> DocumentEntry {
-        catalog_entry(id, title.into(), "fixture".into(), DocumentRole::Owner, revision, revision, false)
-    }
-    fn edit(owner: &Owner, title: &str) {
-        local::request(
-            owner,
-            Request::Apply {
-                batch: serde_json::from_value(
-                    serde_json::json!({"intents":[{"type":"set","path":["title"],"value":title}]}),
-                )
-                .unwrap(),
-                origin: pop_core::Origin::Page,
-            },
-        )
-        .unwrap();
-    }
-    #[test]
-    fn tombstone_preserves_late_accepted_edits_as_account_local_recoveries() {
-        let (dir, template) = super::test_support::fixture();
-        let root = dir.path().join("library");
-        let account = Library::open(&root, "account-a").unwrap();
-        let entry = account.create(&template, "Original").unwrap();
-        account.receive_catalog(&[reference(&entry.id, 3, "Cloud")]).unwrap();
-        let owner = Arc::new(Owner::open(Path::new(&entry.path), Mode::Document, Arc::new(|_| {})).unwrap());
-        account.register(&owner).unwrap();
-        edit(&owner, "Before revocation");
-        let mut deleted = reference(&entry.id, 4, "");
-        deleted.deleted = true;
-        account.receive_catalog(&[deleted]).unwrap();
-        account.resolve_catalog_with(|_| Ok(catalog::Resolution::Denied)).unwrap();
-        edit(&owner, "Accepted while closing");
-        local::request(&owner, Request::Close { preview: None, icon: None }).unwrap();
-        account.unregister(&entry.id).unwrap();
-        let entries = account.entries().unwrap();
-        let recovered: Vec<_> = entries.iter().filter(|entry| entry.account_bound && entry.local_only).collect();
-        assert_eq!(recovered.len(), 2);
-        assert!(recovered.iter().any(|entry| {
-            let store = pop_storage::store::Store::open(Path::new(&entry.path), Mode::Snapshot).unwrap();
-            store.document().unwrap().reading().unwrap().value["title"] == "Accepted while closing"
-        }));
-        assert!(Library::open(&root, "").unwrap().entries().unwrap().iter().all(|entry| !entry.account_bound));
-        assert_eq!(
-            Library::open(&root, "account-a")
-                .unwrap()
-                .entries()
-                .unwrap()
-                .iter()
-                .filter(|entry| entry.account_bound && entry.local_only)
-                .count(),
-            2
-        );
-    }
-
-    #[test]
-    fn deferred_tombstones_survive_restart_and_transient_errors_without_hiding_documents() {
-        let directory = tempfile::tempdir().unwrap();
-        let id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-        let library = Library::open(directory.path(), "account-a").unwrap();
-        let other = Library::open(directory.path(), "account-b").unwrap();
-        library.receive_catalog(&[reference(id, 1, "Visible")]).unwrap();
-        other.receive_catalog(&[reference(id, 1, "Other account")]).unwrap();
-        library.queue_catalog(id, false).unwrap();
-        let mut hint = reference(id, 2, "Deleted hint");
-        hint.deleted = true;
-        assert_eq!(library.receive_catalog(&[hint]).unwrap().deferred, 1);
-        drop(library);
-        let library = Library::open(directory.path(), "account-a").unwrap();
-        assert!(library.resolve_catalog_with(|_| Err(failed("offline"))).is_err());
-        assert!(!library.entries().unwrap()[0].deleted);
-        assert!(!library.pending_catalog_writes().unwrap()[0].deleted);
-        library.resolve_catalog_with(|_| Ok(catalog::Resolution::Denied)).unwrap();
-        assert!(library.entries().unwrap()[0].deleted);
-        assert!(library.pending_catalog_writes().unwrap()[0].deleted);
-        assert!(!other.entries().unwrap()[0].deleted);
-    }
-
-    #[test]
-    fn future_index_version_is_refused_before_schema_or_rows_change() {
-        let directory = tempfile::tempdir().unwrap();
-        drop(Library::open(directory.path(), "account-a").unwrap());
-        let path = directory.path().join(INDEX);
-        let db = Connection::open(&path).unwrap();
-        db.pragma_update(None, "user_version", i32::MAX).unwrap();
-        db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)").unwrap();
-        drop(db);
-        let before = std::fs::read(&path).unwrap();
-        let error = Library::open(directory.path(), "account-a").err().unwrap();
-        assert_eq!(error.issue, Issue::RequiresUpdate);
-        assert_eq!(std::fs::read(path).unwrap(), before);
-    }
-
-    #[test]
-    fn pending_catalog_intent_wins_over_arriving_snapshots() {
-        let directory = tempfile::tempdir().unwrap();
-        let library = Library::open(directory.path(), "account-a").unwrap();
-        let id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-        let mut entry = reference(id, 2, "Local title");
-        library.receive_catalog(std::slice::from_ref(&entry)).unwrap();
-        for deleted in [false, true] {
-            library
-                .inner
-                .lock()
-                .unwrap()
-                .db
-                .execute("UPDATE documents SET deleted=?1 WHERE account='account-a' AND id=?2", params![deleted, id])
-                .unwrap();
-            library.queue_catalog(id, deleted).unwrap();
-            entry.title = "Delayed snapshot".into();
-            entry.catalog_revision = 999;
-            library.receive_catalog(std::slice::from_ref(&entry)).unwrap();
-            let actual = library.entries().unwrap().pop().unwrap();
-            assert_eq!(actual.title, "Local title", "pending local metadata must survive");
-            assert_eq!(actual.deleted, deleted, "pending local deletion must survive");
-        }
-    }
-    #[test]
-    fn pending_metadata_survives_restart_and_an_old_ack_cannot_erase_a_new_desired_value() {
-        let directory = tempfile::tempdir().unwrap();
-        let library = Library::open(directory.path(), "account-a").unwrap();
-        let id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-        let entry = reference(id, 0, "First");
-        library.receive_catalog(std::slice::from_ref(&entry)).unwrap();
-        library.queue_catalog(id, false).unwrap();
-        let first = library.pending_catalog_writes().unwrap().pop().unwrap();
-        library
-            .inner
-            .lock()
-            .unwrap()
-            .db
-            .execute("UPDATE documents SET title='Latest' WHERE account='account-a' AND id=?1", [id])
-            .unwrap();
-        library.queue_catalog(id, false).unwrap();
-        drop(library);
-        let library = Library::open(directory.path(), "account-a").unwrap();
-        library.ack_catalog_write(id, first.catalog_revision).unwrap();
-        let writes = library.pending_catalog_writes().unwrap();
-        assert_eq!(writes.len(), 1);
-        assert_eq!(writes[0].title, "Latest");
-        assert!(writes[0].catalog_revision > first.catalog_revision);
-        assert!(Library::open(directory.path(), "account-b").unwrap().pending_catalog_writes().unwrap().is_empty());
-        library.ack_catalog_write(id, writes[0].catalog_revision).unwrap();
-        assert!(library.pending_catalog_writes().unwrap().is_empty());
-    }
-    #[test]
-    fn joining_records_the_role_the_document_granted_in_the_index_and_catalog_write() {
-        let directory = tempfile::tempdir().unwrap();
-        let library = Library::open(directory.path(), "account-a").unwrap();
-        let metadata = DocumentMetadata { title: "Shared".into(), template_id: "fixture".into() };
-        let join = |id: &str, role| {
-            let access = AccessState { document: id.into(), sharing: true, generation: 1, capability: None, role };
-            library.remember_join(&access, &metadata).unwrap();
-            let indexed = library.entries().unwrap().into_iter().find(|entry| entry.id == id).unwrap().role;
-            let queued =
-                library.pending_catalog_writes().unwrap().into_iter().find(|write| write.document_id == id).unwrap();
-            (indexed, queued.role)
-        };
-        // The owner opens their own invitation, on a device that indexes it as owned and on one
-        // that has never seen it: the Worker answers Owner, and catalog deletion must not Leave.
-        let owned = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-        library.receive_catalog(&[reference(owned, 1, "Owned")]).unwrap();
-        assert_eq!(join(owned, DocumentRole::Owner), (Some(DocumentRole::Owner), DocumentRole::Owner));
-        let unseen = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
-        assert_eq!(join(unseen, DocumentRole::Owner), (Some(DocumentRole::Owner), DocumentRole::Owner));
-        let shared = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
-        assert_eq!(join(shared, DocumentRole::Editor), (Some(DocumentRole::Editor), DocumentRole::Editor));
-    }
-    #[test]
-    fn sharing_cache_is_authoritative_optional_durable_and_account_scoped() {
-        let directory = tempfile::tempdir().unwrap();
-        let first = Library::open(directory.path(), "account-a").unwrap();
-        let second = Library::open(directory.path(), "account-b").unwrap();
-        let id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-        let shared = reference(id, 0, "Shared");
-        first.receive_catalog(std::slice::from_ref(&shared)).unwrap();
-        second.receive_catalog(&[shared]).unwrap();
-        assert_eq!(first.entries().unwrap()[0].sharing_enabled, None, "owner role does not imply private or shared");
-        let mut access = AccessState {
-            document: id.into(),
-            sharing: true,
-            generation: 1,
-            capability: None,
-            role: DocumentRole::Owner,
-        };
-        first.remember_access(id, &access).unwrap();
-        assert_eq!(first.entries().unwrap()[0].sharing_enabled, Some(true));
-        assert_eq!(second.entries().unwrap()[0].sharing_enabled, None);
-        assert!(first.access(id, "").is_err(), "failed credential refresh must preserve cached knowledge");
-        assert_eq!(first.entries().unwrap()[0].sharing_enabled, Some(true));
-        drop(first);
-        let first = Library::open(directory.path(), "account-a").unwrap();
-        assert_eq!(first.entries().unwrap()[0].sharing_enabled, Some(true));
-        access.sharing = false;
-        first.remember_access(id, &access).unwrap();
-        assert_eq!(first.entries().unwrap()[0].sharing_enabled, Some(false));
-        access.document = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb".into();
-        assert!(first.remember_access(id, &access).is_err());
-        assert_eq!(first.entries().unwrap()[0].sharing_enabled, Some(false));
-    }
 }

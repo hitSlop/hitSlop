@@ -1,8 +1,10 @@
 //! Local index/cache behavior, independent from authored apps and platform SDKs.
 mod support;
-use pop_library::{DocumentEntry, DocumentRole, Library};
+use pop_library::{DocumentRole, Library};
 use pop_runtime::owner::{Owner, Request};
+use pop_sharing_client::LibraryUpdate;
 use pop_sharing_client::local;
+use pop_sharing_protocol::library::AccountEntry;
 use pop_storage::store::Mode;
 use std::{
     path::{Path, PathBuf},
@@ -12,16 +14,70 @@ fn fixture() -> (tempfile::TempDir, PathBuf) {
     support::fixture()
 }
 
-fn catalog(id: &str, revision: u64, title: &str) -> DocumentEntry {
-    DocumentEntry {
-        document_id: id.into(),
+#[test]
+fn firestore_index_migration_preserves_files_inbox_and_pending_enable() {
+    let (dir, template) = fixture();
+    let root = dir.path().join("library");
+    let library = Library::open(&root, "account-a").unwrap();
+    let created = library.create(&template, "Keep this file").unwrap();
+    library.apply(LibraryUpdate::Upsert(catalog(&created.id, 42, "Cloud title"))).unwrap();
+    drop(library);
+    let db = rusqlite::Connection::open(root.join("index.sqlite")).unwrap();
+    db.execute_batch(
+        "ALTER TABLE documents RENAME COLUMN listed TO catalog_seen;
+        CREATE TABLE catalog_writes(account TEXT,id TEXT,revision INTEGER,payload TEXT);
+        CREATE TABLE catalog_clock(account TEXT,revision INTEGER);
+        CREATE TABLE catalog_tombstones(account TEXT,id TEXT,payload TEXT);
+        UPDATE documents SET pending_enable=1,opened=0 WHERE account='account-a';
+        PRAGMA user_version=1;",
+    )
+    .unwrap();
+    drop(db);
+    let migrated = Library::open(&root, "account-a").unwrap();
+    let entry = migrated.entries().unwrap().into_iter().find(|entry| entry.id == created.id).unwrap();
+    assert_eq!(entry.revision, 0);
+    assert!(entry.inbox);
+    assert!(Path::new(&entry.path).is_file());
+    let db = rusqlite::Connection::open(root.join("index.sqlite")).unwrap();
+    assert_eq!(
+        db.query_row("SELECT pending_enable FROM documents WHERE account='account-a'", [], |r| r.get::<_, i64>(0))
+            .unwrap(),
+        1
+    );
+    assert_eq!(
+        db.query_row(
+            "SELECT count(*) FROM sqlite_master WHERE name IN ('catalog_writes','catalog_clock','catalog_tombstones')",
+            [],
+            |r| r.get::<_, i64>(0)
+        )
+        .unwrap(),
+        0
+    );
+}
+
+fn catalog(id: &str, revision: u64, title: &str) -> AccountEntry {
+    AccountEntry {
+        document: id.into(),
         title: title.into(),
         template_id: "fixture".into(),
-        modified_at: revision,
         role: DocumentRole::Owner,
-        catalog_revision: revision,
-        deleted: false,
+        revision,
+        sharing: false,
     }
+}
+
+#[test]
+fn remote_membership_can_leave_and_rejoin_live_without_reconnecting() {
+    let (dir, _) = fixture();
+    let library = Library::open(&dir.path().join("library"), "account-a").unwrap();
+    let id = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    library.apply(LibraryUpdate::Upsert(catalog(id, 1, "Joined"))).unwrap();
+    library.apply(LibraryUpdate::Remove(id.into())).unwrap();
+    assert!(library.entries().unwrap().iter().find(|entry| entry.id == id).unwrap().deleted);
+    library.apply(LibraryUpdate::Upsert(catalog(id, 2, "Rejoined elsewhere"))).unwrap();
+    let entry = library.entries().unwrap().into_iter().find(|entry| entry.id == id).unwrap();
+    assert!(!entry.deleted);
+    assert_eq!(entry.title, "Rejoined elsewhere");
 }
 #[test]
 fn local_creation_and_indexing_preserve_identity_and_existing_file_location() {
@@ -47,9 +103,9 @@ fn account_projection_uses_current_sdk_metadata_and_hides_on_signout_without_del
     let local_entry = local.create(&template, "Local").unwrap();
     let account = Library::open(&root, "account-a").unwrap();
     let remote = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-    account.receive_catalog(&[catalog(remote, 3, "Current")]).unwrap();
-    account.receive_catalog(&[catalog(remote, 2, "Stale")]).unwrap();
-    assert_eq!(account.entries().unwrap().iter().find(|entry| entry.id == remote).unwrap().title, "Stale");
+    account.apply(LibraryUpdate::Upsert(catalog(remote, 3, "Current"))).unwrap();
+    account.apply(LibraryUpdate::Upsert(catalog(remote, 2, "Stale"))).unwrap();
+    assert_eq!(account.entries().unwrap().iter().find(|entry| entry.id == remote).unwrap().title, "Current");
     assert!(!account.entries().unwrap().iter().find(|entry| entry.id == remote).unwrap().downloaded);
     let other = Library::open(&root, "account-b").unwrap();
     assert!(other.entries().unwrap().iter().all(|entry| entry.id != remote));
@@ -59,31 +115,26 @@ fn account_projection_uses_current_sdk_metadata_and_hides_on_signout_without_del
 }
 
 #[test]
-fn malformed_catalog_siblings_do_not_discard_valid_references() {
+fn malformed_snapshot_cannot_remove_existing_documents() {
     let (dir, _) = fixture();
     let account = Library::open(&dir.path().join("library"), "account-a").unwrap();
     let valid = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-    let outcome =
-        account.receive_catalog(&[catalog(valid, 1, "Valid"), catalog("not-a-document", 2, "Invalid")]).unwrap();
-    assert_eq!(outcome.applied, 1);
-    assert_eq!(outcome.rejected, 1);
-    assert!(account.entries().unwrap().iter().any(|entry| entry.id == valid));
+    account.apply(LibraryUpdate::Upsert(catalog(valid, 1, "Valid"))).unwrap();
+    assert!(account.apply(LibraryUpdate::Snapshot(vec![catalog("invalid", 2, "Invalid")])).is_err());
+    assert!(account.entries().unwrap().iter().any(|entry| entry.id == valid && !entry.deleted));
 }
-
 #[test]
-fn a_catalog_tombstone_does_not_hide_or_copy_a_local_document_without_authority() {
+fn complete_snapshots_remove_listed_documents_but_preserve_local_files() {
     let (dir, template) = fixture();
     let account = Library::open(&dir.path().join("library"), "account-a").unwrap();
     let local = account.create(&template, "Local").unwrap();
-    account.receive_catalog(&[catalog(&local.id, 1, "Cloud")]).unwrap();
-    let before = std::fs::read(&local.path).unwrap();
-    let mut hint = catalog(&local.id, 2, "Deleted hint");
-    hint.deleted = true;
-    account.receive_catalog(&[hint]).unwrap();
+    let remote = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    account.apply(LibraryUpdate::Snapshot(vec![catalog(remote, 1, "Remote")])).unwrap();
+    account.apply(LibraryUpdate::Snapshot(vec![])).unwrap();
     let entries = account.entries().unwrap();
-    assert!(!entries.iter().find(|entry| entry.id == local.id).unwrap().deleted);
-    assert_eq!(entries.len(), 1, "a discovery hint alone must not create a recovery");
-    assert_eq!(std::fs::read(&local.path).unwrap(), before);
+    assert!(entries.iter().any(|e| e.id == remote && e.deleted));
+    assert!(entries.iter().any(|e| e.id == local.id && !e.deleted));
+    assert!(Path::new(&local.path).exists());
 }
 #[test]
 fn registering_an_owner_from_another_account_cannot_adopt_or_connect_it() {
@@ -184,12 +235,12 @@ fn inbox_tracks_first_real_open_and_survives_reopen_and_download_removal() {
     let account = Library::open(&root, "account-a").unwrap();
     let created = account.create(&template, "Created here").unwrap();
     assert!(!created.inbox);
-    account.receive_catalog(&[catalog(&created.id, 1, "Created here")]).unwrap();
+    account.apply(LibraryUpdate::Upsert(catalog(&created.id, 1, "Created here"))).unwrap();
     assert!(!account.entries().unwrap().iter().find(|entry| entry.id == created.id).unwrap().inbox);
     let incoming_source = dir.path().join("incoming.pop");
     pop_storage::file::create_document(&template, &incoming_source).unwrap();
     let id = local::inspect(&incoming_source).unwrap().id;
-    account.receive_catalog(&[catalog(&id, 1, "Incoming")]).unwrap();
+    account.apply(LibraryUpdate::Upsert(catalog(&id, 1, "Incoming"))).unwrap();
     let incoming = account.entries().unwrap().into_iter().find(|entry| entry.id == id).unwrap();
     assert!(incoming.inbox && !incoming.downloaded);
     // A completed download is not itself a window open.
@@ -208,13 +259,13 @@ fn inbox_tracks_first_real_open_and_survives_reopen_and_download_removal() {
     // Missing-cache eviction is also idempotent, and must not make it new again.
     pop_storage::file::delete_document(Path::new(&incoming.path)).unwrap();
     account.remove_download(&id).unwrap();
-    account.receive_catalog(&[catalog(&id, 2, "Incoming renamed")]).unwrap();
+    account.apply(LibraryUpdate::Upsert(catalog(&id, 2, "Incoming renamed"))).unwrap();
     drop(account);
     let reopened = Library::open(&root, "account-a").unwrap();
     let incoming = reopened.entries().unwrap().into_iter().find(|entry| entry.id == id).unwrap();
     assert!(!incoming.inbox && !incoming.downloaded);
     let other = Library::open(&root, "account-b").unwrap();
-    other.receive_catalog(&[catalog(&id, 1, "Incoming to another account")]).unwrap();
+    other.apply(LibraryUpdate::Upsert(catalog(&id, 1, "Incoming to another account"))).unwrap();
     assert!(other.entries().unwrap().iter().find(|entry| entry.id == id).unwrap().inbox);
 }
 
@@ -232,7 +283,7 @@ fn library_root_relocation_preserves_managed_files_accounts_and_external_paths()
     let incoming = dir.path().join("incoming-relocation.pop");
     pop_storage::file::create_document(&template, &incoming).unwrap();
     let remote_id = local::inspect(&incoming).unwrap().id;
-    library.receive_catalog(&[catalog(&remote_id, 1, "Downloaded")]).unwrap();
+    library.apply(LibraryUpdate::Upsert(catalog(&remote_id, 1, "Downloaded"))).unwrap();
     let remote_path = library.entries().unwrap().into_iter().find(|entry| entry.id == remote_id).unwrap().path;
     local::install(&incoming, Path::new(&remote_path), &remote_id).unwrap();
     let owner = Arc::new(Owner::open(Path::new(&remote_path), Mode::Document, Arc::new(|_| {})).unwrap());
@@ -243,7 +294,7 @@ fn library_root_relocation_preserves_managed_files_accounts_and_external_paths()
     let missing_source = dir.path().join("future-download.pop");
     pop_storage::file::create_document(&template, &missing_source).unwrap();
     let missing = local::inspect(&missing_source).unwrap().id;
-    other.receive_catalog(&[catalog(&missing, 1, "Not downloaded yet")]).unwrap();
+    other.apply(LibraryUpdate::Upsert(catalog(&missing, 1, "Not downloaded yet"))).unwrap();
     drop(other);
     drop(library);
     drop(owner);

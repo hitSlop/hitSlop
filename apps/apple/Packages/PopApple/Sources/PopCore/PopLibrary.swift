@@ -87,9 +87,9 @@ public struct LibrarySyncAttention {
   }
   public var closeAccountDocuments: (@MainActor ([String]) async throws -> Void)?
   public var concealAccountDocuments: (@MainActor ([String], Bool) -> Void)?
-  public var catalogPublisher: (@MainActor (_ entry: DocumentEntry, _ account: String) async throws -> Void)?
   public var allowsCloudCreation = true
   public var tokenProvider: (@MainActor () async throws -> String)?
+  private var accountActive = true
   private var native: NativeLibrary?
   private var pendingAccount: String?
   private var concealedPaths: [String] = []
@@ -137,6 +137,7 @@ public struct LibrarySyncAttention {
         try? restored.detach()
         return
       }
+      restored.setAccountActive(active: accountActive)
       native = restored
       observeSnapshots(restored, generation: current)
       try owners.activate(restored)
@@ -179,6 +180,7 @@ public struct LibrarySyncAttention {
       try? opened.detach()
       return
     }
+    opened.setAccountActive(active: accountActive)
     native = opened
     observeSnapshots(opened, generation: current)
     accountIdentity = account
@@ -190,17 +192,13 @@ public struct LibrarySyncAttention {
     isReady = true
     await refresh()
   }
-  @discardableResult
-  public func receiveCatalog(_ catalog: [DocumentEntry], account: String) async throws -> UInt32 {
-    guard account == accountIdentity, let native else { return 0 }
-    let current = generation
-    let outcome = try await PopPreparation.run { try native.receiveCatalog(entries: catalog) }
-    guard current == generation else { return 0 }
-    try owners.activate(native)
-    await refresh()
-    return outcome.rejected
+  public func connectAccount(_ account: String, anonymous: Bool) async throws {
+    try await setAccount(account, external: true)
+    guard accountIdentity == account, isReady else { return }
+    allowsCloudCreation = !account.isEmpty && !anonymous
+    // Token acquisition can activate the account; the token listener starts sync.
   }
-  public func reportCatalogError(_ error: Error, account: String) {
+  public func reportAccountError(_ error: Error, account: String) {
     guard account == accountIdentity || account == pendingAccount else { return }
     lastError = libraryMessage(error)
     status = "Sync needs attention"
@@ -287,8 +285,6 @@ public struct LibrarySyncAttention {
           try await PopPreparation.run { try native.sync(token: token) }
         } catch { failure = libraryMessage(error) }
         guard current == generation, !Task.isCancelled else { return }
-        do { try await publishCatalog(using: native, generation: current) } catch { failure = libraryMessage(error) }
-        guard current == generation, !Task.isCancelled else { return }
         lastError = failure
         if failure == nil { lastSuccess = Date() }
       }
@@ -298,27 +294,14 @@ public struct LibrarySyncAttention {
     await work.value
     if current == generation { syncTask = nil }
   }
-  private func publishCatalog(using library: NativeLibrary, generation current: UInt64) async throws {
-    guard let catalogPublisher else { return }
-    let account = accountIdentity
-    let writes = try await PopPreparation.run { try library.pendingCatalogWrites() }
-    for entry in writes {
-      guard current == generation, !Task.isCancelled else { return }
-      try await catalogPublisher(entry, account)
-      guard current == generation, account == accountIdentity, !Task.isCancelled else { return }
-      try await PopPreparation.run {
-        try library.ackCatalogWrite(documentId: entry.documentId, catalogRevision: entry.catalogRevision)
-      }
-    }
-  }
-  private func publishWhenPossible() { Task { await syncNow() } }
-
   public func fetchInBackground() async throws {
     await syncNow()
     if let lastError { throw PopFailure(lastError) }
   }
   public func saveToCloud() async { await syncNow() }
   public func activated(_ active: Bool) {
+    accountActive = active
+    native?.setAccountActive(active: active)
     if active {
       foregroundAt = Date()
       start()
@@ -340,7 +323,7 @@ public struct LibrarySyncAttention {
     let token = try await requiredToken()
     guard let native else { throw PopFailure("The library is unavailable.") }
     let entry = try await PopPreparation.run { try native.enableSync(id: id, token: token) }
-    publishWhenPossible()
+    Task { await syncNow() }
     await refresh()
     return entry
   }
@@ -365,7 +348,7 @@ public struct LibrarySyncAttention {
         try await PopPreparation.run { try native.deleteEverywhere(id: entry.id, token: token) }
       }
     }
-    publishWhenPossible()
+    Task { await syncNow() }
     await refresh()
   }
   public func removeDownload(_ entry: LibraryEntry) async throws {
@@ -389,14 +372,14 @@ public struct LibrarySyncAttention {
     let token = try await requiredToken()
     guard let native else { throw PopFailure("The library is unavailable.") }
     let access = try await PopPreparation.run { try native.sharing(id: id, enabled: enabled, token: token) }
-    publishWhenPossible()
+    Task { await syncNow() }
     return access
   }
   public func join(link: String) async throws -> LibraryEntry {
     let token = try await requiredToken()
     guard let native else { throw PopFailure("The library is unavailable.") }
     let entry = try await PopPreparation.run { try native.join(link: link, token: token) }
-    publishWhenPossible()
+    Task { await syncNow() }
     await refresh()
     return entry
   }

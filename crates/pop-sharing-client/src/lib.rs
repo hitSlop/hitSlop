@@ -1,5 +1,6 @@
 //! Persistent cloud document synchronization under one Firebase identity.
 mod cloud;
+pub use transport::account::{Account, LibraryUpdate};
 mod journal;
 pub mod local;
 mod resolution;
@@ -9,7 +10,7 @@ mod tests;
 mod transport;
 pub use cloud::{
     access, authorized_access, bootstrap, delete_document, document_metadata, join_member, leave,
-    ready_document_metadata, registered_documents, set_sharing, sharing_link, update_document,
+    ready_document_metadata, set_sharing, sharing_link, update_document,
 };
 use pop_runtime::owner::{Owner, Reply, Request};
 use pop_sharing_protocol::{
@@ -286,9 +287,6 @@ pub fn invitation_document(link: &str) -> Result<String> {
 }
 pub fn local_document(path: &Path) -> Result<Option<String>> {
     Ok(Store::open(path, Mode::Snapshot).map_err(fail)?.app().document_uuid.clone())
-}
-pub fn verify_account(token: &str) -> Result<()> {
-    if token.is_empty() { Err("Sign in first".into()) } else { Ok(()) }
 }
 pub fn delete_account(token: &str) -> Result<()> {
     cloud::control("DELETE", "account", token, &[]).map(|_| ())

@@ -19,6 +19,8 @@ export class DocumentAccount {
       const {sql,args=[]} = await req.json();
       return Response.json(this.state.storage.sql.exec(sql,...args).toArray());
     }
+    if (path === '/__test/fail-descriptions') { this.failDescriptions = (await req.json()).enabled; return new Response('ready'); }
+    if (path === '/internal/describe' && this.failDescriptions) return new Response('retry',{status:503});
     // Holds the next member registration until released: a document awaiting it lets other requests in.
     if (path === '/__test/hold-registration') {
       this.registration = new Promise(resolve => this.releaseRegistration = resolve);
@@ -65,6 +67,9 @@ export class DocumentAccount {
       return response;
     } catch(error){console.error('Test account failure:',String(error));throw error;}
   }
+  webSocketMessage(ws,message){return this.inner.webSocketMessage(ws,message);}
+  webSocketClose(ws,code,reason,clean){return this.inner.webSocketClose(ws,code,reason,clean);}
+  webSocketError(ws,error){return this.inner.webSocketError(ws,error);}
 }
 export class CloudDocument {
   constructor(state, env) {
@@ -126,6 +131,12 @@ export class CloudDocument {
     if (path === '/__test/alarm') return await this.inner.alarm();
     if (path === '/__test/alarm-time') return Response.json(await this.state.storage.getAlarm());
     // Resets the object as a crash would: in-flight requests fail and memory is lost.
+    if (path === '/__test/hold-library') { this.libraryHold = new Promise(resolve => this.releaseLibrary = resolve); return new Response('ready'); }
+    if (path === '/__test/library-waiting') return Response.json(!!this.libraryWaiting);
+    if (path === '/__test/release-library') { this.releaseLibrary?.(); this.libraryHold=undefined; return new Response('ready'); }
+    if (path.endsWith('/library') && this.libraryHold) { this.libraryWaiting=true; await this.libraryHold; this.libraryWaiting=false; }
+    if (path === '/__test/library-unavailable') { this.libraryUnavailable = (await req.json()).enabled; return new Response('ready'); }
+    if (path.endsWith('/library') && this.libraryUnavailable) return new Response('unavailable',{status:503});
     if (path === '/__test/reset') this.state.abort('Test reset');
     try { return await this.inner.fetch(req); } catch(error) { console.error('Test document failure:',String(error)); throw error; }
   }

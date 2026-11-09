@@ -14,8 +14,8 @@ included) use the native Rust core. Bun SDK tests use the WASM adapter.
 - `pop-runtime`: owner, command, socket and persistence orchestration; it composes core,
   storage, capture and runner.
 - `pop-renderer`: Takumi raster/PDF rendering and fonts; no JavaScript or owner.
-- `pop-library`: device-local cloud index, pending catalog writes, downloaded copies and
-  recovery copies over runtime and storage; Firestore IO stays in the Apple SDK adapter.
+- `pop-library`: device-local index of the live account feed, downloaded copies and
+  recovery copies over runtime and storage.
 - `pop-core-ffi`: UniFFI adapter used by the Apple host and its Quick Look extensions.
 - `pop-core-wasm`: wasm-bindgen adapters for SDK tests and durable browser copies; browser authoring development uses the native owner.
 - `pop-engine`: the document engine the CLI runs on any platform (templates, create,
@@ -25,7 +25,7 @@ included) use the native Rust core. Bun SDK tests use the WASM adapter.
 - `pop-sharing-protocol`: the cloud service's wire types, route table (`ROUTES`), limits
   and failure table, free of Loro, used by the native and web clients and the Worker.
 - `pop-sharing-client`: native identity-authenticated, event-driven transport, cloud
-  HTTP calls and durable confirmed-version receipts over the existing owner.
+  HTTP calls, the account library feed and durable confirmed-version receipts over the existing owner.
 - `pop-sync`: the pure supervisor shared by native and browser drivers (reconnect
   backoff, fold/compaction decisions, push budgets); no I/O, clocks or Loro, and document
   replication remains in core.
@@ -34,7 +34,7 @@ included) use the native Rust core. Bun SDK tests use the WASM adapter.
   `pop-evaluator` binary provides the same child for native-host integration.
 
 `apps/sharing` is the Cloudflare Worker built on `pop-sharing-protocol`;
-`tools/pop-bindgen` also generates its `openapi.json`.
+Rust clients share its protocol types directly; ts-rs exports the browser types.
 
 The root toolchain/lockfile pin Rust 1.96.1 (edition 2024, with clippy and rustfmt),
 Loro 1.17.1 (the exact crates.io release), UniFFI 0.32.2 and wasm-bindgen 0.2.129.

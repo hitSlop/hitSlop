@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub enum RoomPhase {
     Uploading,
     Live,
@@ -14,7 +13,6 @@ pub enum RoomPhase {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct CreateRoom {
     pub document: String,
 }
@@ -25,7 +23,6 @@ pub struct CreateRoom {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct OpenRoom {
     /// Lowercase hex SHA-256 of the uploaded seed bytes.
     pub seed_sha256: String,
@@ -36,7 +33,6 @@ pub struct OpenRoom {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct RoomInfo {
     pub document: String,
     pub phase: RoomPhase,
@@ -97,14 +93,12 @@ pub enum SyncPhase {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ResourceGrant {
     pub app: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-#[cfg_attr(feature = "openapi", derive(utoipa::ToSchema))]
 pub struct ApiFailure {
     pub code: String,
     pub message: String,
@@ -159,105 +153,6 @@ impl Invitation {
     }
 }
 
-#[cfg(feature = "openapi")]
-fn openapi_paths() -> serde_json::Map<String, serde_json::Value> {
-    use crate::routes::{Actor, Payload, ROUTES, Scope, parameters};
-    use serde_json::json;
-    let failure = |description: &str| json!({"description":description,"content":{"application/json":{"schema":{"$ref":"#/components/schemas/ApiFailure"}}}});
-    let content = |payload: Payload| -> Option<serde_json::Value> {
-        let schema = match payload {
-            Payload::None | Payload::Empty => return None,
-            Payload::Json(name) => json!({"$ref":format!("#/components/schemas/{name}")}),
-            Payload::JsonArray(name) => json!({"type":"array","items":{"$ref":format!("#/components/schemas/{name}")}}),
-            Payload::Bytes => {
-                return Some(json!({"application/octet-stream":{"schema":{"type":"string","format":"binary"}}}));
-            }
-        };
-        Some(json!({"application/json":{"schema":schema}}))
-    };
-    let mut paths = serde_json::Map::new();
-    for route in ROUTES {
-        let mut responses = serde_json::Map::new();
-        if route.op == crate::routes::Op::Sync {
-            responses.insert("101".into(), json!({"description":"Switching Protocols to opaque update frames"}));
-        } else if route.response == Payload::Empty {
-            responses.insert("204".into(), json!({"description":"Accepted; no content"}));
-        } else {
-            let mut ok = json!({"description":"Accepted"});
-            if let Some(content) = content(route.response) {
-                ok["content"] = content;
-            }
-            responses.insert("200".into(), ok);
-        }
-        let mut operation = json!({"summary":route.summary,"operationId":format!("{:?}",route.op)});
-        if route.request != Payload::None {
-            operation["requestBody"] = json!({"required":true,"content":content(route.request)});
-            responses.insert("400".into(), failure("Invalid request"));
-            responses.insert("413".into(), failure("Request exceeds its byte limit"));
-        }
-        if route.actor != Actor::Public {
-            responses.insert("401".into(), failure("Sign in required"));
-            responses.insert("403".into(), failure("Permission denied; local copy retained"));
-            responses.insert("429".into(), failure("Rate or quota limit"));
-            operation["security"] = json!([{"firebaseIdentity":[]}]);
-        }
-        if route.scope == Scope::Document {
-            responses.insert("404".into(), failure("Unknown document or route"));
-            responses.insert("409".into(), failure("Conditional conflict"));
-            responses.insert("410".into(), failure("Document deleted"));
-        }
-        operation["responses"] = responses.into();
-        // `document` names a document and the `after` cursor is the last one listed.
-        let schema = |name: &str| match name {
-            "document" | "after" => json!({"type":"string","format":"uuid"}),
-            _ => json!({"type":"string"}),
-        };
-        let parameters: Vec<_> = parameters(route.path)
-            .map(|name| json!({"name":name,"in":"path","required":true,"schema":schema(name)}))
-            .chain(
-                route.query.iter().map(|name| json!({"name":name,"in":"query","required":false,"schema":schema(name)})),
-            )
-            .collect();
-        if !parameters.is_empty() {
-            operation["parameters"] = parameters.into();
-        }
-        let entry = paths.entry(route.path.to_string()).or_insert_with(|| json!({}));
-        entry[route.method.to_ascii_lowercase()] = operation;
-    }
-    paths
-}
-
-#[cfg(feature = "openapi")]
-pub fn openapi() -> utoipa::openapi::OpenApi {
-    use utoipa::OpenApi;
-    #[derive(OpenApi)]
-    #[openapi(components(schemas(
-        CreateRoom,
-        OpenRoom,
-        RoomInfo,
-        RoomPhase,
-        ResourceGrant,
-        ApiFailure,
-        crate::document::DocumentEntry,
-        crate::document::DocumentRole,
-        crate::document::AccessState,
-        crate::document::JoinDocument,
-        crate::document::UpdateDocument,
-        crate::document::RegisteredDocument,
-        crate::document::RegisteredDocuments,
-        crate::document::DocumentMetadata,
-        crate::resources::Manifest,
-        crate::resources::Resource
-    )))]
-    struct Description;
-    let mut value = serde_json::to_value(Description::openapi()).expect("OpenAPI components");
-    value["info"] = serde_json::json!({"title":"pop persistent document service","version":"1"});
-    value["paths"] = openapi_paths().into();
-    value["components"]["securitySchemes"] =
-        serde_json::json!({"firebaseIdentity":{"type":"http","scheme":"bearer","bearerFormat":"JWT"}});
-    serde_json::from_value(value).expect("document OpenAPI")
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,31 +171,6 @@ mod tests {
         ] {
             assert!(Invitation::parse(&invalid).is_err());
         }
-    }
-    #[cfg(feature = "openapi")]
-    #[test]
-    fn openapi_describes_every_route_with_its_parameters_and_refusals() {
-        let value = serde_json::to_value(openapi()).unwrap();
-        for route in crate::routes::ROUTES {
-            let operation = &value["paths"][route.path][route.method.to_ascii_lowercase()];
-            assert!(operation.is_object(), "{} {}", route.method, route.path);
-            let declared: Vec<_> = operation["parameters"]
-                .as_array()
-                .map(|all| all.iter().map(|p| (p["in"].as_str().unwrap(), p["name"].as_str().unwrap())).collect())
-                .unwrap_or_default();
-            let expected: Vec<_> = crate::routes::parameters(route.path)
-                .map(|name| ("path", name))
-                .chain(route.query.iter().map(|name| ("query", *name)))
-                .collect();
-            assert_eq!(declared, expected, "{}", route.path);
-        }
-        let created = &value["paths"]["/v1/documents"]["post"]["responses"];
-        assert!(created["204"].is_object() && created["200"].is_null(), "creation replies with no body");
-        let upload = &value["paths"]["/v1/documents/{document}/blob/{hash}"]["put"]["responses"];
-        for status in ["200", "401", "413", "429"] {
-            assert!(upload[status].is_object(), "{status}");
-        }
-        assert!(value["paths"]["/v1/documents/{document}/sync"]["get"]["responses"]["101"].is_object());
     }
     #[test]
     fn authored_origins_require_one_exact_canonical_copy_uuid() {

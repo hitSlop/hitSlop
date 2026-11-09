@@ -14,8 +14,13 @@ struct PhoneRecent: Identifiable, Sendable {
   /// Why this build will not open the file, such as one an older version made; it is never modified.
   var refusal: String? = nil
   var id: String { Self.key(url) }
-  /// One document's identity in the catalog, its transition and its close.
-  static func key(_ url: URL) -> String { url.standardizedFileURL.path }
+  /// One document's identity in the catalog, its transition and its close. It must not change
+  /// when the file appears: `standardizedFileURL` spells an existing file's path `/var/...` and a
+  /// missing one's `/private/var/...`, so a document downloaded on open would lose its own key.
+  static func key(_ url: URL) -> String {
+    let path = url.standardizedFileURL.path
+    return path.hasPrefix("/private/var/") ? String(path.dropFirst("/private".count)) : path
+  }
 
   static func isSharedDocument(_ url: URL) -> Bool {
     url.deletingLastPathComponent().lastPathComponent == "SharedDocuments"

@@ -24,6 +24,7 @@ pub mod envelope;
 pub mod failure;
 pub mod frame;
 pub mod http;
+pub mod library;
 pub mod limits;
 pub mod resources;
 pub mod routes;

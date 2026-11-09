@@ -12,6 +12,8 @@ use wasm_bindgen::{JsCast, JsValue, closure::Closure, prelude::wasm_bindgen};
 use worker::*;
 #[path = "access.rs"]
 mod access;
+#[path = "publication.rs"]
+pub(crate) mod publication;
 #[path = "resources.rs"]
 mod resources;
 
@@ -135,12 +137,21 @@ async fn serve(mut req: Request, env: Env) -> Result<Response> {
         response.headers_mut().set("Vary", "Origin")?;
         return Ok(response);
     }
+    let path = req.path();
+    let Some(matched) = routes::find(req.method().as_ref(), &path) else {
+        return Response::error("Not found", 404);
+    };
+    let protocol = matched.route.socket_protocol();
+    if req.headers().get("Upgrade")?.as_deref() == Some("websocket") && protocol.is_none() {
+        return requires_update(origin.as_deref());
+    }
+    let expected_protocol = protocol.unwrap_or(SOCKET_PROTOCOL);
     let browser_socket = req.headers().get("Upgrade")?.as_deref() == Some("websocket") && origin.is_some();
     if browser_socket {
         req = req.clone_mut()?;
         let protocols = req.headers().get("Sec-WebSocket-Protocol")?.unwrap_or_default();
         let values: Vec<_> = protocols.split(',').map(str::trim).collect();
-        if values.first().copied() != Some(SOCKET_PROTOCOL) {
+        if values.first().copied() != Some(expected_protocol) {
             return requires_update(origin.as_deref());
         }
         if values.len() != 2 {
@@ -158,16 +169,12 @@ async fn serve(mut req: Request, env: Env) -> Result<Response> {
     }
     if req.headers().get("Upgrade")?.as_deref() == Some("websocket")
         && !browser_socket
-        && req.headers().get("Sec-WebSocket-Protocol")?.as_deref() != Some(SOCKET_PROTOCOL)
+        && req.headers().get("Sec-WebSocket-Protocol")?.as_deref() != Some(expected_protocol)
     {
         return requires_update(origin.as_deref());
     }
     // One table decides what exists: an unlisted method, path or extra segment is a 404
     // before any limiter, identity check or Durable Object is reached.
-    let path = req.path();
-    let Some(matched) = routes::find(req.method().as_ref(), &path) else {
-        return Response::error("Not found", 404);
-    };
     if matched.route.op == Op::Health {
         return Response::ok("pop-sharing");
     }
@@ -203,7 +210,7 @@ async fn serve(mut req: Request, env: Env) -> Result<Response> {
         response.headers_mut().set("Vary", "Origin")?;
     }
     if response.status_code() == 101 {
-        response.headers_mut().set("Sec-WebSocket-Protocol", SOCKET_PROTOCOL)?;
+        response.headers_mut().set("Sec-WebSocket-Protocol", expected_protocol)?;
     }
     Ok(response)
 }
@@ -325,11 +332,16 @@ impl CloudDocument {
         })
     }
     fn update_usage(&self) -> Result<(usize, usize)> {
-        let bytes =
-            self.sql.exec("SELECT coalesce(sum(size),0) AS n FROM records WHERE seq>0", None)?.one::<NumberRow>()?.n
-                as usize;
-        let rows = self.sql.exec("SELECT count(*) AS n FROM records WHERE seq>0", None)?.one::<NumberRow>()?.n as usize;
-        Ok((bytes, rows))
+        #[derive(Deserialize)]
+        struct Usage {
+            bytes: usize,
+            rows: usize,
+        }
+        let usage = self
+            .sql
+            .exec("SELECT coalesce(sum(size),0) AS bytes,count(*) AS rows FROM records WHERE seq>0", None)?
+            .one::<Usage>()?;
+        Ok((usage.bytes, usage.rows))
     }
     fn compact_due(&self) -> Result<bool> {
         let (bytes, rows) = self.update_usage()?;
@@ -616,12 +628,12 @@ impl CloudDocument {
             }
             added.push(record);
         }
-        let (stored, rows) = self.update_usage()?;
         // Lost acknowledgements are retried even when later writes filled the room.
         // The socket budget above still charges duplicates to prevent abuse.
         if added.is_empty() {
             return self.send(ws, Frame::Ack { id, status: Ack::Stored });
         }
+        let (stored, rows) = self.update_usage()?;
         if stored + added.iter().map(|r| r.bytes.len()).sum::<usize>() > ROOM_RECORD_BYTES
             || rows >= ROOM_RECORDS
             || rows + added.len() > ROOM_RECORDS
@@ -758,6 +770,41 @@ impl DurableObject for CloudDocument {
             return self.resource_fetch(req).await;
         }
         let path = req.path();
+        if req.method() == Method::Post
+            && self.text("document")?.is_some_and(|document| path == format!("/internal/documents/{document}/library"))
+        {
+            #[derive(Deserialize)]
+            struct LibraryIdentity {
+                uid: String,
+            }
+            let input: LibraryIdentity =
+                crate::input::body(&mut req, CONTROL_BYTES).await.map_err(|_| fail("Invalid library identity"))?;
+            if self.phase()? != Some(RoomPhase::Live) {
+                return Response::error("Document not live", 409);
+            }
+            let Some(role) = self.role_for_uid(&input.uid)? else {
+                return Response::error("Denied", 403);
+            };
+            let revision = self.text("library_revision")?.and_then(|s| s.parse::<u64>().ok()).unwrap_or(1);
+            if self.text("library_revision")?.is_none() {
+                self.put("library_revision", "1")?;
+            }
+            return Response::from_json(&publication::Description {
+                entry: pop_sharing_protocol::library::AccountEntry {
+                    document: self.text("document")?.ok_or_else(|| fail("Missing document"))?,
+                    role,
+                    title: self.text("title")?.unwrap_or_else(|| "Untitled".into()),
+                    template_id: self.text("template_id")?.unwrap_or_default(),
+                    sharing: self.text("capability")?.is_some(),
+                    revision,
+                },
+                generation: if role == pop_sharing_protocol::document::DocumentRole::Owner {
+                    None
+                } else {
+                    Some(self.generation()?)
+                },
+            });
+        }
         let parts: Vec<_> = path.split('/').collect();
         if path.starts_with("/internal/documents/")
             && parts.len() == 5
@@ -859,9 +906,8 @@ impl DurableObject for CloudDocument {
             return Response::from_json(&self.info()?);
         }
         let owner_write = matches!(op, Op::Open | Op::PutSeed | Op::PutResources | Op::PutAsset);
-        let blob_upload = op == Op::PutBlob;
         let owner = if owner_write
-            || (blob_upload && phase == RoomPhase::Uploading)
+            || (matches!(op, Op::PutBlob | Op::ListBlobs) && phase == RoomPhase::Uploading)
             || (matches!(op, Op::GetSeed | Op::GetResources | Op::ListBlobs | Op::GetBlob)
                 && !self.authorized_guest(&req).await?)
         {
@@ -934,7 +980,7 @@ impl DurableObject for CloudDocument {
                 return Response::error("Sharing ended", 410);
             }
             self.set_phase(RoomPhase::Live)?;
-            self.state.storage().sync().await?;
+            self.publish_library().await?;
             record(&self.env, Metric::DocumentReady);
             return Response::from_json(&self.info()?);
         }
@@ -1060,6 +1106,7 @@ impl DurableObject for CloudDocument {
             }
         }
         self.flush_registry().await?;
+        self.flush_library().await?;
         let pending = self
             .sql
             .exec("SELECT ((SELECT count(*) FROM pending_registry)+(SELECT count(*) FROM garbage)) AS n", None)?

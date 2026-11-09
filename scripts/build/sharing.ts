@@ -41,7 +41,6 @@ export async function buildSharing() {
   </head>`));
     await cp(join(repository, "apps/apple/App/Shared/Assets.xcassets/AppIcon.appiconset/appicon-1024.png"), join(stage, "share-icon.png"));
     await cp(join(repository, "generated/browser/core"), join(browser, "core"), { recursive: true });
-    await cp(join(repository, "apps/sharing/openapi.json"), join(stage, "openapi.json"));
     await Bun.write(join(stage, "frame.html"), frameDocument);
   });
   const temporary = await mkdtemp(join(tmpdir(), "pop-relay-build-"));

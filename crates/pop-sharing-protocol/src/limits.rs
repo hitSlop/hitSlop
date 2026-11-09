@@ -25,9 +25,14 @@ pub const SOCKET_PUSH_BYTES_PER_MINUTE: usize = 8 << 20;
 pub const SOCKET_PUSHES_PER_MINUTE: usize = 1_800;
 /// Maximum sockets admitted from one client IP in a room.
 pub const ROOM_IP_CONNECTIONS: usize = 8;
-/// Registrations per account-listing page; a full page is about 70 KB, far below
-/// `CONTROL_BYTES`. Accounts have no document cap, so listings page instead.
-pub const ACCOUNT_DOCUMENTS_PAGE: usize = 1_000;
+/// Secondary bound on entries in a live-library snapshot frame.
+pub const ACCOUNT_SNAPSHOT_PAGE: usize = 256;
+/// Maximum live library sockets per account.
+pub const ACCOUNT_CONNECTIONS: usize = 16;
+/// Maximum UTF-8 bytes in a cloud library title.
+pub const TITLE_BYTES: usize = 1024;
+/// Maximum UTF-8 bytes in a cloud library template identifier.
+pub const TEMPLATE_ID_BYTES: usize = 256;
 // Even a base with the maximum peer headers fitting in CONTROL_BYTES stays in one frame.
 const _: () = assert!(BASE_BYTES + crate::CONTROL_BYTES + 16 < crate::frame::MAX_FRAME);
 

@@ -60,7 +60,10 @@ public struct CatalogView: View {
     } detail: {
       CatalogDetail(
         section: model.filter.title, entry: model.selectedEntry,
-        isCreating: model.creating != nil || creatingLibrary, isCopying: model.isCopying, isQuitting: model.isQuitting,
+        isCreating: model.creating != nil || creatingLibrary,
+        isCopying: (model.isCopying && model.selectedEntry?.id == model.creating?.id)
+          || (creatingLibrary && model.selectedEntry?.id == libraryTemplate?.id),
+        isQuitting: model.isQuitting,
         removeRecent: { model.removeRecent($0) }
       ) { entry in
         if entry.isManaged, let document = library.visibleEntries.first(where: { "library:" + $0.id == entry.id }) {

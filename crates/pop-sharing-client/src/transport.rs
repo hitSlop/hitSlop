@@ -21,6 +21,7 @@ use tokio_tungstenite::{
 };
 use tokio_util::sync::CancellationToken;
 
+pub(crate) mod account;
 mod native;
 pub(crate) use native::Connection;
 
@@ -157,17 +158,19 @@ async fn response_body(mut response: reqwest::Response, limit: u64) -> Transport
 }
 type AsyncSocket = WebSocketStream<reqwest::Upgraded>;
 async fn upgrade_async(key: &RoomKey) -> TransportResult<AsyncSocket> {
-    let client = network()?.http.clone();
     let url = format!("{}/v1/documents/{}/sync", key.origin, key.room);
-    let capability = key.bearer().to_owned();
+    upgrade_at(&url, key.bearer(), pop_sharing_protocol::SOCKET_PROTOCOL).await
+}
+async fn upgrade_at(url: &str, capability: &str, protocol: &str) -> TransportResult<AsyncSocket> {
+    let client = network()?.http.clone();
     let nonce = tungstenite::handshake::client::generate_key();
     let response = client
-        .get(&url)
+        .get(url)
         .header("Connection", "Upgrade")
         .header("Upgrade", "websocket")
         .header("Sec-WebSocket-Version", "13")
         .header("Sec-WebSocket-Key", &nonce)
-        .header("Sec-WebSocket-Protocol", pop_sharing_protocol::SOCKET_PROTOCOL)
+        .header("Sec-WebSocket-Protocol", protocol)
         .bearer_auth(capability)
         .timeout(Duration::from_secs(10))
         .send()
@@ -177,8 +180,14 @@ async fn upgrade_async(key: &RoomKey) -> TransportResult<AsyncSocket> {
         .map_err(|_| HttpFailure::from("Relay socket unavailable"))?;
     let status = response.status().as_u16();
     if status != 101 {
+        if status == 401 && protocol == pop_sharing_protocol::library::SOCKET_PROTOCOL {
+            return Err(HttpFailure::Paused(pop_core::sync::Pause {
+                kind: PauseKind::Refused,
+                reason: "Refresh your account identity".into(),
+            }));
+        }
         let bytes = response_body(response, pop_sharing_protocol::CONTROL_BYTES as u64).await.unwrap_or_default();
-        return Err(refusal(status, &bytes, Route::of(&url)));
+        return Err(refusal(status, &bytes, Route::of(url)));
     }
     let headers = response.headers();
     let token = |name: &str, expected: &str| {
@@ -191,15 +200,19 @@ async fn upgrade_async(key: &RoomKey) -> TransportResult<AsyncSocket> {
         || !token("Upgrade", "websocket")
         || headers.get("Sec-WebSocket-Accept").map(|h| h.as_bytes())
             != Some(tungstenite::handshake::derive_accept_key(nonce.as_bytes()).as_bytes())
-        || headers.get("Sec-WebSocket-Protocol").map(|h| h.as_bytes())
-            != Some(pop_sharing_protocol::SOCKET_PROTOCOL.as_bytes())
+        || headers.get("Sec-WebSocket-Protocol").map(|h| h.as_bytes()) != Some(protocol.as_bytes())
     {
         return Err("Invalid relay socket upgrade".into());
     }
     let upgraded = response.upgrade().await.map_err(|_| HttpFailure::from("Relay socket unavailable"))?;
     let mut config = tungstenite::protocol::WebSocketConfig::default();
-    config.max_message_size = Some(MAX_FRAME);
-    config.max_frame_size = Some(MAX_FRAME);
+    let limit = if protocol == pop_sharing_protocol::library::SOCKET_PROTOCOL {
+        pop_sharing_protocol::CONTROL_BYTES
+    } else {
+        MAX_FRAME
+    };
+    config.max_message_size = Some(limit);
+    config.max_frame_size = Some(limit);
     let socket = WebSocketStream::from_raw_socket(upgraded, tungstenite::protocol::Role::Client, Some(config)).await;
     Ok(socket)
 }

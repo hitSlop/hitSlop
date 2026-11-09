@@ -52,14 +52,14 @@ async function restrict(page:Page,context:BrowserContext){
 let contexts:BrowserContext[]=[];
 let stopped=false;
 try {
-  const lookup="https://share.dotpop.click/v1/account/documents";
+  const lookup="https://share.dotpop.click/v1/account/library";
   const unknownKey=[{alg:"RS256",kid:"pop-deliberately-unknown-test-key"},{sub:"test-user"}].map(part=>Buffer.from(JSON.stringify(part)).toString("base64url")).join(".")+"."+Buffer.alloc(256).toString("base64url");
   for(const token of [undefined,"malformed",unknownKey]) {
     const response=await fetch(lookup,{headers:token?{Authorization:"Bearer "+token}:{}});
-    assert.equal(response.status,401,"The account listing must refuse absent or untrusted identities");
+    assert.equal(response.status,401,"The account library must refuse absent or untrusted identities");
     assert.equal((await response.json() as {code:string}).code,"sign_in_required");
   }
-  note("The account listing refuses anonymous, malformed and unknown-key identities; valid native identity remains a separate qualification");
+  note("The account library refuses absent, malformed and unknown-key identities; valid native identity remains a separate qualification");
   const ready=await next();assert(ready.ready,"Native client failed to publish");
   note(invitationFile ? "A signed-out native guest joins the disposable owner-app invitation without a Firebase session" : "A verified account creates and publishes the disposable native fixture");
   const invitation=(await readFile(join(root,"invitation.txt"),"utf8")).trim();

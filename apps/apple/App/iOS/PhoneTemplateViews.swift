@@ -112,7 +112,7 @@ private struct PhoneZoomSource: ViewModifier {
   func body(content: Content) -> some View {
     if let zoom {
       content.matchedTransitionSource(id: zoom.id, in: zoom.namespace) { source in
-        source.background(PopBrand.card).clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        source.background(.clear).clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
       }
     } else {
       content

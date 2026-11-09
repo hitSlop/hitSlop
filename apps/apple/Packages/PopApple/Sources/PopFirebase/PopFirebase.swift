@@ -5,7 +5,7 @@ import Foundation
 import PopCore
 
 public enum PopFirebase {
-  /// Configures the one default Firebase app (Auth, Firestore, Crashlytics, Analytics) on macOS and iOS.
+  /// Configures the one default Firebase app (Auth, Crashlytics, Analytics) on macOS and iOS.
   /// Telemetry collection is on only outside Debug; the Info.plist flags keep it off until this runs.
   public static func configure() {
     guard FirebaseApp.app() == nil,

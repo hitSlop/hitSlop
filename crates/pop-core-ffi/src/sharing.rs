@@ -73,10 +73,6 @@ pub fn sharing_local_document(path: String) -> Result<Option<String>, SharingErr
     pop_sharing_client::local_document(Path::new(&path)).map_err(failure)
 }
 #[uniffi::export]
-pub fn sharing_verify_account(token: String) -> Result<(), SharingError> {
-    pop_sharing_client::verify_account(&token).map_err(failure)
-}
-#[uniffi::export]
 pub fn sharing_delete_account(token: String) -> Result<(), SharingError> {
     pop_sharing_client::delete_account(&token).map_err(failure)
 }

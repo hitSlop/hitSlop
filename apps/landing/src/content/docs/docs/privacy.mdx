@@ -29,8 +29,7 @@ Apple's page in a browser sheet; iPhone uses Apple's native sign-in.
 
 Enabling sync uploads the embedded app, document state and referenced attachments to
 Cloudflare. Durable Objects and private R2 storage hold the current document and the
-bounded replication data needed for synchronization. The client separately maintains
-Firestore references with account-scoped
+bounded replication data needed for synchronization. Account Durable Objects hold derived
 library metadata such as document IDs, titles, app identity and access status. This
 content is not end-to-end encrypted. Synchronization retains document history, including
 content removed from view; routine checkpoints and compaction do not erase it. Live
@@ -44,8 +43,8 @@ other devices while their invitation remains active.
 Stopping collaboration revokes guest access while your own devices keep syncing.
 Cloud documents do not expire merely from inactivity. **Delete Everywhere** deletes
 the cloud payloads and revokes access. Minimal service lifecycle records prevent delayed
-requests restoring a deleted cloud document. A guest's library reference may remain
-listed until their device checks access and cleans it up. Already downloaded participant
+requests restoring a deleted cloud document. The service queues removal from a guest's library when access is revoked. Connected devices
+receive the removal through the account feed; offline devices reconcile on reconnect. Already downloaded participant
 copies remain on their devices. **Delete Account** deletes owned cloud documents and
 joined memberships before deleting Firebase identity, and attempts Apple access
 revocation. Signing out alone hides the account library and pauses this device's sync;

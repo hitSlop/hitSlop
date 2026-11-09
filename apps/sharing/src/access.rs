@@ -181,7 +181,7 @@ impl CloudDocument {
             )?;
             // This registration now belongs to a member; no queued release may remove it.
             self.sql.exec("DELETE FROM pending_registry WHERE uid=?", vec![claims.sub.into()])?;
-            self.state.storage().sync().await?;
+            self.publish_library().await?;
             return Response::from_json(&self.access_state(DocumentRole::Editor)?);
         }
         if op == Op::Leave {
@@ -279,6 +279,7 @@ impl CloudDocument {
                     }
                 }
             }
+            self.publish_library().await?;
             return Response::from_json(&self.access_state(DocumentRole::Owner)?);
         }
         if op == Op::PatchDocument {
@@ -296,7 +297,7 @@ impl CloudDocument {
             }
             self.put("title", &input.title)?;
             self.put("template_id", &input.template_id)?;
-            self.state.storage().sync().await?;
+            self.publish_library().await?;
             return Response::from_json(&self.access_state(DocumentRole::Owner)?);
         }
         Response::error("Not found", 404)

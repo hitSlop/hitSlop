@@ -15,12 +15,12 @@ operating the service.
 ## Routes
 
 `crates/pop-sharing-protocol/src/routes.rs` holds the one route table (`ROUTES`: method,
-path, scope, actor, rate-limit bucket, request and response types). Worker dispatch, the
-per-IP rate-limit classification and the generated OpenAPI (`openapi.json`) all read it. A
+path, scope and rate-limit bucket). Worker dispatch and
+per-IP rate-limit classification read it. A
 method, path or trailing segment it does not list is a 404 before any limiter, identity
 check or Durable Object. Request bodies go through one reader (`input::body`): 413 over
-the byte limit, 400 when malformed, never a 500. `tools/pop-bindgen` is the only OpenAPI
-generator (`bun run schema:generate`); do not edit `openapi.json`.
+the byte limit, 400 when malformed, never a 500. Rust clients and the Worker share protocol types directly;
+`tools/pop-bindgen` exports browser types through ts-rs (`bun run schema:generate`).
 
 ## Operator checklist
 
@@ -29,8 +29,8 @@ repository. Complete it before the first deployment.
 
 1. **Firebase console.** Enable the Anonymous sign-in provider (browser and link guests
    depend on it) in the `FIREBASE_PROJECT` named in the wrangler files.
-2. **Firestore rules.** Deploy `firestore.rules` from the repository root. They allow a
-   person to read and write only `users/{uid}/pops/{documentId}`.
+2. **Library feed.** Account Durable Objects receive derived metadata from Document Objects. No Firestore configuration is required.
+
 3. **Host Worker secret.** Set `FIREBASE_WEB_API_KEY` on the host Worker
    (`host.wrangler.jsonc`) for that project. It is the public Firebase Web API key, not a
    service-account credential or an Apple client key. Read it from the project's Web app (`firebase apps:sdkconfig WEB <app-id>`, or Project settings > Your apps) and set it with `wrangler secret put FIREBASE_WEB_API_KEY --config apps/sharing/host.wrangler.jsonc`. Without it `/auth/config` returns a
@@ -65,8 +65,7 @@ Miniflare with real Rust WASM, SQLite Durable Objects and R2:
 - `check-compaction.ts`: opaque frames, bounds, folding under concurrent pushes,
   resource cleanup and the base size limit.
 - `check-live.ts`: anonymous browser copies against the local service.
-- `check-firestore.ts`: the client-written catalog rules in the Firebase emulator
-  (Firebase CLI and Java required).
+
 
 Deployment and platform acceptance are separate from these local results.
 

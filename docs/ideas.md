@@ -363,7 +363,7 @@ Windows.
 ### Sync between your own devices
 
 [Cloud documents](cloud-documents.md) sync a person's devices. Native clients maintain
-personal Firestore references after Cloudflare confirms document uploads, and one
+a live account Durable Object library after Cloudflare confirms document uploads, and one
 persistent Document Durable Object serves private sync and collaboration. Other native
 platforms need account/catalog adapters rather than another document engine. Closed-file
 CLI changes sync on the next native open; autonomous background sync for closed
@@ -373,8 +373,9 @@ documents remains an extension to consider.
 
 Private and collaborative documents share one UUID and cloud location. Enabling or
 revoking an invitation changes access without moving bytes between cloud providers.
-The client-written library is intentionally eventual: revoked references and stale
-shared titles refresh when access is checked. The DO remains the permission authority.
+Document Durable Objects publish title, membership and sharing changes to account
+library feeds. Offline devices reconcile on reconnect. The Document Durable Object
+remains the permission authority.
 
 ### Slimmer history for shared documents
 
