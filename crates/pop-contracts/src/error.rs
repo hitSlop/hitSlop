@@ -9,6 +9,9 @@ pub struct Error {
     pub path: Vec<String>,
 }
 impl Error {
+    pub fn new(code: Code, message: impl ToString) -> Self {
+        Self { code, message: message.to_string(), op_index: None, path: vec![] }
+    }
     pub fn at(mut self, segment: impl ToString) -> Self {
         self.path.insert(0, segment.to_string());
         self

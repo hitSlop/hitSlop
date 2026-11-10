@@ -23,6 +23,8 @@ mod sandbox;
 pub use child::child;
 #[cfg(feature = "capture")]
 mod capture;
+#[cfg(feature = "capture")]
+mod render;
 
 /// Explicit host execution policy. Enabling another Cargo feature never changes a
 /// configured evaluator's isolation or gives a capture-only host authored commands.

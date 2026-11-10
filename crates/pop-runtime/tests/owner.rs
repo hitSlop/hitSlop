@@ -941,7 +941,7 @@ fn sync_input_budget_recovers_and_old_connections_cannot_detach_the_replacement(
             }),
         );
         wait.recv_timeout(Duration::from_secs(5)).unwrap();
-        let count = if frame.is_empty() { pop_sharing_protocol::QUEUED_FRAMES } else { 2 };
+        let count = if frame.is_empty() { pop_contracts::relay::limits::QUEUED_FRAMES } else { 2 };
         for _ in 0..count {
             assert!(old.frame(frame.clone()));
         }

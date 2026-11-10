@@ -25,6 +25,18 @@ pub fn isolate_registry() {
     static ONCE: std::sync::Once = std::sync::Once::new();
     ONCE.call_once(|| pop_runtime::registry::use_folder(&registry_folder()).unwrap());
 }
+/// This test binary running only its ignored test `name` (module-qualified: `capture::…`), as
+/// a separate process, with `env`: a child test returns at once unless its variables are
+/// set. Output is discarded.
+pub fn child(name: &str, env: &[(&str, &str)]) -> std::process::Command {
+    let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+    command.args(["--exact", name, "--ignored", "--nocapture"]);
+    command.stdout(std::process::Stdio::null()).stderr(std::process::Stdio::null());
+    for (key, value) in env {
+        command.env(key, value);
+    }
+    command
+}
 /// A fixture declaration, independent of source filenames or legacy manifests.
 pub const METADATA: &str = r#"{"author":{"name":"Fixture"},"slug":"checklist","title":"Checklist","description":"A test document.","categories":["utilities"]}"#;
 pub const WINDOW: &str = r#"{"kind":"standard","width":320,"height":240}"#;
@@ -89,6 +101,11 @@ pub fn edit_input(stage: &std::path::Path, edit: impl FnOnce(&mut Value)) {
     edit(&mut value);
     std::fs::write(path, value.to_string()).unwrap();
 }
+pub fn artwork(stage: &std::path::Path, name: &str, bytes: &[u8]) {
+    std::fs::create_dir_all(stage.join("artwork")).unwrap();
+    std::fs::write(stage.join(format!("artwork/{name}.png")), bytes).unwrap();
+    edit_input(stage, |input| input["artwork"][name] = format!("artwork/{name}.png").into());
+}
 pub fn add_asset(stage: &std::path::Path, key: &str, media_type: &str, bytes: &[u8]) {
     let path = format!("assets/{key}");
     std::fs::create_dir_all(stage.join(&path).parent().unwrap()).unwrap();
@@ -133,6 +150,10 @@ pub fn workload(name: &str, default: usize) -> usize {
     std::env::var(name).map(|v| v.parse::<usize>().expect("positive test workload")).unwrap_or(default).max(1)
 }
 /// Test inputs exercise the JSON admission boundary before typed core application.
+pub fn media_key(bytes: &[u8], extension: &str) -> String {
+    use sha2::{Digest, Sha256};
+    format!("media/{}.{}", data_encoding::HEXLOWER.encode(&Sha256::digest(bytes)), extension)
+}
 pub trait ApplyJson {
     fn apply_json(
         &mut self,

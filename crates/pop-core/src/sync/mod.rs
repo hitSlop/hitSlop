@@ -6,9 +6,10 @@
 //! what its version lacks. Nothing about sync is saved: each connection starts with a
 //! Hello carrying the document's version, and the relay's answer says what to send. A lost
 //! acknowledgement, a dropped socket or a crash heals with the next Hello.
-mod frame;
-pub use frame::{Ack, Frame, MAX_FRAME, PROTOCOL, Permission, Record, Span, Version};
-pub use pop_sharing_protocol::http::SyncPhase;
+pub use pop_contracts::relay::{
+    SyncPhase,
+    frame::{Ack, ErrorCode, Frame, MAX_FRAME, PROTOCOL, Permission, Record, Span, Version},
+};
 
 use crate::{Applied, Code, Document};
 use loro::VersionVector;
@@ -198,7 +199,7 @@ impl Session {
             .collect();
         let id = self.next_id;
         let frame = Frame::Push { id, records: vec![Record { spans: spans.clone(), bytes }] }.encode();
-        if frame.len() > pop_sharing_protocol::limits::SOCKET_PUSH_BYTES_PER_MINUTE {
+        if frame.len() > pop_contracts::relay::limits::SOCKET_PUSH_BYTES_PER_MINUTE {
             self.pause(PauseKind::Outgrown, "This change is too large to share".into());
             return None;
         }
@@ -220,7 +221,7 @@ impl Session {
         let frame = match Frame::decode(bytes) {
             Ok(frame) => frame,
             Err(error) => {
-                self.pause(PauseKind::Refused, error.message);
+                self.pause(PauseKind::Refused, refused(&error));
                 return Step::default();
             }
         };
@@ -296,12 +297,10 @@ impl Session {
                 }
             }
             Frame::Error { code, message } => self.pause(
-                if code == pop_sharing_protocol::frame::ERROR_PROTOCOL {
-                    PauseKind::NeedsUpdate
-                } else if code == pop_sharing_protocol::frame::ERROR_ENDED {
-                    PauseKind::Ended
-                } else {
-                    PauseKind::Refused
+                match ErrorCode::try_from(code) {
+                    Ok(ErrorCode::Protocol) => PauseKind::NeedsUpdate,
+                    Ok(ErrorCode::Ended) => PauseKind::Ended,
+                    Ok(ErrorCode::App | ErrorCode::Malformed) | Err(_) => PauseKind::Refused,
                 },
                 message,
             ),

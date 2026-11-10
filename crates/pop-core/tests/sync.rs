@@ -568,7 +568,7 @@ fn room_compaction_measurements() {
         let raw = LoroDoc::new();
         raw.import(&doc.checkpoint().unwrap()).unwrap();
         let base = raw.export(ExportMode::updates(&doc.base_start())).unwrap();
-        if base.len() > pop_sharing_protocol::BASE_BYTES {
+        if base.len() > pop_contracts::relay::limits::BASE_BYTES {
             assert_eq!(doc.base(&version(&doc)).unwrap_err().code, pop_core::Code::TooLarge);
         } else {
             assert_eq!(doc.base(&version(&doc)).unwrap(), base);
@@ -622,14 +622,14 @@ fn shallow_seed_base_is_applied_by_a_joiner() {
 
 #[test]
 fn relay_error_codes_choose_recovery_actions() {
-    use pop_core::sync::PauseKind;
-    use pop_sharing_protocol::frame::*;
+    use pop_core::sync::{ErrorCode, PauseKind};
     let origin = Document::create(&app(SCHEMA), r#"{"title":"Seed","done":false}"#).unwrap();
     for (code, kind) in [
-        (ERROR_PROTOCOL, PauseKind::NeedsUpdate),
-        (ERROR_APP, PauseKind::Refused),
-        (ERROR_MALFORMED, PauseKind::Refused),
-        (ERROR_ENDED, PauseKind::Ended),
+        (ErrorCode::Protocol.into(), PauseKind::NeedsUpdate),
+        (ErrorCode::App.into(), PauseKind::Refused),
+        (ErrorCode::Malformed.into(), PauseKind::Refused),
+        (ErrorCode::Ended.into(), PauseKind::Ended),
+        (255, PauseKind::Refused),
     ] {
         let (mut doc, mut session) = admitted(&origin.checkpoint().unwrap(), &version(&origin));
         session.receive(&mut doc, &Frame::Error { code, message: "reason".into() }.encode());

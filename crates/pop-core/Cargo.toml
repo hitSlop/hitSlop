@@ -12,7 +12,6 @@ workspace = true
 
 [dependencies]
 pop-contracts = { path = "../pop-contracts" }
-pop-sharing-protocol = { path = "../pop-sharing-protocol" }
 loro.workspace = true
 serde.workspace = true
 serde_json = { workspace = true, features = ["raw_value"] }
@@ -32,7 +31,7 @@ doctest = false
 [features]
 default = []
 # Code generation only; never enabled by the WASM build or shipped native library.
-ts = ["pop-contracts/ts", "pop-sharing-protocol/ts", "dep:ts-rs"]
+ts = ["pop-contracts/ts", "dep:ts-rs"]
 acceptance = ["dep:brotli", "dep:data-encoding"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]

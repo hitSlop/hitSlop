@@ -16,7 +16,7 @@ operating the service.
 
 ## Routes
 
-`crates/pop-sharing-protocol/src/routes.rs` holds the one route table (`ROUTES`: method,
+`apps/sharing/src/routes.rs` holds the one route table (`ROUTES`: method,
 path, scope and rate-limit bucket). Worker dispatch and
 per-IP rate-limit classification read it. A
 method, path or trailing segment it does not list is a 404 before any limiter, identity

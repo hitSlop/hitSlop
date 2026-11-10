@@ -1,11 +1,5 @@
 {
   "phase": "futurePhase",
-  "frames": [
-    "ff",
-    "020200",
-    "060000000000000001ff"
-  ],
-  "unknownErrorFrame": "07ff00",
   "incomplete": [
     {
       "type": "RoomInfo",

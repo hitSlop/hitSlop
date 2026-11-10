@@ -9,7 +9,7 @@ use std::collections::VecDeque;
 
 /// How many relay frames may wait while a command evaluates; past it the connection
 /// pauses and the next one catches up.
-const HELD_FRAMES: usize = pop_sharing_protocol::QUEUED_FRAMES;
+const HELD_FRAMES: usize = pop_contracts::relay::limits::QUEUED_FRAMES;
 
 /// What the owner tells the connection that attached: frames to send, in order, and sync's
 /// status whenever it changes.
@@ -78,8 +78,8 @@ impl SyncConnection {
             return false;
         }
         if bytes.len() > crate::sync::MAX_FRAME
-            || a.bytes.saturating_add(bytes.len()) > pop_sharing_protocol::QUEUED_BYTES
-            || a.frames >= pop_sharing_protocol::QUEUED_FRAMES
+            || a.bytes.saturating_add(bytes.len()) > pop_contracts::relay::limits::QUEUED_BYTES
+            || a.frames >= pop_contracts::relay::limits::QUEUED_FRAMES
         {
             a.overflow = true;
             drop(a);

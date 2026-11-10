@@ -15,7 +15,6 @@ bundled-sqlite = ["rusqlite/bundled"]
 [dependencies]
 pop-core = { path = "../pop-core", default-features = false }
 pop-contracts = { path = "../pop-contracts" }
-pop-sharing-protocol = { path = "../pop-sharing-protocol" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

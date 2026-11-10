@@ -42,21 +42,6 @@ pub struct RoomInfo {
     /// Whether retained updates have reached the size at which a member may compact.
     pub compact: bool,
 }
-/// Where a replica stands with its room, apart from the words shown for it.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-pub enum SyncPhase {
-    #[default]
-    Offline,
-    Syncing,
-    Synced,
-    /// Stopped until a person acts; the reason travels with the pause.
-    Paused,
-    /// The room no longer exists; the local copy is all that remains.
-    Ended,
-}
-
 #[derive(Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 pub struct ApiFailure {

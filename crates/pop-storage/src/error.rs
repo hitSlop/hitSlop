@@ -27,14 +27,14 @@ pub enum Error {
     Failed(String),
 }
 pub type Result<T> = std::result::Result<T, Error>;
-pub(crate) fn failed(message: impl ToString) -> Error {
+pub fn failed(message: impl ToString) -> Error {
     Error::Failed(message.to_string())
 }
 /// A refusal under a core error code; nothing changed.
-pub(crate) fn rejected(code: crate::Code, message: impl ToString) -> Error {
+pub fn rejected(code: crate::Code, message: impl ToString) -> Error {
     Error::Rejected(crate::err(code, message))
 }
-pub(crate) fn invalid(message: impl ToString) -> Error {
+pub fn invalid(message: impl ToString) -> Error {
     rejected(crate::Code::InvalidRequest, message)
 }
 pub(crate) fn requires_update(message: impl ToString) -> Error {

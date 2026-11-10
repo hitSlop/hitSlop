@@ -1,10 +1,8 @@
 //! The Document DO is the sole permissions and lifecycle authority.
 use super::*;
+use crate::routes::Op;
 use futures_util::future::{Either, select};
-use pop_sharing_protocol::{
-    document::{AccessState, DocumentMetadata, DocumentRole, JoinDocument, UpdateDocument},
-    routes::Op,
-};
+use pop_sharing_protocol::document::{AccessState, DocumentMetadata, DocumentRole, JoinDocument, UpdateDocument};
 /// An account call unanswered by then has an unknown outcome: the account may have
 /// committed it. The bound also limits how long a membership lock holder waits.
 const ACCOUNT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
@@ -268,7 +266,7 @@ impl CloudDocument {
                                 let _ = self.send(
                                     &ws,
                                     Frame::Error {
-                                        code: crate::frame::ERROR_ENDED,
+                                        code: crate::frame::ErrorCode::Ended.into(),
                                         message: "Invitation revoked".into(),
                                     },
                                 );

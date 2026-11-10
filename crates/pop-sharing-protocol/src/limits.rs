@@ -4,37 +4,16 @@ pub use pop_contracts::wire::{
 };
 /// Host-owned Firebase ID tokens; these never enter a document or authored page.
 pub const IDENTITY_TOKEN_BYTES: usize = 16 * 1024;
-/// Relay admission policy, separate from document acceptance.
-pub const ROOM_CONNECTIONS: usize = 32;
-
-/// Retained update bytes, excluding the full-history base.
-pub const ROOM_RECORD_BYTES: usize = 16 << 20;
-/// Retained update rows, excluding the base.
-pub const ROOM_RECORDS: usize = 32_768;
-/// Largest full-history base accepted by the relay.
-pub const BASE_BYTES: usize = 16 << 20;
-/// Retained updates at which a client may compact the room.
-pub const COMPACT_AFTER_BYTES: usize = 4 << 20;
-/// Retained rows at which a client may compact the room.
-pub const COMPACT_AFTER_RECORDS: usize = 8_192;
-/// Target batch size; an indivisible accepted change may use the full socket allowance.
-pub const PUSH_BATCH_BYTES: usize = 256 << 10;
-/// One socket's incoming push wire bytes per minute.
-pub const SOCKET_PUSH_BYTES_PER_MINUTE: usize = 8 << 20;
-/// One socket's incoming pushes per minute.
-pub const SOCKET_PUSHES_PER_MINUTE: usize = 1_800;
-/// Maximum sockets admitted from one client IP in a room.
-pub const ROOM_IP_CONNECTIONS: usize = 8;
 /// Secondary bound on entries in a live-library snapshot frame.
 pub const ACCOUNT_SNAPSHOT_PAGE: usize = 256;
-/// Maximum live library sockets per account.
-pub const ACCOUNT_CONNECTIONS: usize = 16;
 /// Maximum UTF-8 bytes in a cloud library title.
 pub const TITLE_BYTES: usize = 1024;
 /// Maximum UTF-8 bytes in a cloud library template identifier.
 pub const TEMPLATE_ID_BYTES: usize = 256;
 // Even a base with the maximum peer headers fitting in CONTROL_BYTES stays in one frame.
-const _: () = assert!(BASE_BYTES + crate::CONTROL_BYTES + 16 < crate::frame::MAX_FRAME);
+const _: () = assert!(
+    pop_contracts::relay::limits::BASE_BYTES + crate::CONTROL_BYTES + 16 < pop_contracts::relay::frame::MAX_FRAME
+);
 
 /// Client timing, shared by the native supervisor and the browser worker.
 /// A client rereads the room this often to learn whether it should compact.

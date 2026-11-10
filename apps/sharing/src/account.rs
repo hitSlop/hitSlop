@@ -15,11 +15,9 @@ pub(crate) struct DocumentInit {
 #[cfg(target_arch = "wasm32")]
 mod runtime {
     use crate::room::{hash, identity_response};
+    use crate::routes::{self, Op};
+    use pop_sharing_protocol::http::CreateRoom;
     use pop_sharing_protocol::library::{AccountEntry, LibraryFrame};
-    use pop_sharing_protocol::{
-        http::CreateRoom,
-        routes::{self, Op},
-    };
     use serde::{Deserialize, Serialize};
     use worker::*;
     #[derive(Deserialize)]
@@ -348,7 +346,7 @@ mod runtime {
                             .is_some_and(|s| s.expires > js_sys::Date::now() as u64 / 1000)
                     })
                     .count();
-                if active >= pop_sharing_protocol::limits::ACCOUNT_CONNECTIONS {
+                if active >= crate::limits::ACCOUNT_CONNECTIONS {
                     return Response::error("Account connection limit", 429);
                 }
                 for ws in sockets {

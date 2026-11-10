@@ -10,6 +10,7 @@ pub mod capture;
 pub mod catalog;
 mod error;
 pub mod media;
+pub mod relay;
 pub mod shape;
 pub mod widgets;
 pub mod wire;
@@ -27,7 +28,7 @@ pub fn hex(bytes: &[u8]) -> String {
     out
 }
 fn err(code: Code, message: impl ToString) -> Error {
-    Error { code, message: message.to_string(), op_index: None, path: vec![] }
+    Error::new(code, message)
 }
 fn parse<T: serde::de::DeserializeOwned>(input: &str) -> Result<T> {
     if input.len() > wire::JSON_BYTES {

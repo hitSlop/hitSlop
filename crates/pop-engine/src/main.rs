@@ -61,7 +61,7 @@ fn dispatch(request: EngineRequest) -> String {
                         refusal(Code::InvalidRequest, format!("Cannot start the capture renderer: {e}"))
                     })?;
                     let render = |template: &Path, roles: &[file::Artwork]| {
-                        pop_capture::capture::render_views(template, &evaluator, roles)
+                        pop_runtime::capture::render_views(template, &evaluator, roles)
                     };
                     file::pack(app.get(), stage, path, Some(&render))?
                 } else {

@@ -1,10 +1,10 @@
 //! Room lifecycle and opaque relay records; private payloads in R2.
-use crate::frame::{Ack, Frame, PROTOCOL, Permission, Record, Span, Version};
+use crate::frame::{Ack, ErrorCode, Frame, PROTOCOL, Permission, Record, Span, Version};
 use crate::metrics::{Metric, record};
+use crate::routes::{self, Op, Scope};
 use pop_sharing_protocol::{
     CONTROL_BYTES, SEED_BYTES, SOCKET_PROTOCOL, hex,
     http::{RoomInfo, RoomPhase},
-    routes::{self, Op, Scope},
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -21,14 +21,15 @@ pub(crate) mod publication;
 const SQLITE_HEADER_BYTES: usize = 100;
 const CHUNK: usize = 1_800_000;
 const BACKFILL: usize = 1 << 20;
-use pop_sharing_protocol::limits::*;
+use crate::limits::*;
+use pop_contracts::relay::limits::{BASE_BYTES, SOCKET_PUSH_BYTES_PER_MINUTE, SOCKET_PUSHES_PER_MINUTE};
 fn now() -> u64 {
     js_sys::Date::now() as u64
 }
 
 #[derive(Debug)]
 enum SocketFailure {
-    Refused(u8, String),
+    Refused(ErrorCode, String),
     Transient(worker::Error),
 }
 impl From<worker::Error> for SocketFailure {
@@ -37,7 +38,7 @@ impl From<worker::Error> for SocketFailure {
     }
 }
 type SocketResult = std::result::Result<(), SocketFailure>;
-fn refused(code: u8, message: &str) -> SocketFailure {
+fn refused(code: ErrorCode, message: &str) -> SocketFailure {
     SocketFailure::Refused(code, message.into())
 }
 
@@ -434,7 +435,7 @@ impl CloudDocument {
         if self.text("cleanup_done")?.is_none() {
             self.schedule_cleanup(5_000).await?;
             self.state.storage().sync().await?;
-            self.end_connections(crate::frame::ERROR_ENDED, "Document deleted", 1008);
+            self.end_connections(ErrorCode::Ended, "Document deleted", 1008);
             let bucket = self.env.bucket("SEEDS")?;
             for prefix in [object_key(room, "")] {
                 loop {
@@ -488,10 +489,10 @@ impl CloudDocument {
             None => Response::error("Seed missing", 404),
         }
     }
-    pub(super) fn end_connections(&self, code: u8, message: &str, close: u16) {
+    pub(super) fn end_connections(&self, code: ErrorCode, message: &str, close: u16) {
         for ws in self.state.get_websockets() {
             let _ = ws.serialize_attachment(SocketState::default());
-            let _ = self.send(&ws, Frame::Error { code, message: message.into() });
+            let _ = self.send(&ws, Frame::Error { code: code.into(), message: message.into() });
             let _ = ws.close(Some(close), Some(message));
         }
     }
@@ -634,33 +635,32 @@ impl CloudDocument {
             return Ok(());
         }
         if self.phase()? != Some(RoomPhase::Live) {
-            return Err(refused(crate::frame::ERROR_ENDED, "Sharing ended"));
+            return Err(refused(ErrorCode::Ended, "Sharing ended"));
         }
         let WebSocketIncomingMessage::Binary(bytes) = msg else {
-            return Err(refused(crate::frame::ERROR_MALFORMED, "Binary frame required"));
+            return Err(refused(ErrorCode::Malformed, "Binary frame required"));
         };
-        let frame =
-            crate::envelope::decode(&bytes).map_err(|e| refused(crate::frame::ERROR_MALFORMED, &e.to_string()))?;
+        let frame = crate::envelope::decode(&bytes).map_err(|e| refused(ErrorCode::Malformed, &e))?;
         match frame {
             Frame::Hello { protocol, app_digest, version } => {
                 if protocol != PROTOCOL {
-                    return Err(refused(crate::frame::ERROR_PROTOCOL, "Different app or protocol"));
+                    return Err(refused(ErrorCode::Protocol, "Different app or protocol"));
                 }
                 let expected_app = self.text("app")?.ok_or_else(|| fail("Missing app"))?;
                 if expected_app != hex(&app_digest) {
-                    return Err(refused(crate::frame::ERROR_APP, "Different app or protocol"));
+                    return Err(refused(ErrorCode::App, "Different app or protocol"));
                 }
                 self.hello(ws, protocol, &app_digest, version)?;
                 Ok(())
             }
             Frame::Push { id, records } => {
                 if !ws.deserialize_attachment::<SocketState>()?.is_some_and(|s| s.joined) {
-                    return Err(refused(crate::frame::ERROR_MALFORMED, "Hello required"));
+                    return Err(refused(ErrorCode::Malformed, "Hello required"));
                 }
                 self.push(ws, id, records, bytes.len()).await?;
                 Ok(())
             }
-            _ => Err(refused(crate::frame::ERROR_MALFORMED, "Client frame required")),
+            _ => Err(refused(ErrorCode::Malformed, "Client frame required")),
         }
     }
 }
@@ -954,7 +954,7 @@ impl DurableObject for CloudDocument {
             return self.read_seed(&req, room).await;
         }
         if op == Op::Sync && req.headers().get("Upgrade")?.as_deref() == Some("websocket") {
-            if self.state.get_websockets().len() >= pop_sharing_protocol::limits::ROOM_CONNECTIONS {
+            if self.state.get_websockets().len() >= ROOM_CONNECTIONS {
                 return Response::error("Room connection limit", 429);
             }
             let ip = req.headers().get("CF-Connecting-IP")?.unwrap_or_else(|| "unknown".into());
@@ -1032,7 +1032,7 @@ impl DurableObject for CloudDocument {
         if let Err(error) = self.message(&ws, message).await {
             match error {
                 SocketFailure::Refused(code, message) => {
-                    let _ = self.send(&ws, Frame::Error { code, message });
+                    let _ = self.send(&ws, Frame::Error { code: code.into(), message });
                     let _ = ws.close(Some(1008), Some("Protocol refused"));
                 }
                 SocketFailure::Transient(error) => {

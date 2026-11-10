@@ -14,8 +14,9 @@ and, for a document, its saved state, theme overrides and attachments. `pop-core
 owns Loro document semantics and app acceptance. `pop-contracts` owns passive wire types,
 error codes, shared limits and shape geometry; `pop-storage` owns file acceptance, SQLite,
 the writer lock, save policy and immutable attachments. `pop-runtime` owns owner scheduling
-and Unix socket routing; `pop-library` coordinates private-library snapshots, while
-`pop-capture` and `pop-renderer` own saved-source capture and native rendering. UniFFI
+and Unix socket routing, plus saved-source capture (its `capture` module); `pop-cloud`
+coordinates the cloud client and private-library snapshots, while `pop-runner` (its `render` module) owns native
+rendering. UniFFI
 exposes the composed runtime through `PopCoreBinding`. The shared Rust owner runs one write
 in flight on its persistence worker. Swift `DocumentOwner` forwards typed requests and
 events; `DocumentSession` delivers ordered publications to the page. The private

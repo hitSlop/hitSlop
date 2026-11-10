@@ -14,7 +14,6 @@ workspace = true
 pop-core = { path = "../pop-core", features = ["acceptance"] }
 pop-storage = { path = "../pop-storage" }
 pop-runtime = { path = "../pop-runtime" }
-pop-capture = { path = "../pop-capture", features = ["desktop"] }
 serde_json.workspace = true
 pop-runner = { path = "../pop-runner" }
 libc = "0.2"

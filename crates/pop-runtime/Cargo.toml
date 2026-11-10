@@ -13,13 +13,12 @@ workspace = true
 pop-core = { path = "../pop-core", default-features = false }
 pop-contracts = { path = "../pop-contracts" }
 pop-storage = { path = "../pop-storage", default-features = false }
-pop-sharing-protocol = { path = "../pop-sharing-protocol" }
 serde.workspace = true
 serde_json = { workspace = true, features = ["raw_value"] }
 thiserror.workspace = true
 getrandom = "0.2"
 data-encoding = "=2.11.1"
-pop-capture = { path = "../pop-capture", default-features = false }
+sha2 = "=0.11.0"
 pop-runner = { path = "../pop-runner", default-features = false }
 libc = "0.2"
 
@@ -34,7 +33,6 @@ brotli = "=9.0.0"
 pop-core = { path = "../pop-core", default-features = false, features = ["acceptance"] }
 loro.workspace = true
 rusqlite = { version = "=0.40.2", features = ["hooks"] }
-sha2 = "=0.11.0"
 png = "=0.18.1"
 tempfile = "3"
 

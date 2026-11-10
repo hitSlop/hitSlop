@@ -2613,22 +2613,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "pop-capture"
+name = "pop-cloud"
 version = "0.0.0"
 dependencies = [
- "data-encoding",
- "libc",
+ "futures-util",
+ "getrandom 0.2.17",
  "loro",
  "png",
  "pop-contracts",
  "pop-core",
- "pop-runner",
+ "pop-runtime",
+ "pop-sharing-protocol",
  "pop-storage",
+ "reqwest",
  "rusqlite",
  "serde",
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-tungstenite",
+ "tokio-util",
 ]
 
 [[package]]
@@ -2653,7 +2659,6 @@ dependencies = [
  "kurbo",
  "loro",
  "pop-contracts",
- "pop-sharing-protocol",
  "serde",
  "serde_json",
  "svgtypes",
@@ -2664,12 +2669,10 @@ dependencies = [
 name = "pop-core-ffi"
 version = "0.0.0"
 dependencies = [
- "pop-capture",
+ "pop-cloud",
  "pop-contracts",
  "pop-core",
- "pop-library",
  "pop-runtime",
- "pop-sharing-client",
  "pop-sharing-protocol",
  "pop-storage",
  "thiserror 2.0.21",
@@ -2692,45 +2695,12 @@ dependencies = [
  "data-encoding",
  "libc",
  "png",
- "pop-capture",
  "pop-core",
  "pop-runner",
  "pop-runtime",
  "pop-storage",
  "serde_json",
  "tempfile",
-]
-
-[[package]]
-name = "pop-library"
-version = "0.0.0"
-dependencies = [
- "getrandom 0.2.17",
- "loro",
- "png",
- "pop-core",
- "pop-runtime",
- "pop-sharing-client",
- "pop-sharing-protocol",
- "pop-storage",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "pop-renderer"
-version = "0.0.0"
-dependencies = [
- "base64 0.22.1",
- "png",
- "pop-contracts",
- "serde_json",
- "takumi",
- "takumi-pdf",
 ]
 
 [[package]]
@@ -2741,12 +2711,13 @@ dependencies = [
  "libc",
  "png",
  "pop-contracts",
- "pop-renderer",
  "rquickjs",
  "rquickjs-sys",
  "seccompiler",
  "serde",
  "serde_json",
+ "takumi",
+ "takumi-pdf",
  "tempfile",
 ]
 
@@ -2760,11 +2731,9 @@ dependencies = [
  "libc",
  "loro",
  "png",
- "pop-capture",
  "pop-contracts",
  "pop-core",
  "pop-runner",
- "pop-sharing-protocol",
  "pop-storage",
  "rusqlite",
  "serde",
@@ -2772,29 +2741,6 @@ dependencies = [
  "sha2 0.11.0",
  "tempfile",
  "thiserror 2.0.21",
-]
-
-[[package]]
-name = "pop-sharing-client"
-version = "0.0.0"
-dependencies = [
- "futures-util",
- "getrandom 0.2.17",
- "loro",
- "pop-core",
- "pop-runtime",
- "pop-sharing-protocol",
- "pop-storage",
- "pop-sync",
- "reqwest",
- "rusqlite",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tempfile",
- "tokio",
- "tokio-tungstenite",
- "tokio-util",
 ]
 
 [[package]]
@@ -2815,6 +2761,7 @@ dependencies = [
  "getrandom 0.2.17",
  "js-sys",
  "jsonwebtoken",
+ "pop-contracts",
  "pop-sharing-protocol",
  "rand 0.8.8",
  "rsa",
@@ -2840,21 +2787,12 @@ dependencies = [
  "png",
  "pop-contracts",
  "pop-core",
- "pop-sharing-protocol",
  "rusqlite",
  "serde",
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
  "thiserror 2.0.21",
-]
-
-[[package]]
-name = "pop-sync"
-version = "0.0.0"
-dependencies = [
- "pop-sharing-protocol",
- "serde",
 ]
 
 [[package]]

@@ -3,34 +3,31 @@
 The document semantics every host uses: the Swift app and the CLI's engine (`pop dev`
 included) use the native Rust core. Bun SDK tests use the WASM adapter.
 
-- `pop-contracts`: passive shared wire, error, limit, app-presentation, media-registry
+- `pop-contracts`: passive shared wire, error, limit, relay frame, app-presentation, media-registry
   and evaluator types; no Loro, SQLite or renderer.
 - `pop-core`: pure Loro document semantics, app acceptance and sync. It has no storage or
   runtime features by default; optional `acceptance` codecs and `ts` generation are tooling.
 - `pop-storage`: SQLite `.pop` files, file acceptance, registry, attachments and atomic
   publication. It depends on core and contracts.
-- `pop-capture`: saved-source capture and widgets; it uses storage, core and the restricted
-  runner.
-- `pop-runtime`: owner, command, socket and persistence orchestration; it composes core,
-  storage, capture and runner.
-- `pop-renderer`: Takumi raster/PDF rendering and fonts; no JavaScript or owner.
-- `pop-library`: device-local index of the live account feed, downloaded copies and
-  recovery copies over runtime and storage.
+- `pop-runtime`: owner, command, socket and persistence orchestration, and its `capture`
+  module (saved-source capture and widgets); it composes core, storage and runner.
 - `pop-core-ffi`: UniFFI adapter used by the Apple host and its Quick Look extensions.
 - `pop-core-wasm`: wasm-bindgen adapter for SDK tests; `pop dev` uses the native owner.
 - `pop-engine`: the document engine the CLI runs on any platform (templates, create,
   pack, inspect, schema, export and document operations); `pack` also renders the artwork
   a build does not supply when asked. On macOS and Linux the engine exports closed documents in its own
   restricted evaluator; on macOS it also opens documents in dotpop.app.
-- `pop-sharing-protocol`: the cloud service's wire types, route table (`ROUTES`), limits
+- `pop-sharing-protocol`: the cloud service's HTTP and library wire types, limits
   and failure table, free of Loro, used by the native and web clients and the Worker.
-- `pop-sharing-client`: native identity-authenticated, event-driven transport, cloud
-  HTTP calls, the account library feed and durable confirmed-version receipts over the existing owner.
-- `pop-sync`: the pure sync supervisor driven by the native sharing client (reconnect
-  backoff, fold/compaction decisions, push budgets); no I/O, clocks or Loro, and document
-  replication remains in core.
+  Its `supervisor` module is the pure sync supervisor driven by the native sharing client
+  (reconnect backoff, fold/compaction decisions, push budgets); no I/O, clocks or Loro.
+- `pop-cloud`: the native cloud client over the existing owner: identity-authenticated,
+  event-driven transport, cloud HTTP calls, durable confirmed-version receipts and the account
+  feed, composed into the device-local `library` (index of the live account feed, downloaded
+  copies and recovery copies).
 - `pop-runner`: the restricted QuickJS child and its bounded process launcher, with
-  no storage dependency. The engine re-executes itself with `--evaluate-command`; the
+  no storage dependency. Its `capture` feature includes the `render` module (Takumi
+  raster/PDF rendering and fonts; no owner). The engine re-executes itself with `--evaluate-command`; the
   `pop-evaluator` binary provides the same child for native-host integration.
 
 `apps/sharing` is the Cloudflare Worker built on `pop-sharing-protocol`;

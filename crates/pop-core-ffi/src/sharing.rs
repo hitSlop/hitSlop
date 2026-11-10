@@ -1,7 +1,7 @@
 //! Cloud connection status and explicit invitation capability boundaries; the library owns
 //! native connections.
 use super::*;
-use pop_sharing_client::{Client, ClientStatus, PauseKind, Phase};
+use pop_cloud::{Client, ClientStatus, PauseKind, Phase};
 use pop_sharing_protocol::document::AccessState;
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum SharingError {
@@ -61,19 +61,19 @@ impl NativeSharing {
 }
 #[uniffi::export]
 pub fn sharing_link(access: pop_sharing_protocol::document::AccessState) -> Result<Option<String>, SharingError> {
-    pop_sharing_client::sharing_link(&access).map_err(failure)
+    pop_cloud::sharing_link(&access).map_err(failure)
 }
 #[uniffi::export]
 pub fn sharing_document(link: String) -> Result<String, SharingError> {
-    pop_sharing_client::invitation_document(&link).map_err(failure)
+    pop_cloud::invitation_document(&link).map_err(failure)
 }
 #[uniffi::export]
 pub fn sharing_local_document(path: String) -> Result<Option<String>, SharingError> {
-    pop_sharing_client::local_document(Path::new(&path)).map_err(failure)
+    pop_cloud::local_document(Path::new(&path)).map_err(failure)
 }
 #[uniffi::export]
 pub fn sharing_delete_account(token: String) -> Result<(), SharingError> {
-    pop_sharing_client::delete_account(&token).map_err(failure)
+    pop_cloud::delete_account(&token).map_err(failure)
 }
 
 #[uniffi::export]

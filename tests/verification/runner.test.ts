@@ -81,7 +81,7 @@ test("a pull request qualifies sharing for every input of the sharing tier, and 
     "crates/pop-runtime/src/owner/actor/sync.rs",
     "crates/pop-core/src/document/mod.rs",
     "Cargo.lock",
-    "crates/pop-sharing-client/src/transport.rs",
+    "crates/pop-cloud/src/transport/mod.rs",
     "apps/sharing/src/lib.rs",
     ".github/workflows/sharing.yml",
     "scripts/sharing/check-accounts.ts",

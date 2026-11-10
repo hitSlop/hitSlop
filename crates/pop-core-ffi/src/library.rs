@@ -1,7 +1,8 @@
 //! Typed device-local index and persistent cloud document composition.
 use super::*;
-use core::{DocumentRole, Entry, Issue};
-use pop_library as core;
+use core::{Entry, Issue};
+use pop_cloud as core;
+use pop_sharing_protocol::document::{AccessState, DocumentRole};
 
 /// The document lineage this build reads and writes. Swift scopes per-account flags to it so a
 /// new lineage starts them fresh.
@@ -48,7 +49,7 @@ pub struct Entry {
     pub account_bound: bool,
     pub downloaded: bool,
     pub problem: Option<String>,
-    pub role: Option<core::DocumentRole>,
+    pub role: Option<DocumentRole>,
     pub revision: u64,
     pub sharing_enabled: Option<bool>,
     pub inbox: bool,
@@ -104,10 +105,10 @@ impl NativeLibrary {
     pub fn connection(&self, id: String) -> Option<Arc<crate::sharing::NativeSharing>> {
         self.0.connection(&id).map(|client| Arc::new(crate::sharing::NativeSharing(client)))
     }
-    pub fn access(&self, id: String, token: String) -> Result<core::AccessState, LibraryError> {
+    pub fn access(&self, id: String, token: String) -> Result<AccessState, LibraryError> {
         Ok(self.0.access(&id, &token)?)
     }
-    pub fn sharing(&self, id: String, enabled: bool, token: String) -> Result<core::AccessState, LibraryError> {
+    pub fn sharing(&self, id: String, enabled: bool, token: String) -> Result<AccessState, LibraryError> {
         Ok(self.0.sharing(&id, enabled, &token)?)
     }
     pub fn join(&self, link: String, token: String) -> Result<core::Entry, LibraryError> {

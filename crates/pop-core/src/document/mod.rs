@@ -261,7 +261,7 @@ impl Document {
     /// Canonical relay frontier of accepted visible state, as the seed route sends it;
     /// unintegrated operations are excluded.
     pub fn wire_history(&self) -> Vec<(String, u32)> {
-        pop_sharing_protocol::frame::version_pairs(self.doc.state_vv().iter().map(|(&peer, &end)| (peer, end as u32)))
+        pop_contracts::relay::frame::version_pairs(self.doc.state_vv().iter().map(|(&peer, &end)| (peer, end as u32)))
     }
     /// The application value: the stored value, each counter and number as it reads.
     pub(crate) fn projected(&self) -> Value {
@@ -574,7 +574,7 @@ impl Document {
         {
             return Err(err(Code::InvalidBytes, "The base does not cover its declared history"));
         }
-        if bytes.len() > pop_sharing_protocol::BASE_BYTES {
+        if bytes.len() > pop_contracts::relay::limits::BASE_BYTES {
             return Err(err(Code::TooLarge, "This document has outgrown sharing"));
         }
         Ok(bytes)

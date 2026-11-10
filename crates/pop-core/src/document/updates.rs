@@ -7,7 +7,7 @@ const FRAME_METADATA_BYTES: usize = 4096;
 
 impl Document {
     pub(crate) fn bounded_updates(&self, from: &VersionVector) -> Result<Option<(VersionVector, Vec<u8>)>> {
-        use pop_sharing_protocol::limits::{PUSH_BATCH_BYTES, SOCKET_PUSH_BYTES_PER_MINUTE};
+        use pop_contracts::relay::limits::{PUSH_BATCH_BYTES, SOCKET_PUSH_BYTES_PER_MINUTE};
         let local = self.version_vector();
         let mut end = from.clone();
         let mut batch = None;

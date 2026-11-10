@@ -16,8 +16,8 @@
 mod attachments;
 mod copy;
 mod save;
-pub use crate::error::{Error, Result};
-use crate::error::{failed, rejected, sqlite};
+use crate::error::sqlite;
+pub use crate::error::{Error, Result, failed, invalid, rejected};
 use crate::file::{self, Artwork, Kind, OpenedApp, rows};
 use crate::registry::Lease;
 use crate::{Document, lock};

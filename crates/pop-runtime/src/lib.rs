@@ -1,5 +1,6 @@
 //! Serial document ownership, native commands, and live socket routing.
-//! Semantics belong to pop-core, durable files to pop-storage, and rendering to pop-capture.
+//! Semantics belong to pop-core, durable files to pop-storage, and rendering to pop-runner.
+pub mod capture;
 pub mod command;
 pub mod owner;
 #[cfg(feature = "desktop")]
@@ -8,7 +9,6 @@ pub mod socket;
 #[path = "socket_unavailable.rs"]
 pub mod socket;
 
-pub use pop_capture::{capture, widgets};
 pub use pop_contracts::wire;
 pub use pop_contracts::wire::engine::{EngineReply, EngineRequest, EngineSuccess};
 pub use pop_contracts::wire::{

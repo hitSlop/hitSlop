@@ -31,7 +31,7 @@ opaque Loro updates and never interprets them. Operators deploy it from
 ## API
 
 Every route is a row of `ROUTES` in
-`crates/pop-sharing-protocol/src/routes.rs`, which drives dispatch and per-IP rate limiting. An unlisted method,
+`apps/sharing/src/routes.rs`, which drives dispatch and per-IP rate limiting. An unlisted method,
 path or trailing segment is a 404 before any limiter, identity check or Durable Object.
 JSON bodies over their limit are 413 and malformed ones 400. Document sockets negotiate
 `pop.sync.v2`; the library uses `pop.library.v1`. An unsupported protocol gets 426 `requires_update`.

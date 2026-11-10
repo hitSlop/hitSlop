@@ -101,7 +101,7 @@ pub fn publish_export(
     output: String,
     activity: Box<dyn NativeExportActivity>,
 ) -> Result<(), CoreError> {
-    Ok(pop_capture::capture::publish_export(&bytes, Path::new(&output), || activity.is_active())?)
+    Ok(pop_runtime::capture::publish_export(&bytes, Path::new(&output), || activity.is_active())?)
 }
 #[uniffi::export(callback_interface)]
 pub trait NativeCommandCompletion: Send + Sync {

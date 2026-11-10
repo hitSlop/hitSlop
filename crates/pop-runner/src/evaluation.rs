@@ -28,7 +28,7 @@ pub(crate) fn evaluate_job(input: Job<'_>, interrupted: impl FnMut() -> bool + '
                 if serde_json::to_vec(&raster.batch).map_err(|e| e.to_string())?.len() > crate::MARKUP_BYTES {
                     return Err("Capture markup exceeds 16 MiB".into());
                 }
-                return pop_renderer::raster(raster, input.mode);
+                return crate::render::raster(raster, input.mode);
             }
             #[cfg(not(feature = "capture"))]
             return Err("Native capture rendering is unavailable".into());
