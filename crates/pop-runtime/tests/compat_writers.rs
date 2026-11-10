@@ -10,15 +10,14 @@
 //! Runs where the shipped engine runs (darwin-arm64); `POP_COMPAT_SEEDS` and
 //! `POP_COMPAT_STEPS` size it.
 use crate::support;
-use pop_runtime::Origin;
-use pop_runtime::store::{Mode, Store};
+use pop_core::Origin;
+use pop_storage::store::{Mode, Store};
 use serde_json::{Value, json};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use support::ApplyJson;
 use support::generate::intent;
-use support::next;
+use support::{ApplyJson, next};
 
 fn sorted(path: &Path) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> =
@@ -47,11 +46,7 @@ fn released_engine(entry: &Path, into: &Path) -> PathBuf {
         ),
     };
     use sha2::{Digest, Sha256};
-    assert_eq!(
-        Sha256::digest(&bytes).iter().map(|byte| format!("{byte:02x}")).collect::<String>(),
-        hash,
-        "cached writer hash differs from release.json"
-    );
+    assert_eq!(pop_contracts::hex(&Sha256::digest(&bytes)), hash, "cached writer hash differs from release.json");
     let copy = into.join("pop-engine");
     std::fs::copy(&writer, &copy).unwrap_or_else(|e| panic!("{}: no candidate writer: {e}", entry.display()));
     std::fs::set_permissions(&copy, std::fs::Permissions::from_mode(0o755)).unwrap();

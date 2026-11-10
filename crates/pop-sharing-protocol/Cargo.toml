@@ -12,4 +12,4 @@ ts = ["dep:ts-rs", "pop-contracts/ts"]
 pop-contracts = { path = "../pop-contracts" }
 serde.workspace = true
 serde_json.workspace = true
-ts-rs = { version = "=12.0.1", optional = true, features = ["serde-json-impl", "no-serde-warnings"] }
+ts-rs = { workspace = true, optional = true, features = ["serde-json-impl", "no-serde-warnings"] }

@@ -1,5 +1,4 @@
 //! Attachment inventory validation. No document state or semantic relay parsing.
-use crate::limits;
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
@@ -17,7 +16,7 @@ pub fn validate(items: &[Resource]) -> Result<(), String> {
     let mut total = 0u64;
     for item in items {
         if !hash_id(&item.hash)
-            || item.size > limits::ATTACHMENT_FILE_BYTES as u64
+            || item.size > pop_contracts::wire::ATTACHMENT_FILE_BYTES as u64
             || !keys.insert(&item.key)
             || item.media_type.is_empty()
             || item.media_type.len() > 100
@@ -29,7 +28,7 @@ pub fn validate(items: &[Resource]) -> Result<(), String> {
         }
         total = total.checked_add(item.size).ok_or("Resource inventory overflow")?;
     }
-    if items.len() > limits::ATTACHMENT_COUNT || total > limits::ATTACHMENT_BYTES as u64 {
+    if items.len() > pop_contracts::wire::ATTACHMENT_COUNT || total > pop_contracts::wire::ATTACHMENT_BYTES as u64 {
         return Err("Resource inventory exceeds document limits".into());
     }
     Ok(())

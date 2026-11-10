@@ -5,7 +5,7 @@ use pop_core::Document;
 use serde_json::{Value, json};
 use support::{Edit, app, snapshot, updates_since};
 
-const MAX_SAFE: i64 = 9_007_199_254_740_991;
+use pop_contracts::MAX_SAFE;
 fn schema() -> String {
     json!({"kind":"object","properties":{
         "hits":{"kind":"counter"},

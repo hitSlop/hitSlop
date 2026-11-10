@@ -1,5 +1,5 @@
 //! The private process boundary: typed JSON, frozen preflight, and classified outcomes.
-use pop_core::EngineReply;
+use pop_contracts::wire::engine::EngineReply;
 use serde_json::{Value, json};
 use std::fs;
 use std::io::Write;
@@ -56,7 +56,7 @@ fn attachment_references_use_stored_blob_identity_and_media_rules_without_a_docu
     for path in [dir.path().to_path_buf(), link, dir.path().join("missing")] {
         assert_eq!(request(json!({"method":"attachments.ref","file":path}))["reason"], "invalid_request");
     }
-    fs::File::create(&file).unwrap().set_len(pop_core::ATTACHMENT_FILE_BYTES as u64 + 1).unwrap();
+    fs::File::create(&file).unwrap().set_len(pop_contracts::wire::ATTACHMENT_FILE_BYTES as u64 + 1).unwrap();
     assert_eq!(request(json!({"method":"attachments.ref","file":file}))["reason"], "too_large");
 }
 

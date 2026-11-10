@@ -1,7 +1,8 @@
 //! Cloud connection status and explicit invitation capability boundaries; the library owns
 //! native connections.
 use super::*;
-use pop_cloud::{Client, ClientStatus, PauseKind, Phase};
+use pop_cloud::{Client, ClientStatus, Phase};
+use pop_core::sync::PauseKind;
 use pop_sharing_protocol::document::AccessState;
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum SharingError {

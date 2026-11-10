@@ -5,7 +5,7 @@ use crate::error::{Result, invalid};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub use pop_contracts::catalog::TemplateSource;
+use pop_contracts::catalog::TemplateSource;
 
 /// Where documents may not live, for this account and executable: iCloud Drive, whose
 /// syncing documents do not support yet, and the installed and bundled templates.

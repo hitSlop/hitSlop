@@ -1,5 +1,6 @@
 //! Native sandbox and pipe adapter.
-use crate::{INPUT, Job, OUTPUT, sandbox};
+use crate::sandbox;
+use pop_contracts::evaluator::{INPUT, Job, OUTPUT};
 use std::io::Read;
 use std::time::{Duration, Instant};
 

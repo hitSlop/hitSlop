@@ -1,11 +1,13 @@
 //! Room lifecycle and opaque relay records; private payloads in R2.
-use crate::frame::{Ack, ErrorCode, Frame, PROTOCOL, Permission, Record, Span, Version};
 use crate::metrics::{Metric, record};
 use crate::routes::{self, Op, Scope};
-use pop_sharing_protocol::{
-    CONTROL_BYTES, SEED_BYTES, SOCKET_PROTOCOL, hex,
-    http::{RoomInfo, RoomPhase},
-};
+use pop_contracts::hex;
+use pop_contracts::relay::frame::{Ack, ErrorCode, Frame, PROTOCOL, Permission, Record, Span, Version};
+use pop_sharing_protocol::CONTROL_BYTES;
+use pop_sharing_protocol::SEED_BYTES;
+use pop_sharing_protocol::SOCKET_PROTOCOL;
+use pop_sharing_protocol::http::RoomInfo;
+use pop_sharing_protocol::http::RoomPhase;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use wasm_bindgen::{JsCast, JsValue, closure::Closure, prelude::wasm_bindgen};
@@ -327,7 +329,7 @@ impl CloudDocument {
         {
             return Response::error("Compaction conflict", 409);
         }
-        if !crate::resource_types::hash_id(&digest) || hex(&Sha256::digest(&body)) != digest {
+        if !pop_sharing_protocol::resources::hash_id(&digest) || hex(&Sha256::digest(&body)) != digest {
             return Response::error("Base checksum mismatch", 400);
         }
         if !self.authorized_guest(req).await? {
@@ -474,7 +476,7 @@ impl CloudDocument {
         Ok(bytes)
     }
     fn send(&self, ws: &WebSocket, frame: Frame) -> Result<()> {
-        ws.send_with_bytes(crate::envelope::encode(frame).map_err(fail)?)
+        ws.send_with_bytes(pop_contracts::relay::envelope::encode(frame).map_err(fail)?)
     }
     /// The immutable seed uploaded before the room went live.
     async fn read_seed(&self, req: &Request, room: &str) -> Result<Response> {
@@ -640,7 +642,7 @@ impl CloudDocument {
         let WebSocketIncomingMessage::Binary(bytes) = msg else {
             return Err(refused(ErrorCode::Malformed, "Binary frame required"));
         };
-        let frame = crate::envelope::decode(&bytes).map_err(|e| refused(ErrorCode::Malformed, &e))?;
+        let frame = pop_contracts::relay::envelope::decode(&bytes).map_err(|e| refused(ErrorCode::Malformed, &e))?;
         match frame {
             Frame::Hello { protocol, app_digest, version } => {
                 if protocol != PROTOCOL {
@@ -863,7 +865,7 @@ impl DurableObject for CloudDocument {
                 Ok(input) => input,
                 Err(error) => return error.response(),
             };
-            if !crate::resource_types::hash_id(&input.seed_sha256) {
+            if !pop_sharing_protocol::resources::hash_id(&input.seed_sha256) {
                 return Response::error("Invalid seed hash", 400);
             }
             // Reading the body yielded to Stop, which also removes the seed.
@@ -922,8 +924,8 @@ impl DurableObject for CloudDocument {
                     Ok(heads) => heads,
                     Err(_) => return Response::error("Invalid seed version", 400),
                 };
-                if !crate::resource_types::hash_id(&digest)
-                    || !crate::resource_types::hash_id(&app)
+                if !pop_sharing_protocol::resources::hash_id(&digest)
+                    || !pop_sharing_protocol::resources::hash_id(&app)
                     || heads.len() != seed.len()
                 {
                     return Response::error("Invalid seed metadata", 400);

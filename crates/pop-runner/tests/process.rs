@@ -1,5 +1,6 @@
 //! The parent supervises real processes even when they do not behave like QuickJS.
-use pop_runner::{Batch, Evaluator, JobKind};
+use pop_contracts::evaluator::{Batch, JobKind};
+use pop_runner::Evaluator;
 use std::time::{Duration, Instant};
 
 fn run(script: &str) -> Result<String, String> {
@@ -65,8 +66,8 @@ fn raster_input_holds_the_markup_and_image_budgets_together() {
     let evaluator =
         Evaluator::process("/bin/sh".into(), vec!["-c".into(), "/bin/cat >/dev/null; printf done".into()]).unwrap();
     let batch = Batch {
-        frames: vec![pop_runner::Frame {
-            html: "\"".repeat((pop_runner::MARKUP_BYTES - 256) / 2),
+        frames: vec![pop_contracts::evaluator::Frame {
+            html: "\"".repeat((pop_contracts::evaluator::MARKUP_BYTES - 256) / 2),
             css: String::new(),
             width: 64,
             height: 64,
@@ -76,7 +77,7 @@ fn raster_input_holds_the_markup_and_image_budgets_together() {
     };
     let images = std::collections::BTreeMap::from([(
         "a".repeat(64),
-        format!("data:image/png;base64,{}", "A".repeat(pop_runner::IMAGE_BYTES / 3 * 4)),
+        format!("data:image/png;base64,{}", "A".repeat(pop_contracts::evaluator::IMAGE_BYTES / 3 * 4)),
     )]);
     assert_eq!(evaluator.raster(1, batch, images, JobKind::Capture).unwrap(), "done");
 }

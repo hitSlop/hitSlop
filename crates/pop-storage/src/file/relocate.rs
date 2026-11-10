@@ -5,7 +5,8 @@ use crate::error::{Error, Result, failed, invalid, sqlite};
 use crate::registry::Lease;
 use std::ffi::{CStr, CString, c_char, c_void};
 use std::fs;
-use std::os::unix::{ffi::OsStrExt, fs::MetadataExt};
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
 pub struct RelocatedDocument {
@@ -54,7 +55,7 @@ fn relocate(source: &Path, folder: &Path, access: &dyn Access) -> Result<Relocat
             let destination = folder.join(filename);
             super::places::document_destination(&destination)?;
             match copy(&read, &destination, false, true, None) {
-                Err(Error::Rejected(error)) if error.code == crate::Code::Exists => continue,
+                Err(Error::Rejected(error)) if error.code == pop_contracts::wire::Code::Exists => continue,
                 other => other?,
             }
             let destination_lease = Lease::acquire(&destination)?;

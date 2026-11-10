@@ -2,6 +2,7 @@
 //! QuickJS has its ordinary heap/stack limits and cooperative deadline. Native raster
 //! work has no process watchdog or crash isolation; this is not a sandbox substitute.
 use super::*;
+use pop_contracts::evaluator::{INPUT, Job, RasterRequest};
 use std::borrow::Cow;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};

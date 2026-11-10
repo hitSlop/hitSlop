@@ -223,12 +223,6 @@ const NOT_PERSISTED: &[&str] = &[
     "RETIRED_LIMITS",
 ];
 
-/// An exact fingerprint for nonnumeric acceptance rules (alphabets, reserved prefix,
-/// default radius). Their behavior is also exercised by vectors and document replay.
-fn spelling(value: &str) -> u64 {
-    value.bytes().fold(0xcbf29ce484222325, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3))
-}
-
 /// All bounds that govern opening, reading or saving stored app/resource/state data.
 /// A release records this table; every later build checks its bounds against that release.
 pub fn open_limits() -> Vec<Limit> {
@@ -284,20 +278,24 @@ pub fn open_limits() -> Vec<Limit> {
     bound!(CATEGORIES_MIN, Min);
     bound!(STORAGE_ROW_OVERHEAD, Min);
     bound!(ATTACHMENT_ID_LENGTH, Exact);
-    limits.push(Limit { name: "ROW_ID_CHARACTERS".into(), value: spelling(ROW_ID_CHARACTERS), kind: LimitKind::Exact });
+    limits.push(Limit {
+        name: "ROW_ID_CHARACTERS".into(),
+        value: crate::fnv(ROW_ID_CHARACTERS),
+        kind: LimitKind::Exact,
+    });
     limits.push(Limit {
         name: "ATTACHMENT_ID_CHARACTERS".into(),
-        value: spelling(ATTACHMENT_ID_CHARACTERS),
+        value: crate::fnv(ATTACHMENT_ID_CHARACTERS),
         kind: LimitKind::Exact,
     });
     limits.push(Limit {
         name: "DEFAULT_WINDOW_RADIUS".into(),
-        value: spelling(DEFAULT_WINDOW_RADIUS),
+        value: crate::fnv(DEFAULT_WINDOW_RADIUS),
         kind: LimitKind::Exact,
     });
     limits.push(Limit {
         name: "THEME_RESERVED_PREFIXES".into(),
-        value: spelling(&THEME_RESERVED_PREFIXES.join(",")),
+        value: crate::fnv(&THEME_RESERVED_PREFIXES.join(",")),
         kind: LimitKind::Exact,
     });
     // Positive IEEE-754 encodings preserve order, including these fractional minima.

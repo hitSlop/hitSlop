@@ -2,8 +2,8 @@
 //! anything; documents created from templates and copied from documents.
 
 use super::{Kind, check, checked, configure_writer, opened, reader, resolve, rows, writer};
-use crate::Code;
 use crate::error::{Error, Result, failed, invalid, rejected, sqlite};
+use pop_contracts::wire::Code;
 use rusqlite::Connection;
 use std::ffi::CString;
 use std::fs;
@@ -39,7 +39,10 @@ pub(crate) struct Staged {
 impl Staged {
     pub(crate) fn beside(dest: &Path) -> Result<Self> {
         let dest = resolve(dest)?;
-        Ok(Self { path: dest.with_file_name(format!(".pop-{}.tmp", crate::random_hex(8))), published: false })
+        Ok(Self {
+            path: dest.with_file_name(format!(".pop-{}.tmp", crate::random_hex(8).expect("random bytes"))),
+            published: false,
+        })
     }
     pub(crate) fn path(&self) -> &Path {
         &self.path

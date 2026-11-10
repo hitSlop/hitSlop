@@ -29,7 +29,7 @@ impl From<rusqlite::Error> for Error {
 }
 impl From<Failure> for Error {
     fn from(error: Failure) -> Self {
-        let issue = if error.reason == Some(pop_core::Code::RequiresUpdate) {
+        let issue = if error.reason == Some(pop_contracts::wire::Code::RequiresUpdate) {
             Issue::RequiresUpdate
         } else if matches!(error.kind, FailureKind::Busy | FailureKind::Locked | FailureKind::Closing) {
             Issue::Busy

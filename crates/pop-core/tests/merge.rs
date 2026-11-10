@@ -7,9 +7,8 @@
 use crate::support;
 use pop_core::{Document, Origin};
 use serde_json::{Value, json};
-use support::ApplyJson;
 use support::generate::intent;
-use support::{app, fixture, next, snapshot, workload};
+use support::{ApplyJson, app, fixture, next, snapshot, workload};
 
 /// Every row list in `value` names each row once.
 fn rows_are_unique(value: &Value) -> bool {
@@ -293,7 +292,8 @@ fn cleared_generations_hide_stale_writes_and_recreation_starts_fresh() {
 
 #[test]
 fn rebuilt_history_refuses_stale_histories_and_accepts_descendants_out_of_order() {
-    use pop_core::{Code, HistoryVersion};
+    use pop_contracts::wire::Code;
+    use pop_core::HistoryVersion;
     let spec = app(r#"{"kind":"object","properties":{"title":{"kind":"text"}}}"#);
     let mut old = Document::create(&spec, r#"{"title":"base"}"#).unwrap();
     old.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"old"}]}"#, Origin::Page).unwrap();

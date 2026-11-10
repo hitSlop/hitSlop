@@ -1,5 +1,5 @@
 //! Saved-view markup evaluation in the restricted QuickJS realm.
-use crate::Batch;
+use pop_contracts::evaluator::Batch;
 use rquickjs::{CatchResultExt, Function};
 
 pub fn evaluate_markup(

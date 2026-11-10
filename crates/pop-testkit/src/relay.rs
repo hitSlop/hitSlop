@@ -1,7 +1,7 @@
 //! The byte relay's rules (docs/architecture.md, Sync) over
 //! memory: records in arrival order and the version they add up to. It starts at the
 //! seed's version, which every replica already holds.
-use pop_core::sync::{Ack, Frame, PROTOCOL, Permission, Record, Span, Version};
+use pop_contracts::relay::frame::{Ack, Frame, PROTOCOL, Permission, Record, Span, Version};
 
 pub struct Relay {
     pub app: [u8; 32],

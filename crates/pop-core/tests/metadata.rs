@@ -1,6 +1,7 @@
 //! Commit attribution survives persistence, branches and rollback without becoming an audit log.
 use loro::LoroDoc;
-use pop_core::{AppSpec, Batch, Document, Origin};
+use pop_contracts::wire::Batch;
+use pop_core::{AppSpec, Document, Origin};
 use serde_json::{Value, json};
 
 fn batch(value: Value) -> Batch {

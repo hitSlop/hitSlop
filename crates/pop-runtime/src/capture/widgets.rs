@@ -2,11 +2,11 @@
 
 mod fingerprint;
 
-use crate::store::{failed, invalid};
+use pop_storage::store::{failed, invalid};
 
-pub use pop_contracts::widgets::*;
+use pop_contracts::widgets::{WidgetCapture, WidgetImage, WidgetRenderRequest, widget_limits, widget_viewports};
 
-fn source_version(document: &crate::Document, renderer: &fingerprint::Fingerprint) -> String {
+fn source_version(document: &pop_core::Document, renderer: &fingerprint::Fingerprint) -> String {
     use sha2::{Digest, Sha256};
     // An opaque presentation token, not a document format version. Include the
     // installed renderer/fonts and canvases so app updates refresh unchanged state.
@@ -22,9 +22,9 @@ fn source_version(document: &crate::Document, renderer: &fingerprint::Fingerprin
     data_encoding::HEXLOWER.encode(&hash.finalize())
 }
 
-pub fn saved_version(path: &std::path::Path, evaluator: &pop_runner::Evaluator) -> crate::store::Result<String> {
+pub fn saved_version(path: &std::path::Path, evaluator: &pop_runner::Evaluator) -> pop_storage::store::Result<String> {
     let renderer = fingerprint::renderer(evaluator.executable_path()).map_err(failed)?;
-    let store = crate::store::Store::open(path, crate::store::Mode::Snapshot)?;
+    let store = pop_storage::store::Store::open(path, pop_storage::store::Mode::Snapshot)?;
     let version = source_version(&store.document()?, &renderer);
     renderer.check(evaluator.executable_path()).map_err(failed)?;
     Ok(version)
@@ -35,7 +35,7 @@ pub fn saved_version(path: &std::path::Path, evaluator: &pop_runner::Evaluator) 
 pub(crate) fn render_source(
     source: &super::RenderSource<'_>,
     evaluator: &pop_runner::Evaluator,
-) -> crate::store::Result<WidgetCapture> {
+) -> pop_storage::store::Result<WidgetCapture> {
     let store = source.store;
     let document = source.document;
     let renderer = fingerprint::renderer(evaluator.executable_path()).map_err(failed)?;
@@ -57,9 +57,10 @@ pub(crate) fn render_source(
     };
     let batch = evaluator.markup(store.app().runtime_abi, program, &crate::encode(&request), true).map_err(invalid)?;
     let images = source.images(&batch, super::CaptureOutput::Widgets)?;
-    let result =
-        evaluator.raster(store.app().runtime_abi, batch, images, pop_runner::JobKind::Widget).map_err(invalid)?;
-    let reply: pop_runner::RenderReply =
+    let result = evaluator
+        .raster(store.app().runtime_abi, batch, images, pop_contracts::evaluator::JobKind::Widget)
+        .map_err(invalid)?;
+    let reply: pop_contracts::evaluator::RenderReply =
         serde_json::from_str(&result).map_err(|e| invalid(format!("Invalid capture reply: {e}")))?;
     let images = reply.into_images().map_err(invalid)?;
     if images.len() != request.viewports.len() {
@@ -72,14 +73,14 @@ pub(crate) fn render_source(
             let png =
                 data_encoding::BASE64.decode(image.as_bytes()).map_err(|_| invalid("Invalid widget PNG encoding"))?;
             // The sandbox's output is untrusted. The cache independently validates PNGs too.
-            let checked =
-                crate::images::check(&png, crate::images::Purpose::Preview).map_err(crate::store::Error::Rejected)?;
+            let checked = pop_storage::images::check(&png, pop_storage::images::Purpose::Preview)
+                .map_err(pop_storage::store::Error::Rejected)?;
             if checked.width != viewport.width * 2 || checked.height != viewport.height * 2 {
                 return Err(invalid("Widget PNG does not match its viewport"));
             }
             Ok(WidgetImage { family: viewport.family, png })
         })
-        .collect::<crate::store::Result<_>>()?;
+        .collect::<pop_storage::store::Result<_>>()?;
     renderer.check(evaluator.executable_path()).map_err(failed)?;
     Ok(WidgetCapture { source_version, images })
 }

@@ -157,6 +157,9 @@ runs:
         NEXTEST: ${{ inputs.nextest }}
       run: |
         rustup show active-toolchain
+        if [ "$RUNNER_OS" = macOS ] && [ "$NEXTEST" = true ]; then
+          rustup target add aarch64-apple-ios
+        fi
         if [ "$WASM_C" = true ] || { [ "$NEXTEST" = true ] && [ "$RUNNER_OS" = Linux ]; }; then
           rustup target add wasm32-unknown-unknown
         fi

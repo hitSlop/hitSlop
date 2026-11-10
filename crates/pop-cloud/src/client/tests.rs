@@ -1,5 +1,6 @@
 use super::*;
-use crate::resolution::{self, ResolvedRoom};
+use crate::resolution;
+use crate::resolution::ResolvedRoom;
 use pop_sharing_protocol::http::RoomPhase;
 pub(crate) fn fixture_source() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/checklist/document")
@@ -74,9 +75,14 @@ fn failed_receipt_confirmation_keeps_the_previous_receipt() {
     saved.close().unwrap();
     let version = heads.iter().map(|(peer, end)| (u64::from_str_radix(peer, 16).unwrap(), *end)).collect();
     let connection = owner.sync_connection(Arc::new(|_| {}));
-    connection
-        .frame(pop_core::sync::Frame::Welcome { permission: pop_core::sync::Permission::Write, version }.encode());
-    connection.frame(pop_core::sync::Frame::CaughtUp.encode());
+    connection.frame(
+        pop_contracts::relay::frame::Frame::Welcome {
+            permission: pop_contracts::relay::frame::Permission::Write,
+            version,
+        }
+        .encode(),
+    );
+    connection.frame(pop_contracts::relay::frame::Frame::CaughtUp.encode());
     // State is a serial-owner barrier after the handshake messages.
     request(&owner, Request::State).unwrap();
     let receipt_path = std::fs::read_dir(owner.path().parent().unwrap().join("relay-state"))

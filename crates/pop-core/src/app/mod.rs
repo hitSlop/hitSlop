@@ -3,10 +3,10 @@
 pub(crate) mod format;
 
 use crate::arguments::Arguments;
-use crate::build::BuildDeclaration;
 use crate::{AppSpec, Result};
+use pop_contracts::wire::build::BuildDeclaration;
 
-pub use pop_contracts::app::*;
+use pop_contracts::app::{AppMetadata, Capability, ThemeInput, Views, WindowDefinition, requirements};
 
 #[derive(Clone, Debug)]
 pub struct CommandDefinition {
@@ -79,11 +79,11 @@ impl AppDefinition {
     }
     /// CLI inspection retains authored geometry. Hosts use `window()` for resolved
     /// semantics and the normalized silhouette. Skin references are package URLs.
-    pub fn page_window(&self) -> crate::build::WindowInput {
+    pub fn page_window(&self) -> pop_contracts::wire::build::WindowInput {
         use format::Window;
         match &self.stored.window {
             Window::Standard { width, height, fullscreenable, resizable, lock_aspect, background, shape } => {
-                crate::build::WindowInput::Standard {
+                pop_contracts::wire::build::WindowInput::Standard {
                     width: *width,
                     height: *height,
                     fullscreenable: *fullscreenable,
@@ -93,7 +93,7 @@ impl AppDefinition {
                     shape: shape.clone().map(Into::into),
                 }
             }
-            Window::Skin { width, height, fullscreenable, skin } => crate::build::WindowInput::Skin {
+            Window::Skin { width, height, fullscreenable, skin } => pop_contracts::wire::build::WindowInput::Skin {
                 width: *width,
                 height: *height,
                 fullscreenable: *fullscreenable,
@@ -124,4 +124,5 @@ pub fn validate_metadata(metadata: &AppMetadata) -> Result<()> {
 }
 
 // Format 1 freezes with the first public release; a newer format adds its own reader.
-const _: () = assert!(crate::PACKAGE_FORMAT == 1, "add a package reader and keep the released format's reader");
+const _: () =
+    assert!(pop_contracts::wire::PACKAGE_FORMAT == 1, "add a package reader and keep the released format's reader");

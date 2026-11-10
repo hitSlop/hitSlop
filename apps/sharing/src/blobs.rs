@@ -1,6 +1,6 @@
 //! Attachment blobs: immutable, content-addressed files in R2, inventoried in `resource_blobs`.
 use super::*;
-use crate::resource_types::{self, Resource};
+use pop_sharing_protocol::resources::{self, Resource};
 
 impl CloudDocument {
     /// Uploads register their R2 key here before writing it. Caller holds uploads, so
@@ -44,7 +44,7 @@ impl CloudDocument {
             return Response::from_json(&self.blobs()?);
         }
         let id = match hash {
-            Some(id) if resource_types::hash_id(id) => id,
+            Some(id) if resources::hash_id(id) => id,
             _ => return Response::error("Not found", 404),
         };
         let key = object_key(room, &format!("blobs/{id}"));
@@ -68,7 +68,7 @@ impl CloudDocument {
                 size,
                 media_type: req.headers().get("Content-Type")?.unwrap_or_else(|| "application/octet-stream".into()),
             };
-            if resource_types::validate(std::slice::from_ref(&item)).is_err() {
+            if resources::validate(std::slice::from_ref(&item)).is_err() {
                 return Response::error("Invalid resource metadata", 400);
             }
             let mut all = self.blobs()?;
@@ -80,7 +80,7 @@ impl CloudDocument {
                 };
             }
             all.push(item.clone());
-            if resource_types::validate(&all).is_err() {
+            if resources::validate(&all).is_err() {
                 return Response::error("Room file limit reached", 413);
             }
             // Probe-sized files are bounded by Rust limits; R2 verifies the supplied digest.
@@ -113,7 +113,7 @@ impl CloudDocument {
             if !current.iter().any(|i| i.hash == id) {
                 current.push(item.clone());
             }
-            if resource_types::validate(&current).is_err() {
+            if resources::validate(&current).is_err() {
                 bucket.delete(key).await?;
                 return Response::error("Room file limit reached", 413);
             }

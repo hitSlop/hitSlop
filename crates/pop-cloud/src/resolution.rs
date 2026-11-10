@@ -1,14 +1,12 @@
 //! Creator downloads before a local file or document owner exists. Validated seed bytes
 //! stay in Rust-owned private staging; native callers receive only an opaque plan.
-use crate::{client::*, journal, transport};
-use pop_sharing_protocol::{
-    hex,
-    http::{RoomInfo, RoomPhase},
-};
+use crate::client::*;
+use crate::{journal, transport};
+use pop_contracts::hex;
+use pop_sharing_protocol::http::{RoomInfo, RoomPhase};
 use pop_storage::store::{Mode, Store};
 use sha2::{Digest, Sha256};
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub struct ResolvedRoom {
     pub(crate) key: RoomKey,
@@ -46,7 +44,10 @@ pub(crate) struct PrivateSeed {
 }
 impl PrivateSeed {
     fn write(bytes: &[u8]) -> Result<Self> {
-        let path = std::env::temp_dir().join(format!("pop-resolved-{}.pop", random()?));
+        let path = std::env::temp_dir().join(format!(
+            "pop-resolved-{}.pop",
+            pop_core::random_hex(32).map_err(|_| "Cannot generate document identity")?
+        ));
         if let Err(error) = private_file(&path, bytes) {
             let _ = std::fs::remove_file(&path);
             return Err(error);

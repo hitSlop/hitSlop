@@ -217,7 +217,8 @@ fn descriptor_limits_accept_their_boundaries() {
 #[test]
 fn documents_record_their_layout_and_a_newer_one_asks_for_an_update() {
     use loro::{ExportMode, LoroDoc};
-    use pop_core::{Code, LAYOUT};
+    use pop_contracts::wire::Code;
+    use pop_core::LAYOUT;
     let schema = r#"{"kind":"object","properties":{"title":{"kind":"string"}}}"#;
     let checkpoint =
         Document::create(&AppSpec::new(schema, "", "{}").unwrap(), r#"{"title":"A"}"#).unwrap().checkpoint().unwrap();

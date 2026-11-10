@@ -2,7 +2,7 @@
 use super::assets::assets_within;
 use super::{APPLICATION_ID, Kind, SCHEMA, STORAGE_VERSION, rows};
 use crate::error::{Error, Result, failed, invalid, requires_update, sqlite};
-use crate::wire::ASSET_PATH_BYTES;
+use pop_contracts::wire::ASSET_PATH_BYTES;
 use rusqlite::Connection;
 use std::sync::OnceLock;
 
@@ -111,7 +111,7 @@ pub(super) fn markers(conn: &Connection) -> Result<()> {
 /// The app's requirements, as `pack` reads them from a build and every open from a file:
 /// none newer than this build supports, and each at least 1.
 fn requirements(package_format: i64, runtime_abi: i64) -> Result<()> {
-    crate::app::requirements(package_format.into(), runtime_abi.into()).map_err(Error::Rejected)
+    pop_contracts::app::requirements(package_format.into(), runtime_abi.into()).map_err(Error::Rejected)
 }
 /// The exact tables, and at most one row, row 1, in each one-row table.
 pub(super) fn layout(conn: &Connection) -> Result<()> {
@@ -144,7 +144,9 @@ pub(super) fn layout(conn: &Connection) -> Result<()> {
 }
 /// Bound recursive definition bytes before decoding. Display reads never call this.
 fn app_sizes(conn: &Connection) -> Result<()> {
-    if one(conn, "SELECT length(CAST(definition_json AS BLOB)) FROM app")? > crate::wire::DEFINITION_BYTES as i64 {
+    if one(conn, "SELECT length(CAST(definition_json AS BLOB)) FROM app")?
+        > pop_contracts::wire::DEFINITION_BYTES as i64
+    {
         return Err(invalid("The app definition is too large"));
     }
     Ok(())
@@ -174,7 +176,7 @@ fn stored_assets(conn: &Connection) -> Result<()> {
     let mut paths = conn.prepare("SELECT key,media_type FROM assets").map_err(sqlite("read"))?;
     for row in paths.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))).map_err(sqlite("read"))? {
         let (key, media_type) = row.map_err(sqlite("read"))?;
-        let kind = crate::media::asset_key(&key).ok_or_else(|| invalid("Invalid app asset key"))?;
+        let kind = pop_contracts::media::asset_key(&key).ok_or_else(|| invalid("Invalid app asset key"))?;
         if kind.media_type != media_type {
             return Err(invalid("Invalid app asset media type"));
         }
@@ -211,7 +213,7 @@ fn state(conn: &Connection) -> Result<Kind> {
     let mut ids = conn.prepare("SELECT CAST(id AS BLOB) FROM attachments").map_err(sqlite("read"))?;
     for id in ids.query_map([], |r| r.get::<_, Vec<u8>>(0)).map_err(sqlite("read"))? {
         let id = id.map_err(sqlite("read"))?;
-        if !std::str::from_utf8(&id).is_ok_and(crate::wire::valid_attachment_id) {
+        if !std::str::from_utf8(&id).is_ok_and(pop_contracts::wire::valid_attachment_id) {
             return Err(invalid("Invalid attachment identity"));
         }
     }
@@ -220,7 +222,7 @@ fn state(conn: &Connection) -> Result<Kind> {
 
 /// Whether a document's attachments fit their limits, as stored or with one more.
 pub(crate) fn attachments_fit(count: i64, largest: i64, total: i64) -> bool {
-    count <= crate::ATTACHMENT_COUNT as i64
-        && largest <= crate::ATTACHMENT_FILE_BYTES as i64
-        && total <= crate::ATTACHMENT_BYTES as i64
+    count <= pop_contracts::wire::ATTACHMENT_COUNT as i64
+        && largest <= pop_contracts::wire::ATTACHMENT_FILE_BYTES as i64
+        && total <= pop_contracts::wire::ATTACHMENT_BYTES as i64
 }

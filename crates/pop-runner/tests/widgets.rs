@@ -1,6 +1,8 @@
 #![cfg(feature = "capture")]
-use base64::{Engine, engine::general_purpose::STANDARD};
-use pop_runner::{Evaluator, JobKind};
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD;
+use pop_contracts::evaluator::JobKind;
+use pop_runner::Evaluator;
 use serde_json::{Value, json};
 
 fn render(evaluator: &Evaluator, bundle: &str, mode: JobKind) -> Result<String, String> {

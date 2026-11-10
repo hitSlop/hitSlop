@@ -1,12 +1,11 @@
 //! A document's semantics, session history and validated Loro state.
 use crate::descriptor::{Node, descriptor};
 use crate::execute::{execute, fill};
-use crate::publication::{self, Events};
-use crate::{
-    Batch, Code, Error, Intent, Publication, Reading, Result, STORAGE_BYTES, Segment, check, encode, engine, err, json,
-    lock, parse, project, text, theme, wire,
-};
+use crate::publication::Events;
+use crate::{Result, check, encode, engine, err, json, lock, parse, project, publication, text, theme, wire};
 use loro::{Container, ExportMode, Frontiers, LoroDoc, ValueOrContainer};
+use pop_contracts::Error;
+use pop_contracts::wire::{Batch, Code, Intent, Publication, Reading, STORAGE_BYTES, Segment};
 use serde_json::Value;
 use std::collections::HashSet;
 mod history;

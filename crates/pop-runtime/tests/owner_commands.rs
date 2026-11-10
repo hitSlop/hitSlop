@@ -1,19 +1,18 @@
 //! Owner coordination across a deliberately delayed child. The actual restricted JS
 //! runtime is tested in pop-runner; here the oracle is state and lifecycle fencing.
 use crate::support;
+use pop_contracts::wire::Code;
+use pop_core::Origin;
 use pop_runner::Evaluator;
-use pop_runtime::{
-    Code, Origin, file,
-    owner::{Failure, FailureKind, Owner, Reply, Request},
-    store::Mode,
-};
+use pop_runtime::owner::{Failure, FailureKind, Owner, Reply, Request};
+use pop_storage::file;
+use pop_storage::store::Mode;
+use pop_testkit::owner::{call, close, submit};
 use serde_json::{Value, json};
-use std::{
-    fs,
-    path::PathBuf,
-    sync::{Arc, mpsc},
-    time::{Duration, Instant},
-};
+use std::fs;
+use std::path::PathBuf;
+use std::sync::{Arc, mpsc};
+use std::time::{Duration, Instant};
 
 struct Fixture {
     dir: tempfile::TempDir,
@@ -84,22 +83,8 @@ while ! test -f "$folder/reply-$i"; do /bin/sleep 0.01; done
         fs::rename(pending, self.dir.path().join(format!("reply-{attempt}"))).unwrap();
     }
 }
-fn submit(owner: &Owner, request: Request, view: Option<&str>) -> mpsc::Receiver<Result<Reply, Failure>> {
-    let (tx, rx) = mpsc::channel();
-    owner.submit(
-        request,
-        view.map(str::to_owned),
-        Box::new(move |result| {
-            let _ = tx.send(result);
-        }),
-    );
-    rx
-}
 fn receive(rx: mpsc::Receiver<Result<Reply, Failure>>) -> Result<Reply, Failure> {
     rx.recv_timeout(Duration::from_secs(5)).unwrap()
-}
-fn call(owner: &Owner, request: Request) -> Result<Reply, Failure> {
-    receive(submit(owner, request, None))
 }
 fn command(args: Value) -> Request {
     Request::Command { name: "rename".into(), args_json: args.to_string(), origin: Origin::Page }
@@ -117,9 +102,6 @@ fn title(owner: &Owner) -> Value {
     let Reply::State { reading, .. } = call(owner, Request::State).unwrap() else { panic!("state") };
     let json = serde_json::to_string(&reading).unwrap();
     serde_json::from_str::<Value>(&json).unwrap()["value"]["title"].clone()
-}
-fn close(owner: &Owner) {
-    call(owner, Request::Close { preview: None, icon: None }).unwrap();
 }
 
 #[test]
@@ -140,7 +122,7 @@ fn saved_state_fences_wait_for_an_earlier_command() {
     receive(command).unwrap();
     receive(flushed).unwrap();
     receive(copied).unwrap();
-    let saved = pop_runtime::store::Store::open(&copy, Mode::Snapshot).unwrap().document().unwrap();
+    let saved = pop_storage::store::Store::open(&copy, Mode::Snapshot).unwrap().document().unwrap();
     assert_eq!(serde_json::from_str::<Value>(&saved.value()).unwrap()["title"], "Included");
     receive(closed).unwrap();
 }
@@ -321,7 +303,7 @@ fn late_commands_cannot_cross_page_replacement_or_discard() {
         assert!(receive(reply).is_err(), "{action}");
         assert_eq!(title(&owner), "Saved");
         close(&owner);
-        let saved = pop_runtime::store::Store::open(&fixture.path, Mode::Snapshot).unwrap();
+        let saved = pop_storage::store::Store::open(&fixture.path, Mode::Snapshot).unwrap();
         assert_eq!(serde_json::from_str::<Value>(&saved.document().unwrap().value()).unwrap()["title"], "Saved");
     }
 }

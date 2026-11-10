@@ -3,11 +3,13 @@
 //! named for Swift in `uniffi.toml`.
 uniffi::setup_scaffolding!();
 
+use pop_contracts::catalog::TemplateSource;
+use pop_contracts::shape::{Length, Segment, Silhouette};
 use pop_core::Origin;
-use pop_core::shape::{Length, Segment, Silhouette};
 use pop_runtime::owner::Failure;
-use pop_storage::file::{self, Artwork, Kind, TemplateSource};
-use pop_storage::store::{self, Mode};
+use pop_storage::file::{Artwork, Kind};
+use pop_storage::store::Mode;
+use pop_storage::{file, store};
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -31,8 +33,8 @@ impl From<store::Error> for CoreError {
         Failure::from(e).into()
     }
 }
-impl From<pop_core::Error> for CoreError {
-    fn from(e: pop_core::Error) -> Self {
+impl From<pop_contracts::Error> for CoreError {
+    fn from(e: pop_contracts::Error) -> Self {
         Failure::from(e).into()
     }
 }
@@ -257,17 +259,21 @@ pub fn content_type(path: String) -> String {
 pub struct ResourceReader(Mutex<file::ResourceReader>);
 #[uniffi::export]
 impl ResourceReader {
-    pub fn info(&self, route: file::ResourceRoute, key: String) -> Result<Option<file::ResourceInfo>, CoreError> {
-        Ok(self.0.lock().unwrap_or_else(|e| e.into_inner()).info(route, &key)?)
+    pub fn info(
+        &self,
+        route: pop_contracts::resources::ResourceRoute,
+        key: String,
+    ) -> Result<Option<pop_contracts::resources::ResourceInfo>, CoreError> {
+        Ok(pop_core::lock(&self.0).info(route, &key)?)
     }
     pub fn read_range(
         &self,
-        route: file::ResourceRoute,
+        route: pop_contracts::resources::ResourceRoute,
         key: String,
         offset: u64,
         length: u64,
     ) -> Result<Option<Vec<u8>>, CoreError> {
-        Ok(self.0.lock().unwrap_or_else(|e| e.into_inner()).read_range(route, &key, offset, length)?)
+        Ok(pop_core::lock(&self.0).read_range(route, &key, offset, length)?)
     }
 }
 

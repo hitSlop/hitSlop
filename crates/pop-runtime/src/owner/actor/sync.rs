@@ -1,10 +1,10 @@
 //! Sync hooks. A host opens a socket to a shared document's relay and attaches with a
 //! sink, hands the owner each frame it receives, and sends each frame the sink receives,
-//! in order. The session (`crate::sync`) decides what frames mean; this module orders them
+//! in order. The session (`pop_core::sync`) decides what frames mean; this module orders them
 //! with edits: a remote change is published and saved like an edit, and each local edit is
 //! pushed as it commits. The document's own listener hears none of this, only the changes.
 use super::*;
-use crate::sync::{Session, Status};
+use pop_core::sync::{Session, Status};
 use std::collections::VecDeque;
 
 /// How many relay frames may wait while a command evaluates; past it the connection
@@ -55,7 +55,7 @@ pub struct SyncConnection {
 }
 impl SyncConnection {
     /// Confirmation belongs to this exact connection, not a replacement transport.
-    pub fn confirmed_version(&self, reply: impl FnOnce(Option<crate::sync::Confirmation>) + Send + 'static) {
+    pub fn confirmed_version(&self, reply: impl FnOnce(Option<pop_core::sync::Confirmation>) + Send + 'static) {
         let reply = PendingConfirmation(Some(Box::new(reply)));
         let _ = self.sender.send(Message::Sync(SyncMessage::ConfirmedVersion {
             connection: self.connection,
@@ -64,7 +64,7 @@ impl SyncConnection {
         }));
     }
     /// The exact current state only when the relay and the local save both acknowledge it.
-    pub fn durable_confirmed_version(&self, reply: impl FnOnce(Option<crate::sync::Confirmation>) + Send + 'static) {
+    pub fn durable_confirmed_version(&self, reply: impl FnOnce(Option<pop_core::sync::Confirmation>) + Send + 'static) {
         let reply = PendingConfirmation(Some(Box::new(reply)));
         let _ = self.sender.send(Message::Sync(SyncMessage::ConfirmedVersion {
             connection: self.connection,
@@ -77,7 +77,7 @@ impl SyncConnection {
         if a.connection != self.connection || a.overflow {
             return false;
         }
-        if bytes.len() > crate::sync::MAX_FRAME
+        if bytes.len() > pop_contracts::relay::frame::MAX_FRAME
             || a.bytes.saturating_add(bytes.len()) > pop_contracts::relay::limits::QUEUED_BYTES
             || a.frames >= pop_contracts::relay::limits::QUEUED_FRAMES
         {
@@ -95,14 +95,14 @@ impl SyncConnection {
     /// Export in the owner queue, ordered with local and remote edits.
     pub fn base(
         &self,
-        reply: impl FnOnce(std::result::Result<Option<crate::sync::Base>, crate::sync::Pause>) + Send + 'static,
+        reply: impl FnOnce(std::result::Result<Option<pop_core::sync::Base>, pop_core::sync::Pause>) + Send + 'static,
     ) {
         self.maintenance_base(move |result| {
             reply(result.and_then(|base| match base {
-                crate::sync::BaseRead::Pending => Ok(None),
-                crate::sync::BaseRead::Ready(base) => Ok(Some(base)),
-                crate::sync::BaseRead::TooLarge => Err(crate::sync::Pause {
-                    kind: crate::sync::PauseKind::Outgrown,
+                pop_core::sync::BaseRead::Pending => Ok(None),
+                pop_core::sync::BaseRead::Ready(base) => Ok(Some(base)),
+                pop_core::sync::BaseRead::TooLarge => Err(pop_core::sync::Pause {
+                    kind: pop_core::sync::PauseKind::Outgrown,
                     reason: "This document has outgrown sharing".into(),
                 }),
             }))
@@ -112,20 +112,20 @@ impl SyncConnection {
     /// the shared maintenance policy turns into the `Outgrown` pause.
     pub fn maintenance_base(
         &self,
-        reply: impl FnOnce(std::result::Result<crate::sync::BaseRead, crate::sync::Pause>) + Send + 'static,
+        reply: impl FnOnce(std::result::Result<pop_core::sync::BaseRead, pop_core::sync::Pause>) + Send + 'static,
     ) {
         let pending = PendingBase(Some(Box::new(reply)));
         let reply: BaseReply = Box::new(move |result| pending.finish(result));
         if let Err(std::sync::mpsc::SendError(Message::Sync(SyncMessage::Base { reply, .. }))) =
             self.sender.send(Message::Sync(SyncMessage::Base { connection: self.connection, reply }))
         {
-            complete_base(reply, Ok(crate::sync::BaseRead::Pending));
+            complete_base(reply, Ok(pop_core::sync::BaseRead::Pending));
         }
     }
-    pub fn pause(&self, kind: crate::sync::PauseKind, reason: String) {
+    pub fn pause(&self, kind: pop_core::sync::PauseKind, reason: String) {
         let _ = self.sender.send(Message::Sync(SyncMessage::Pause {
             connection: self.connection,
-            pause: crate::sync::Pause { kind, reason },
+            pause: pop_core::sync::Pause { kind, reason },
         }));
     }
     pub fn detach(&self) {
@@ -139,10 +139,10 @@ impl SyncConnection {
         let _ = self.sender.send(Message::Sync(SyncMessage::Detach { connection }));
     }
 }
-type BaseReply = Box<dyn FnOnce(std::result::Result<crate::sync::BaseRead, crate::sync::Pause>) + Send>;
+type BaseReply = Box<dyn FnOnce(std::result::Result<pop_core::sync::BaseRead, pop_core::sync::Pause>) + Send>;
 struct PendingBase(Option<BaseReply>);
 impl PendingBase {
-    fn finish(mut self, result: std::result::Result<crate::sync::BaseRead, crate::sync::Pause>) {
+    fn finish(mut self, result: std::result::Result<pop_core::sync::BaseRead, pop_core::sync::Pause>) {
         let reply = self.0.take().expect("pending base is answered once");
         complete_base(reply, result);
     }
@@ -150,11 +150,11 @@ impl PendingBase {
 impl Drop for PendingBase {
     fn drop(&mut self) {
         if let Some(reply) = self.0.take() {
-            complete_base(reply, Ok(crate::sync::BaseRead::Pending));
+            complete_base(reply, Ok(pop_core::sync::BaseRead::Pending));
         }
     }
 }
-fn complete_base(reply: BaseReply, result: std::result::Result<crate::sync::BaseRead, crate::sync::Pause>) {
+fn complete_base(reply: BaseReply, result: std::result::Result<pop_core::sync::BaseRead, pop_core::sync::Pause>) {
     let _ = catch_unwind(AssertUnwindSafe(|| reply(result)));
 }
 fn notify(sink: &SyncSink, event: SyncEvent) {
@@ -163,16 +163,16 @@ fn notify(sink: &SyncSink, event: SyncEvent) {
 pub(in crate::owner) enum SyncMessage {
     ConfirmedVersion { connection: u64, durable: bool, reply: PendingConfirmation },
     Base { connection: u64, reply: BaseReply },
-    Pause { connection: u64, pause: crate::sync::Pause },
+    Pause { connection: u64, pause: pop_core::sync::Pause },
     Attach { sink: SyncSink, connection: u64, admission: Arc<std::sync::Mutex<Admission>> },
     Frame { bytes: Vec<u8>, ticket: Reservation },
     Detach { connection: u64 },
     Overflow { connection: u64 },
 }
-type ConfirmationReply = Box<dyn FnOnce(Option<crate::sync::Confirmation>) + Send>;
+type ConfirmationReply = Box<dyn FnOnce(Option<pop_core::sync::Confirmation>) + Send>;
 pub(in crate::owner) struct PendingConfirmation(Option<ConfirmationReply>);
 impl PendingConfirmation {
-    fn finish(mut self, version: Option<crate::sync::Confirmation>) {
+    fn finish(mut self, version: Option<pop_core::sync::Confirmation>) {
         if let Some(reply) = self.0.take() {
             let _ = catch_unwind(AssertUnwindSafe(|| reply(version)));
         }
@@ -238,7 +238,7 @@ impl Actor {
     pub(super) fn begin_sync_step(&mut self) {
         self.link.synced_reported_this_step = false;
     }
-    fn durable_sync_version(&self) -> Option<crate::sync::Confirmation> {
+    fn durable_sync_version(&self) -> Option<pop_core::sync::Confirmation> {
         if self.link.sink.is_none()
             || self.link.session.is_none()
             || self.lifecycle != Lifecycle::Open
@@ -266,7 +266,7 @@ impl Actor {
             self.tell(SyncEvent::Status { status: Status::Synced });
         }
     }
-    pub(super) fn confirmed_sync_version(&self) -> Option<crate::sync::Confirmation> {
+    pub(super) fn confirmed_sync_version(&self) -> Option<pop_core::sync::Confirmation> {
         self.link.session.as_ref()?.confirmed_version(&self.core)
     }
     pub(super) fn clear_sync_for_restore(&mut self) {
@@ -299,9 +299,9 @@ impl Actor {
                     self.link
                         .session
                         .as_ref()
-                        .map_or(Ok(crate::sync::BaseRead::Pending), |s| s.maintenance_base(&self.core))
+                        .map_or(Ok(pop_core::sync::BaseRead::Pending), |s| s.maintenance_base(&self.core))
                 } else {
-                    Ok(crate::sync::BaseRead::Pending)
+                    Ok(pop_core::sync::BaseRead::Pending)
                 };
                 complete_base(reply, result);
             }
@@ -325,7 +325,7 @@ impl Actor {
                 if self.mode != store::Mode::Document || !self.store.is_shared() {
                     self.link.session = None;
                     self.report(Status::Paused {
-                        kind: crate::sync::PauseKind::Refused,
+                        kind: pop_core::sync::PauseKind::Refused,
                         reason: "This document is not shared".into(),
                     });
                     return;
@@ -336,7 +336,7 @@ impl Actor {
                         Ok(digest) => self.link.session = Some(Session::new(digest)),
                         Err(error) => {
                             self.report(Status::Paused {
-                                kind: crate::sync::PauseKind::Refused,
+                                kind: pop_core::sync::PauseKind::Refused,
                                 reason: error.to_string(),
                             });
                             return;

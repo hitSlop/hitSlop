@@ -1,6 +1,7 @@
 //! Window silhouettes: one parser for native and authoring. Oracle: independently
 //! computed geometry and the SVG/CSS grammar, not another implementation.
-use pop_core::shape::{Length, Segment, Silhouette, silhouette};
+use pop_contracts::shape::{Length, Segment, Silhouette};
+use pop_core::shape::silhouette;
 use serde_json::json;
 
 fn path(source: &str) -> Result<Vec<Segment>, String> {

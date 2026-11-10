@@ -64,7 +64,7 @@ impl Store {
         file::document_destination(dest)?;
         let dest = file::resolve(dest)?;
         if std::fs::symlink_metadata(&dest).is_ok() {
-            return Err(rejected(crate::Code::Exists, "A file already exists there"));
+            return Err(rejected(pop_contracts::wire::Code::Exists, "A file already exists there"));
         }
         let staged = file::Staged::beside(&dest)?;
         self.copy_clean_unplaced(staged.path(), state, artwork)?;
@@ -181,7 +181,7 @@ fn optimized_artwork(artwork: &[(Artwork, &[u8])]) -> Result<Vec<(Artwork, Vec<u
 }
 /// A copy's state made its own, in one transaction: the current state without history,
 /// the attachments it references, and `artwork` in place of the original's.
-fn clean(conn: &Connection, app: &crate::AppSpec, state: &[u8], artwork: &[(Artwork, Vec<u8>)]) -> Result<()> {
+fn clean(conn: &Connection, app: &pop_core::AppSpec, state: &[u8], artwork: &[(Artwork, Vec<u8>)]) -> Result<()> {
     let doc = Document::open(app, state, &[]).map_err(load_failure)?;
     let state = doc.clean_checkpoint().map_err(load_failure)?;
     if !within(0, checkpoint_row(state.len())) {

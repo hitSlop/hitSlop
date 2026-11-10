@@ -1,5 +1,7 @@
-use pop_core::{Code, Document};
+use pop_contracts::wire::Code;
+use pop_core::Document;
 use pop_storage::file::build;
+use pop_testkit::images::png;
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::fs;
@@ -36,14 +38,6 @@ fn asset(root: &Path, input: &mut Value, bytes: &[u8], extension: &str, media: &
     fs::write(root.join(&path), bytes).unwrap();
     input["resources"].as_array_mut().unwrap().push(json!({"kind":"app","key":key,"mediaType":media,"path":path}));
     key
-}
-fn png(width: u32, height: u32) -> Vec<u8> {
-    let mut bytes = vec![];
-    let mut encoder = png::Encoder::new(&mut bytes, width, height);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    encoder.write_header().unwrap().write_image_data(&vec![255; width as usize * height as usize * 4]).unwrap();
-    bytes
 }
 fn refused(root: &Path, value: &Value) {
     if build::accept(&value.to_string(), root).is_ok() {
@@ -184,10 +178,10 @@ fn only_regular_files_beneath_the_stage_are_read() {
 fn skin_and_artwork_bytes_use_the_full_png_checker() {
     let root = tempfile::tempdir().unwrap();
     let mut value = input(root.path());
-    let key = asset(root.path(), &mut value, &png(640, 480), "png", "image/png");
+    let key = asset(root.path(), &mut value, &png(640, 480, 6), "png", "image/png");
     value["declaration"]["window"] = json!({"kind":"skin","width":320,"height":240,"image":format!("/assets/{key}")});
     value["roles"]["skin"] = key.clone().into();
-    fs::write(root.path().join("preview.png"), png(8, 8)).unwrap();
+    fs::write(root.path().join("preview.png"), png(8, 8, 6)).unwrap();
     value["artwork"]["preview"] = "preview.png".into();
     let accepted = build::accept(&value.to_string(), root.path()).unwrap();
     assert_eq!(accepted.artwork().len(), 1);
@@ -195,7 +189,7 @@ fn skin_and_artwork_bytes_use_the_full_png_checker() {
     let good = value.clone();
     value["resources"].as_array_mut().unwrap().pop();
     refused(root.path(), &value);
-    fs::write(root.path().join("preview.png"), &png(8, 8)[..33]).unwrap();
+    fs::write(root.path().join("preview.png"), &png(8, 8, 6)[..33]).unwrap();
     refused(root.path(), &good);
 }
 
@@ -210,11 +204,11 @@ fn markers_and_budgets_precede_reads_and_allocations() {
         .write(true)
         .open(root.path().join("resources/ui.js"))
         .unwrap()
-        .set_len(pop_core::ASSET_FILE_BYTES as u64 + 1)
+        .set_len(pop_contracts::wire::ASSET_FILE_BYTES as u64 + 1)
         .unwrap();
     refused(root.path(), &value);
     let mut many = value.clone();
-    many["resources"] = vec![value["resources"][0].clone(); pop_core::ASSET_COUNT + 1].into();
+    many["resources"] = vec![value["resources"][0].clone(); pop_contracts::wire::ASSET_COUNT + 1].into();
     refused(Path::new("/does-not-exist"), &many);
 }
 

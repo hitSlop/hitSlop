@@ -11,7 +11,7 @@ impl Actor {
         let was_saved = self.revision <= self.saved;
         self.revision += 1;
         self.sequence = sequence;
-        self.emit(Event::Publication { json: crate::wire::page::PagePush::publication_json(json) });
+        self.emit(Event::Publication { json: pop_contracts::wire::page::PagePush::publication_json(json) });
         if themed {
             self.emit(Event::ThemeChanged);
         }

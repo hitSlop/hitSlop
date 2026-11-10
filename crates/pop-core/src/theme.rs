@@ -1,8 +1,9 @@
 //! Theme rules shared by authoring validation and native writes. A theme is a palette:
 //! the colors an app declares, with overrides in the document's own Loro history.
 use crate::wire::{THEME_FILE_LIMIT, THEME_LIMIT, THEME_NAME_LIMIT, THEME_RESERVED_PREFIXES, THEME_TOKENS, ThemeFile};
-use crate::{Code, Result, encode, err, parse};
+use crate::{Result, encode, err, parse};
 use loro::{LoroMap, LoroValue, ValueOrContainer};
+use pop_contracts::wire::Code;
 use std::collections::{BTreeMap, HashSet};
 
 pub(crate) type Values = BTreeMap<String, String>;
@@ -221,7 +222,10 @@ mod tests {
         /// Applies one palette intent (JSON text); whether it changed anything.
         fn apply(&mut self, intent: &str) -> Result<bool> {
             self.0
-                .apply_batch(crate::Batch::decode(&format!(r#"{{"intents":[{intent}]}}"#))?, Origin::Window)
+                .apply_batch(
+                    pop_contracts::wire::Batch::decode(&format!(r#"{{"intents":[{intent}]}}"#))?,
+                    Origin::Window,
+                )
                 .map(|a| a.publication.is_some())
         }
         fn set(&mut self, values: &str) -> Result<bool> {
@@ -321,8 +325,11 @@ mod tests {
     fn the_page_cannot_change_the_palette() {
         let mut theme = theme();
         let batch = r##"{"intents":[{"type":"setTheme","values":{"ink":"#000000"}}]}"##;
-        assert_eq!(code(theme.0.apply_batch(crate::Batch::decode(batch).unwrap(), Origin::Page)), Code::InvalidRequest);
-        theme.0.apply_batch(crate::Batch::decode(batch).unwrap(), Origin::Agent).unwrap();
+        assert_eq!(
+            code(theme.0.apply_batch(pop_contracts::wire::Batch::decode(batch).unwrap(), Origin::Page)),
+            Code::InvalidRequest
+        );
+        theme.0.apply_batch(pop_contracts::wire::Batch::decode(batch).unwrap(), Origin::Agent).unwrap();
         assert_eq!(theme.overrides(), r##"{"ink":"#000000"}"##);
     }
 

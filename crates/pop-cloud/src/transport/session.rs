@@ -3,8 +3,8 @@
 use super::*;
 use pop_contracts::relay::frame::ErrorCode;
 use pop_sharing_protocol::supervisor::budget::{BudgetDecision, PushBudget};
-use pop_sharing_protocol::supervisor::maintenance::{self, FullState, MaintenanceAction, Step};
-use pop_sharing_protocol::supervisor::{Action, Event as SupervisorEvent, Schedule, Supervisor, Wake};
+use pop_sharing_protocol::supervisor::maintenance::{FullState, MaintenanceAction, Step};
+use pop_sharing_protocol::supervisor::{Action, Event as SupervisorEvent, Schedule, Supervisor, Wake, maintenance};
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::{Notify, Semaphore, oneshot, watch};
 
@@ -474,7 +474,7 @@ async fn connected_attempt(
                         let info = pump.effect(operations.call(|operation| room_info(&operation.key, None))).await?;
                         let full = full_state(waiting, *retried_full);
                         let mut random = [0u8; 2];
-                        getrandom::getrandom(&mut random).map_err(|_| HttpFailure::from("Cannot schedule compaction"))?;
+                        pop_core::random(&mut random).map_err(|_| HttpFailure::from("Cannot schedule compaction"))?;
                         match maintenance::decide(full, Step::Probe { compact: info.compact }, u16::from_le_bytes(random)) {
                             MaintenanceAction::Outgrown => return Err(outgrown()),
                             MaintenanceAction::Jitter { milliseconds } => schedule.compact_after(now, milliseconds),

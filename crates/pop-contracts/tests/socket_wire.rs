@@ -1,11 +1,12 @@
 //! Routing checks live beside the serde types, not in a second JSON Schema decoder.
-use pop_core::{
-    Code, EngineReply,
-    socket_wire::{Discovery, SocketRequest},
+use pop_contracts::{
+    Code,
+    wire::engine::EngineReply,
+    wire::socket::{Discovery, SocketRequest},
 };
 use serde_json::{Value, json};
 
-fn decode(mut value: Value) -> Result<SocketRequest, pop_core::Error> {
+fn decode(mut value: Value) -> Result<SocketRequest, pop_contracts::Error> {
     let protocol = value.as_object_mut().unwrap().remove("protocol");
     let mut envelope = json!({"request":value});
     if let Some(protocol) = protocol {
@@ -14,33 +15,38 @@ fn decode(mut value: Value) -> Result<SocketRequest, pop_core::Error> {
     SocketRequest::decode(&envelope.to_string())
 }
 fn batch() -> Value {
-    json!({"protocol":pop_core::ENGINE_PROTOCOL,"method":"batch","documentPath":"/tmp/doc.pop","batch":{"intents":[]}})
+    json!({"protocol":pop_contracts::wire::ENGINE_PROTOCOL,"method":"batch","documentPath":"/tmp/doc.pop","batch":{"intents":[]}})
 }
 
 #[test]
 fn requests_check_routing_but_leave_intents_to_the_owner() {
-    let flat = json!({"protocol":pop_core::ENGINE_PROTOCOL,"method":"get","documentPath":"/tmp/doc.pop"});
+    let flat = json!({"protocol":pop_contracts::wire::ENGINE_PROTOCOL,"method":"get","documentPath":"/tmp/doc.pop"});
     assert_eq!(SocketRequest::decode(&flat.to_string()).unwrap_err().code, Code::InvalidRequest);
     for request in [json!({"method":"templates"}), json!({"method":"open","documentPath":"/tmp/doc.pop"})] {
         assert!(
-            SocketRequest::decode(&json!({"protocol":pop_core::ENGINE_PROTOCOL,"request":request}).to_string())
-                .is_err()
+            SocketRequest::decode(
+                &json!({"protocol":pop_contracts::wire::ENGINE_PROTOCOL,"request":request}).to_string()
+            )
+            .is_err()
         );
     }
     for method in ["get", "attachments.list", "theme.export"] {
         assert!(
-            decode(json!({"protocol":pop_core::ENGINE_PROTOCOL,"method":method,"documentPath":"/tmp/doc.pop"})).is_ok()
+            decode(
+                json!({"protocol":pop_contracts::wire::ENGINE_PROTOCOL,"method":method,"documentPath":"/tmp/doc.pop"})
+            )
+            .is_ok()
         );
     }
-    assert!(decode(json!({"protocol":pop_core::ENGINE_PROTOCOL,"method":"export","documentPath":"/tmp/doc.pop","format":"pdf","output":"/tmp/doc.pdf"})).is_ok());
+    assert!(decode(json!({"protocol":pop_contracts::wire::ENGINE_PROTOCOL,"method":"export","documentPath":"/tmp/doc.pop","format":"pdf","output":"/tmp/doc.pdf"})).is_ok());
     let mut request = batch();
     request["batch"]["intents"] = json!([{"type":"unknown-operation"}]);
     assert!(decode(request).is_err());
     for request in [
-        json!({"protocol":pop_core::ENGINE_PROTOCOL,"method":"unknown","documentPath":"/tmp/doc.pop"}),
-        json!({"protocol":pop_core::ENGINE_PROTOCOL,"method":"get","documentPath":"/tmp/doc.pop","output":"/tmp/doc.pdf"}),
+        json!({"protocol":pop_contracts::wire::ENGINE_PROTOCOL,"method":"unknown","documentPath":"/tmp/doc.pop"}),
+        json!({"protocol":pop_contracts::wire::ENGINE_PROTOCOL,"method":"get","documentPath":"/tmp/doc.pop","output":"/tmp/doc.pdf"}),
         json!({"method":"batch","documentPath":"/tmp/doc.pop","batch":{"intents":[]}}),
-        json!({"protocol":pop_core::ENGINE_PROTOCOL,"method":"export","documentPath":"/tmp/doc.pop","format":"html","output":"/tmp/doc.html"}),
+        json!({"protocol":pop_contracts::wire::ENGINE_PROTOCOL,"method":"export","documentPath":"/tmp/doc.pop","format":"html","output":"/tmp/doc.html"}),
     ] {
         assert!(decode(request.clone()).is_err(), "{request}");
     }
@@ -70,15 +76,15 @@ fn request_constraints_survive_the_schema_removal() {
     }
     for id in ["".into(), "a".repeat(63), "a".repeat(65), "A".repeat(64), "g".repeat(64)] {
         assert!(
-            decode(json!({"protocol":pop_core::ENGINE_PROTOCOL,"method":"attachments.read","documentPath":"/tmp/doc.pop","attachmentID":id}))
+            decode(json!({"protocol":pop_contracts::wire::ENGINE_PROTOCOL,"method":"attachments.read","documentPath":"/tmp/doc.pop","attachmentID":id}))
                 .is_err()
         );
     }
-    assert!(decode(json!({"protocol":pop_core::ENGINE_PROTOCOL,"method":"attachments.read","documentPath":"/tmp/doc.pop","attachmentID":"a".repeat(64)})).is_ok());
+    assert!(decode(json!({"protocol":pop_contracts::wire::ENGINE_PROTOCOL,"method":"attachments.read","documentPath":"/tmp/doc.pop","attachmentID":"a".repeat(64)})).is_ok());
     let mut request = batch();
     request["attachments"] = json!(["YWJj"]);
     assert!(decode(request).is_ok());
-    assert!(decode(json!({"protocol":pop_core::ENGINE_PROTOCOL,"method":"call","documentPath":"/tmp/doc.pop","command":"large","args":"x".repeat(1_048_576)})).is_err());
+    assert!(decode(json!({"protocol":pop_contracts::wire::ENGINE_PROTOCOL,"method":"call","documentPath":"/tmp/doc.pop","command":"large","args":"x".repeat(1_048_576)})).is_err());
     let mut large_attachment = batch();
     large_attachment["attachments"] = json!(["x".repeat(1_048_576)]);
     assert!(decode(large_attachment).is_ok());
@@ -87,7 +93,7 @@ fn request_constraints_survive_the_schema_removal() {
 
 #[test]
 fn protocol_precedes_fields_and_discovery_ignores_future_fields() {
-    for version in [0, pop_core::ENGINE_PROTOCOL + 1, 9999] {
+    for version in [0, pop_contracts::wire::ENGINE_PROTOCOL + 1, 9999] {
         let input = format!(r#"{{"protocol":{version},"method":{{"future":true}},"payload":1e999}}"#);
         assert_eq!(SocketRequest::decode(&input).unwrap_err().code, Code::RequiresUpdate);
     }

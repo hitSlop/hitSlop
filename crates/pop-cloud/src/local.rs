@@ -1,12 +1,12 @@
 //! Accepted local document inspection, owner calls and exclusive installation.
+use pop_contracts::hex;
 use pop_runtime::owner::{Owner, Reply, Request};
-use pop_sharing_protocol::hex;
-use pop_storage::{
-    file,
-    store::{Mode, Store},
-};
+use pop_storage::file;
+use pop_storage::store::{Mode, Store};
 use sha2::{Digest, Sha256};
-use std::{path::Path, sync::mpsc, time::Duration};
+use std::path::Path;
+use std::sync::mpsc;
+use std::time::Duration;
 
 type Result<T> = std::result::Result<T, String>;
 #[derive(Debug)]

@@ -1,17 +1,13 @@
 //! Persistent cloud document synchronization under one Firebase identity.
 use crate::{attachments, cloud, journal, local, transport};
+use pop_contracts::hex;
 use pop_runtime::owner::{Owner, Reply, Request};
-use pop_sharing_protocol::{
-    hex,
-    http::{Invitation, RoomInfo},
-};
+use pop_sharing_protocol::http::{Invitation, RoomInfo};
 use pop_storage::store::{Mode, Share, Store};
 use sha2::{Digest, Sha256};
-use std::{
-    path::Path,
-    sync::{Arc, Mutex},
-    time::Instant,
-};
+use std::path::Path;
+use std::sync::{Arc, Mutex};
+use std::time::Instant;
 #[cfg(test)]
 pub(crate) mod tests;
 pub(crate) type Result<T> = std::result::Result<T, String>;
@@ -45,11 +41,6 @@ pub(crate) fn retry_busy(
             result => return result,
         }
     }
-}
-pub(crate) fn random() -> Result<String> {
-    let mut bytes = [0; 32];
-    getrandom::getrandom(&mut bytes).map_err(|_| "Cannot generate document identity")?;
-    Ok(hex(&bytes))
 }
 pub(crate) fn private_file(path: &Path, bytes: &[u8]) -> Result<()> {
     use std::{io::Write, os::unix::fs::OpenOptionsExt};
@@ -125,7 +116,8 @@ impl Drop for Seed {
 }
 
 pub(crate) fn stage(owner: &Owner) -> Result<Seed> {
-    let directory = std::env::temp_dir().join(format!("pop-sharing-{}", random()?));
+    let directory = std::env::temp_dir()
+        .join(format!("pop-sharing-{}", pop_core::random_hex(32).map_err(|_| "Cannot generate document identity")?));
     use std::os::unix::fs::DirBuilderExt;
     std::fs::DirBuilder::new().mode(0o700).create(&directory).map_err(fail)?;
     let path = directory.join("seed.pop");
@@ -169,7 +161,7 @@ pub enum Phase {
     Paused,
     Ended,
 }
-pub use pop_core::sync::PauseKind;
+use pop_core::sync::PauseKind;
 pub struct ClientStatus {
     pub pause_kind: Option<PauseKind>,
     pub phase: Phase,
@@ -288,7 +280,10 @@ pub(crate) fn install_seed(
     if let Some(parent) = destination.parent() {
         std::fs::create_dir_all(parent).map_err(fail)?;
     }
-    let stage = destination.with_file_name(format!(".pop-sharing-{}.pop", random()?));
+    let stage = destination.with_file_name(format!(
+        ".pop-sharing-{}.pop",
+        pop_core::random_hex(32).map_err(|_| "Cannot generate document identity")?
+    ));
     let result = (|| {
         private_file(&stage, bytes)?;
         // A re-share seed may still contain its predecessor's membership. Bind the

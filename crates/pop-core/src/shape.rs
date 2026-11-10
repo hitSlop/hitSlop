@@ -1,18 +1,21 @@
 //! Window silhouettes: the manifest's radius grammar and bounded SVG path data, parsed
 //! and normalized once. Native builds its path from the output; authoring validates
 //! through WASM. This module is independent of Loro and of document semantics.
-use crate::{Code, Error, Result, err};
+use crate::{Result, err};
 use kurbo::{Arc, PathEl, Point, SvgArc, Vec2};
+use pop_contracts::Error;
+use pop_contracts::wire::Code;
 use serde::Deserialize;
 use serde_json::Value;
 use svgtypes::{PathParser, PathSegment};
 
-pub use pop_contracts::shape::*;
+use pop_contracts::shape::{FillRule, Length, Segment, Shape, Silhouette};
 
 /// Approximation target in logical points at the declared window size.
-use crate::wire::SHAPE_ARC_TOLERANCE as ARC_TOLERANCE;
-use crate::wire::{SHAPE_COMMANDS as MAX_COMMANDS, SHAPE_SEGMENTS as MAX_SEGMENTS};
-use crate::wire::{SHAPE_PATH, SHAPE_RADIUS, SHAPE_VIEW_BOX};
+use crate::wire::{
+    SHAPE_ARC_TOLERANCE as ARC_TOLERANCE, SHAPE_COMMANDS as MAX_COMMANDS, SHAPE_PATH, SHAPE_RADIUS,
+    SHAPE_SEGMENTS as MAX_SEGMENTS, SHAPE_VIEW_BOX,
+};
 
 fn invalid() -> Error {
     err(Code::InvalidShape, "Invalid window silhouette")

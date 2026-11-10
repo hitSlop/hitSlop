@@ -5,7 +5,10 @@ impl Library {
     pub fn create(&self, template: &Path, title: &str) -> Result<Entry> {
         let _change = self.changing();
         self.check()?;
-        let temporary = self.root.join("documents").join(format!("new-{}.pop", random_hex(16)));
+        let temporary = self
+            .root
+            .join("documents")
+            .join(format!("new-{}.pop", pop_core::random_hex(16).expect("OS random source")));
         file::create_document(template, &temporary)?;
         let opened = file::open(&temporary, true)?;
         let id = opened.document_uuid.ok_or_else(|| failed("Missing document identity"))?;
@@ -80,7 +83,10 @@ impl Library {
     }
     pub fn local_copy(&self, id: &str, title: &str) -> Result<Entry> {
         let _change = self.changing();
-        let path = self.root.join("documents").join(format!("copy-{}.pop", random_hex(16)));
+        let path = self
+            .root
+            .join("documents")
+            .join(format!("copy-{}.pop", pop_core::random_hex(16).expect("OS random source")));
         self.with_owner(id, |owner| {
             crate::local::request(owner, Request::Copy { destination: path.clone(), preview: None, icon: None })
                 .map_err(failed)?;
@@ -110,9 +116,4 @@ impl Library {
         self.cache_file(id, Some(version))?;
         Ok(true)
     }
-}
-pub(super) fn random_hex(bytes: usize) -> String {
-    let mut value = vec![0; bytes];
-    getrandom::getrandom(&mut value).expect("OS random source");
-    hex(&value)
 }

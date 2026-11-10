@@ -1,10 +1,11 @@
 //! Acceptance of a compiler's explicit resource inventory. The accepted result owns
 //! every byte that packing will write; no source is opened again after validation.
 use super::Artwork;
-use crate::app::{AppDefinition, WindowFrame};
-use crate::build::{BuildInput, ResourceKind};
 use crate::error::{Error, Result, invalid};
 use crate::media;
+use pop_contracts::app::WindowFrame;
+use pop_contracts::wire::build::{BuildInput, ResourceKind};
+use pop_core::app::AppDefinition;
 use std::collections::BTreeSet;
 use std::ffi::CString;
 use std::fs::{File, OpenOptions};
@@ -86,7 +87,8 @@ pub fn accept(input: &str, stage: &Path) -> Result<AcceptedBuild> {
     let mut assets = Vec::with_capacity(input.resources.len());
     let mut total = 0;
     for resource in &input.resources {
-        let kind = media::asset_key(&resource.key).ok_or_else(|| invalid("Invalid packaged resource key"))?;
+        let kind =
+            pop_contracts::media::asset_key(&resource.key).ok_or_else(|| invalid("Invalid packaged resource key"))?;
         if !keys.insert(resource.key.as_str()) {
             return Err(invalid("Duplicate packaged resource key"));
         }
@@ -135,7 +137,7 @@ pub fn accept(input: &str, stage: &Path) -> Result<AcceptedBuild> {
         if let Some(path) = path {
             let file = regular_file(&root, &path)?;
             let length = file.metadata().map_err(|e| invalid(format!("Artwork metadata: {e}")))?.len();
-            if length > crate::ASSET_FILE_BYTES as u64 {
+            if length > pop_contracts::wire::ASSET_FILE_BYTES as u64 {
                 return Err(invalid("Artwork exceeds its byte limit"));
             }
             artwork.push((name, super::pack_artwork(name, read(file, length as usize)?)?));

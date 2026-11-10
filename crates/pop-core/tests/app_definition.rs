@@ -1,5 +1,8 @@
-use pop_core::app::{AppDefinition, Capability, StandardFrame, WindowFrame};
-use pop_core::{Code, Document, build::BuildDeclaration};
+use pop_contracts::app::{Capability, StandardFrame, WindowFrame};
+use pop_contracts::wire::Code;
+use pop_contracts::wire::build::BuildDeclaration;
+use pop_core::Document;
+use pop_core::app::AppDefinition;
 use serde_json::{Value, json};
 
 fn metadata() -> Value {
@@ -16,11 +19,11 @@ fn definition() -> Value {
         }}]
     })
 }
-fn read(metadata: &Value, definition: &Value) -> Result<AppDefinition, pop_core::Error> {
+fn read(metadata: &Value, definition: &Value) -> Result<AppDefinition, pop_contracts::Error> {
     AppDefinition::decode(1, 1, &metadata.to_string(), &definition.to_string())
 }
 /// Today's authoring rules for new metadata; a saved file's is only bounded (`read`).
-fn author(metadata: &Value) -> Result<(), pop_core::Error> {
+fn author(metadata: &Value) -> Result<(), pop_contracts::Error> {
     pop_core::app::validate_metadata(&serde_json::from_value(metadata.clone()).unwrap())
 }
 
@@ -117,10 +120,12 @@ fn newer_markers_win_before_unknown_fields_or_unrepresentable_numbers() {
     assert_eq!(AppDefinition::decode(1, 0, "{}", "{}").unwrap_err().code, Code::InvalidRequest);
     for (format, abi) in [(2, 1), (1, 2)] {
         let future = format!(r#"{{"packageFormat":{format},"runtimeABI":{abi},"unknown":1e999}}"#);
-        assert_eq!(pop_core::build::BuildInput::decode(&future).unwrap_err().code, Code::RequiresUpdate);
+        assert_eq!(pop_contracts::wire::build::BuildInput::decode(&future).unwrap_err().code, Code::RequiresUpdate);
     }
     assert_eq!(
-        pop_core::build::BuildInput::decode(r#"{"packageFormat":1,"runtimeABI":1,"unknown":1e999}"#).unwrap_err().code,
+        pop_contracts::wire::build::BuildInput::decode(r#"{"packageFormat":1,"runtimeABI":1,"unknown":1e999}"#)
+            .unwrap_err()
+            .code,
         Code::InvalidRequest
     );
 }
@@ -323,8 +328,8 @@ fn fullscreen_is_opt_in_for_both_window_kinds_and_survives_the_page_and_file_pro
             // Authoring input has the same optional-boolean rule, including skins.
             let mut invalid = page.clone();
             invalid["fullscreenable"] = Value::Null;
-            assert!(serde_json::from_value::<pop_core::build::WindowInput>(invalid).is_err());
-            assert!(serde_json::from_value::<pop_core::build::WindowInput>(page).is_ok());
+            assert!(serde_json::from_value::<pop_contracts::wire::build::WindowInput>(invalid).is_err());
+            assert!(serde_json::from_value::<pop_contracts::wire::build::WindowInput>(page).is_ok());
         }
     }
 }
@@ -461,13 +466,13 @@ fn capabilities_are_declared_canonically_refused_unknown_at_authoring_and_ignore
             "roles":{"ui":"ui.js"},"resources":[],"artwork":{}})
         .to_string()
     };
-    assert!(pop_core::build::BuildInput::decode(&input(json!(["speech"]))).is_ok());
+    assert!(pop_contracts::wire::build::BuildInput::decode(&input(json!(["speech"]))).is_ok());
     for bad in [json!(["camera", "telepathy"]), json!(["Camera"]), json!([null]), json!("camera")] {
         assert!(declare(bad.clone()).is_err(), "{bad}");
-        let error = pop_core::build::BuildInput::decode(&input(bad.clone())).unwrap_err();
+        let error = pop_contracts::wire::build::BuildInput::decode(&input(bad.clone())).unwrap_err();
         assert_eq!(error.code, Code::InvalidRequest, "{bad}");
     }
-    let error = pop_core::build::BuildInput::decode(&input(json!(["telepathy"]))).unwrap_err();
+    let error = pop_contracts::wire::build::BuildInput::decode(&input(json!(["telepathy"]))).unwrap_err();
     assert!(error.message.contains("telepathy") && error.message.contains("microphone"), "{}", error.message);
     // Opening never grants what it does not know: a later build's capability is left out,
     // the rest are sorted and unique, and the saved spelling is kept as it was.

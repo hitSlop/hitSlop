@@ -1,24 +1,22 @@
 //! Single native Rust socket supervisor. Swift only starts/stops it and reads status.
-use crate::{attachments, client::*, journal};
+use crate::client::*;
+use crate::{attachments, journal};
 use futures_util::{SinkExt, StreamExt};
-use pop_contracts::relay::{envelope, frame::Frame};
-use pop_core::sync::{MAX_FRAME, PauseKind};
-use pop_runtime::owner::{Owner, Reply, Request};
-use pop_runtime::owner::{SyncConnection, SyncEvent};
-use pop_sharing_protocol::failure::{self, Outcome, Route};
-use pop_sharing_protocol::hex;
+use pop_contracts::hex;
+use pop_contracts::relay::envelope;
+use pop_contracts::relay::frame::{Frame, MAX_FRAME};
+use pop_core::sync::PauseKind;
+use pop_runtime::owner::{Owner, Reply, Request, SyncConnection, SyncEvent};
+use pop_sharing_protocol::failure;
+use pop_sharing_protocol::failure::{Outcome, Route};
 use sha2::{Digest, Sha256};
-use std::{
-    cell::RefCell,
-    collections::VecDeque,
-    future::Future,
-    sync::{Arc, Mutex, OnceLock, mpsc},
-    time::{Duration, Instant},
-};
-use tokio_tungstenite::{
-    WebSocketStream,
-    tungstenite::{self, Message},
-};
+use std::cell::RefCell;
+use std::collections::VecDeque;
+use std::future::Future;
+use std::sync::{Arc, Mutex, OnceLock, mpsc};
+use std::time::{Duration, Instant};
+use tokio_tungstenite::tungstenite::Message;
+use tokio_tungstenite::{WebSocketStream, tungstenite};
 use tokio_util::sync::CancellationToken;
 
 pub(crate) mod account;
@@ -258,7 +256,7 @@ pub(crate) fn http_typed(
     let limit = if route.split('?').next() == Some("seed") {
         pop_sharing_protocol::SEED_BYTES as u64
     } else if route.starts_with("blob/") {
-        pop_core::ATTACHMENT_FILE_BYTES as u64
+        pop_contracts::wire::ATTACHMENT_FILE_BYTES as u64
     } else {
         pop_sharing_protocol::CONTROL_BYTES as u64
     };
@@ -287,8 +285,8 @@ pub(crate) enum HttpFailure {
     Paused(pop_core::sync::Pause),
     Other(String),
 }
-impl From<pop_core::Error> for HttpFailure {
-    fn from(error: pop_core::Error) -> Self {
+impl From<pop_contracts::Error> for HttpFailure {
+    fn from(error: pop_contracts::Error) -> Self {
         pop_runtime::owner::Failure::from(error).into()
     }
 }
@@ -310,12 +308,12 @@ fn owner_effect(request: &Request) -> OwnerEffect {
 }
 fn owner_failure(error: pop_runtime::owner::Failure, effect: OwnerEffect) -> HttpFailure {
     let kind = match error.reason {
-        Some(pop_core::Code::StaleBase) if error.kind == pop_runtime::owner::FailureKind::Rejected => {
+        Some(pop_contracts::wire::Code::StaleBase) if error.kind == pop_runtime::owner::FailureKind::Rejected => {
             return HttpFailure::Conflict;
         }
-        Some(pop_core::Code::RequiresUpdate) => PauseKind::NeedsUpdate,
-        Some(pop_core::Code::MissingDependencies) => PauseKind::MissingHistory,
-        Some(pop_core::Code::TooLarge) if matches!(effect, OwnerEffect::Attachment) => PauseKind::FilesFull,
+        Some(pop_contracts::wire::Code::RequiresUpdate) => PauseKind::NeedsUpdate,
+        Some(pop_contracts::wire::Code::MissingDependencies) => PauseKind::MissingHistory,
+        Some(pop_contracts::wire::Code::TooLarge) if matches!(effect, OwnerEffect::Attachment) => PauseKind::FilesFull,
         Some(_) => PauseKind::Refused,
         None if error.kind == pop_runtime::owner::FailureKind::Busy => return HttpFailure::Busy(error.message),
         // Full also represents local disk exhaustion, not just format capacity.
@@ -604,7 +602,7 @@ mod tests {
 
     #[test]
     fn local_owner_failures_preserve_recovery_and_stop_uncertain_replays() {
-        use pop_core::Code;
+        use pop_contracts::wire::Code;
         use pop_runtime::owner::{Failure, FailureKind};
         for (kind, reason, expected) in [
             (FailureKind::Rejected, Some(Code::RequiresUpdate), Some(PauseKind::NeedsUpdate)),
@@ -752,7 +750,7 @@ mod tests {
         let store = Store::open(owner.path(), Mode::Snapshot).unwrap();
         let checkpoint = store.document().unwrap().checkpoint().unwrap();
         let vv = loro::LoroDoc::decode_import_blob_meta(&checkpoint, false).unwrap().partial_end_vv;
-        let version: pop_core::sync::Version = vv.iter().map(|(&p, &n)| (p, n as u32)).collect();
+        let version: pop_contracts::relay::frame::Version = vv.iter().map(|(&p, &n)| (p, n as u32)).collect();
         let info = serde_json::to_vec(&RoomInfo {
             document: owner.app().document_uuid.clone().unwrap(),
             phase: RoomPhase::Live,
@@ -815,9 +813,10 @@ mod tests {
                         )
                         .unwrap();
                         assert!(matches!(ws.read().unwrap(), Message::Binary(_)));
-                        for frame in
-                            [Frame::Welcome { permission: pop_core::sync::Permission::Write, version }, Frame::CaughtUp]
-                        {
+                        for frame in [
+                            Frame::Welcome { permission: pop_contracts::relay::frame::Permission::Write, version },
+                            Frame::CaughtUp,
+                        ] {
                             ws.send(Message::Binary(envelope::encode(frame).unwrap().into())).unwrap();
                         }
                         // No Records frame is sent. The initial connection must hydrate files anyway.

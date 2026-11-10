@@ -1,8 +1,8 @@
 //! Native transport adapter. All routing, framing and document commands live in Rust;
 //! only a live owner's validated export request is handed to the native renderer.
 use super::*;
-use pop_core::engine::ExportFormat;
-use pop_core::{Code, OutcomeCode};
+use pop_contracts::wire::engine::ExportFormat;
+use pop_contracts::wire::{Code, OutcomeCode};
 use pop_runtime::command as core;
 use pop_runtime::owner::Failure;
 
@@ -165,5 +165,5 @@ impl NativeOwner {
 
 #[uniffi::export]
 pub fn resync_push() -> String {
-    pop_core::page_wire::PagePush::resync_json()
+    pop_contracts::wire::page::PagePush::resync_json()
 }

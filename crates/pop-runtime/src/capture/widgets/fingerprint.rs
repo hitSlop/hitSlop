@@ -1,7 +1,8 @@
 //! A disposable cache identity for the actual installed renderer, including its fonts.
 use sha2::{Digest, Sha256};
 use std::fs::{File, Metadata};
-use std::io::{self, Read};
+use std::io;
+use std::io::Read;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
@@ -47,7 +48,7 @@ pub(super) fn renderer(path: &Path) -> io::Result<Fingerprint> {
     let cache = CACHE.get_or_init(|| Mutex::new(None));
     let mut file = File::open(path)?;
     let stamp = Stamp::from(file.metadata()?);
-    if let Some((cached_path, cached)) = &*cache.lock().unwrap_or_else(|e| e.into_inner())
+    if let Some((cached_path, cached)) = &*pop_core::lock(cache)
         && cached_path == path
         && cached.stamp == stamp
     {
@@ -64,6 +65,6 @@ pub(super) fn renderer(path: &Path) -> io::Result<Fingerprint> {
     }
     let fingerprint = Fingerprint { digest: hash.finalize().into(), stamp };
     fingerprint.check(path)?;
-    *cache.lock().unwrap_or_else(|e| e.into_inner()) = Some((path.to_owned(), fingerprint.clone()));
+    *pop_core::lock(cache) = Some((path.to_owned(), fingerprint.clone()));
     Ok(fingerprint)
 }

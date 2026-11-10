@@ -16,16 +16,11 @@ doctest = false
 pop-contracts = { path = "../pop-contracts" }
 pop-cloud = { path = "../pop-cloud" }
 pop-sharing-protocol = { path = "../pop-sharing-protocol" }
-pop-core = { path = "../pop-core", default-features = false }
+pop-core = { path = "../pop-core" }
 pop-storage = { path = "../pop-storage" }
-pop-runtime = { path = "../pop-runtime", default-features = false }
+pop-runtime = { path = "../pop-runtime" }
 # Without its default `cargo-metadata`, which only the bindings generator uses: every host
 # build then shares one dependency graph. The generator is installed on its own
 # (crates/README.md).
 uniffi = { version = "=0.32.2", default-features = false }
 thiserror.workspace = true
-
-[features]
-default = ["desktop"]
-desktop = ["pop-runtime/desktop"]
-mobile-capture = ["pop-runtime/mobile-capture"]

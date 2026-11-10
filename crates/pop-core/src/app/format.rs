@@ -10,16 +10,19 @@
 //! The stored types are open readers: a member this format does not define is ignored, so a
 //! later build can add an optional member without a new package format. What decides what a
 //! value may be stays exact: the descriptor and the commands' arguments.
-use super::{
-    AppDefinition, AppMetadata, Background, Capability, CommandDefinition, CommandInput, StandardFrame, ThemeInput,
-    Views, WidgetOptions, WindowDefinition, WindowFrame,
-};
+use super::{AppDefinition, CommandDefinition};
 use crate::arguments::Arguments;
-use crate::build::{BuildDeclaration, WindowInput};
 use crate::wire::{APP_TEXT_BYTES, ASSET_FILE_BYTES, MANIFEST_BYTES, THEME_LIMIT, present_option};
-use crate::{AppSpec, Code, Result, descriptor, encode, err, shape, theme};
+use crate::{AppSpec, Result, descriptor, encode, err, shape, theme};
+use pop_contracts::app::{
+    AppMetadata, Background, Capability, CommandInput, StandardFrame, ThemeInput, Views, WidgetOptions,
+    WindowDefinition, WindowFrame,
+};
+use pop_contracts::wire::Code;
+use pop_contracts::wire::build::{BuildDeclaration, WindowInput};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, value::RawValue};
+use serde_json::Value;
+use serde_json::value::RawValue;
 use std::collections::HashSet;
 
 pub(crate) use crate::wire::{
@@ -136,11 +139,11 @@ pub(super) enum StoredFillRule {
     Nonzero,
     Evenodd,
 }
-impl From<StoredShape> for shape::Shape {
+impl From<StoredShape> for pop_contracts::shape::Shape {
     fn from(value: StoredShape) -> Self {
         match value {
             StoredShape::Radius(radius) => Self::Radius(radius),
-            StoredShape::Path(path) => Self::Path(shape::PathShape {
+            StoredShape::Path(path) => Self::Path(pop_contracts::shape::PathShape {
                 path: path.path,
                 view_box: path.view_box,
                 fill_rule: path.fill_rule.map(Into::into),
@@ -148,11 +151,11 @@ impl From<StoredShape> for shape::Shape {
         }
     }
 }
-impl From<shape::Shape> for StoredShape {
-    fn from(value: shape::Shape) -> Self {
+impl From<pop_contracts::shape::Shape> for StoredShape {
+    fn from(value: pop_contracts::shape::Shape) -> Self {
         match value {
-            shape::Shape::Radius(radius) => Self::Radius(radius),
-            shape::Shape::Path(path) => Self::Path(StoredPath {
+            pop_contracts::shape::Shape::Radius(radius) => Self::Radius(radius),
+            pop_contracts::shape::Shape::Path(path) => Self::Path(StoredPath {
                 path: path.path,
                 view_box: path.view_box,
                 fill_rule: path.fill_rule.map(Into::into),
@@ -160,7 +163,7 @@ impl From<shape::Shape> for StoredShape {
         }
     }
 }
-impl From<StoredFillRule> for shape::FillRule {
+impl From<StoredFillRule> for pop_contracts::shape::FillRule {
     fn from(value: StoredFillRule) -> Self {
         match value {
             StoredFillRule::Nonzero => Self::Nonzero,
@@ -168,11 +171,11 @@ impl From<StoredFillRule> for shape::FillRule {
         }
     }
 }
-impl From<shape::FillRule> for StoredFillRule {
-    fn from(value: shape::FillRule) -> Self {
+impl From<pop_contracts::shape::FillRule> for StoredFillRule {
+    fn from(value: pop_contracts::shape::FillRule) -> Self {
         match value {
-            shape::FillRule::Nonzero => Self::Nonzero,
-            shape::FillRule::Evenodd => Self::Evenodd,
+            pop_contracts::shape::FillRule::Nonzero => Self::Nonzero,
+            pop_contracts::shape::FillRule::Evenodd => Self::Evenodd,
         }
     }
 }
@@ -347,7 +350,7 @@ fn stored_metadata(value: &AppMetadata) -> Result<()> {
 }
 
 /// The current authoring rules for a new app, on top of what opening requires.
-fn authoring_widget(widget: Option<super::WidgetOptions>) -> Result<()> {
+fn authoring_widget(widget: Option<pop_contracts::app::WidgetOptions>) -> Result<()> {
     if let Some(minutes) = widget.and_then(|widget| widget.refresh_minutes)
         && !(pop_contracts::widgets::MIN_REFRESH_MINUTES..=pop_contracts::widgets::MAX_REFRESH_MINUTES)
             .contains(&minutes)
@@ -435,10 +438,10 @@ fn window(value: &Window) -> Result<WindowDefinition> {
     }
     let frame = match value {
         Window::Standard { resizable, lock_aspect, background, shape: geometry, .. } => {
-            let geometry: Option<shape::Shape> = geometry.clone().map(Into::into);
+            let geometry: Option<pop_contracts::shape::Shape> = geometry.clone().map(Into::into);
             let radius = match &geometry {
-                Some(shape::Shape::Radius(radius)) => radius.clone(),
-                Some(shape::Shape::Path(_)) => "0".into(),
+                Some(pop_contracts::shape::Shape::Radius(radius)) => radius.clone(),
+                Some(pop_contracts::shape::Shape::Path(_)) => "0".into(),
                 None => crate::wire::DEFAULT_WINDOW_RADIUS.into(),
             };
             WindowFrame::Standard {
@@ -449,7 +452,9 @@ fn window(value: &Window) -> Result<WindowDefinition> {
                     background: background.map(Into::into),
                     radius,
                     shape: shape::normalize(
-                        geometry.unwrap_or_else(|| shape::Shape::Radius(crate::wire::DEFAULT_WINDOW_RADIUS.into())),
+                        geometry.unwrap_or_else(|| {
+                            pop_contracts::shape::Shape::Radius(crate::wire::DEFAULT_WINDOW_RADIUS.into())
+                        }),
                         width,
                         height,
                     )

@@ -25,7 +25,7 @@ fn restricted_commands_collect_intents_with_only_host_time_and_seed() {
     assert_eq!(result["result"]["apis"], json!(vec!["undefined"; 5]));
     assert_eq!(evaluate(code), result, "same invocation is deterministic");
 }
-#[cfg(all(feature = "process", feature = "capture-in-process"))]
+#[cfg(all(not(target_os = "ios"), feature = "in-process"))]
 #[test]
 fn explicit_capture_and_process_providers_keep_distinct_command_authority() {
     let capture = Evaluator::in_process_capture(env!("CARGO_BIN_EXE_pop-evaluator").into()).unwrap();
@@ -83,7 +83,7 @@ fn runner_bounds_cpu_and_memory() {
             // leaves too little time for the child's interruption reply to arrive.
             Err(error) => assert_eq!(error, "Command execution timed out", "{code}"),
         }
-        assert!(start.elapsed() < std::time::Duration::from_millis(pop_runner::WATCHDOG_MS * 2));
+        assert!(start.elapsed() < std::time::Duration::from_millis(pop_contracts::evaluator::WATCHDOG_MS * 2));
         assert_eq!(evaluate("return 42")["result"], 42, "the host remains usable after a bounded failure");
     }
 }

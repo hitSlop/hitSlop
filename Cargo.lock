@@ -2617,7 +2617,6 @@ name = "pop-cloud"
 version = "0.0.0"
 dependencies = [
  "futures-util",
- "getrandom 0.2.17",
  "loro",
  "png",
  "pop-contracts",
@@ -2625,6 +2624,7 @@ dependencies = [
  "pop-runtime",
  "pop-sharing-protocol",
  "pop-storage",
+ "pop-testkit",
  "reqwest",
  "rusqlite",
  "serde",
@@ -2635,6 +2635,19 @@ dependencies = [
  "tokio",
  "tokio-tungstenite",
  "tokio-util",
+]
+
+[[package]]
+name = "pop-compat"
+version = "0.0.0"
+dependencies = [
+ "brotli",
+ "data-encoding",
+ "pop-contracts",
+ "pop-core",
+ "pop-testkit",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -2651,14 +2664,13 @@ dependencies = [
 name = "pop-core"
 version = "0.0.0"
 dependencies = [
- "brotli",
- "data-encoding",
  "fluent-uri",
  "getrandom 0.2.17",
  "jsonschema",
  "kurbo",
  "loro",
  "pop-contracts",
+ "pop-testkit",
  "serde",
  "serde_json",
  "svgtypes",
@@ -2684,6 +2696,7 @@ name = "pop-core-wasm"
 version = "0.0.0"
 dependencies = [
  "js-sys",
+ "pop-contracts",
  "pop-core",
  "wasm-bindgen",
 ]
@@ -2695,6 +2708,7 @@ dependencies = [
  "data-encoding",
  "libc",
  "png",
+ "pop-contracts",
  "pop-core",
  "pop-runner",
  "pop-runtime",
@@ -2727,7 +2741,6 @@ version = "0.0.0"
 dependencies = [
  "brotli",
  "data-encoding",
- "getrandom 0.2.17",
  "libc",
  "loro",
  "png",
@@ -2735,6 +2748,7 @@ dependencies = [
  "pop-core",
  "pop-runner",
  "pop-storage",
+ "pop-testkit",
  "rusqlite",
  "serde",
  "serde_json",
@@ -2780,19 +2794,36 @@ dependencies = [
  "brotli",
  "cc",
  "data-encoding",
- "getrandom 0.2.17",
  "libc",
  "loro",
  "oxipng",
  "png",
  "pop-contracts",
  "pop-core",
+ "pop-testkit",
  "rusqlite",
  "serde",
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "pop-testkit"
+version = "0.0.0"
+dependencies = [
+ "data-encoding",
+ "loro",
+ "png",
+ "pop-contracts",
+ "pop-core",
+ "pop-runtime",
+ "pop-storage",
+ "rusqlite",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
 ]
 
 [[package]]

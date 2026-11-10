@@ -1,10 +1,9 @@
 //! Persistent cloud document control, independent from invitation access.
-use crate::{attachments, client::*, journal, transport};
+use crate::client::*;
+use crate::{attachments, journal, transport};
 use pop_runtime::owner::Owner;
-use pop_sharing_protocol::{
-    document::{AccessState, JoinDocument, UpdateDocument},
-    http::{CreateRoom, Invitation, OpenRoom, RoomPhase},
-};
+use pop_sharing_protocol::document::{AccessState, JoinDocument, UpdateDocument};
+use pop_sharing_protocol::http::{CreateRoom, Invitation, OpenRoom, RoomPhase};
 use pop_storage::store::{Mode, Store};
 use std::path::Path;
 pub(crate) fn control(method: &str, route: &str, token: &str, body: &[u8]) -> Result<Vec<u8>> {
@@ -165,8 +164,9 @@ fn upload_seed(key: &RoomKey, seed: &Seed, token: &str, state_directory: &Path) 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pop_contracts::hex;
     use pop_runtime::owner::{Reply, Request};
-    use pop_sharing_protocol::{hex, http::RoomInfo};
+    use pop_sharing_protocol::http::RoomInfo;
     use sha2::{Digest, Sha256};
     use std::io::{Read, Write};
     use std::net::TcpListener;

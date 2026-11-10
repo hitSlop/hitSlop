@@ -1,12 +1,11 @@
 //! Bounded summaries and fully checked application reads.
 use super::assets::read_asset;
 use super::check::{contents, layout, markers, one};
-use super::{Artwork, reader, resolve};
-use super::{Kind, assets, rows};
-use crate::app::{AppDefinition, AppMetadata, Author, WindowFrame};
-use crate::error::failed;
-use crate::error::{Error, Result, invalid, sqlite};
-use crate::wire::MANIFEST_BYTES;
+use super::{Artwork, Kind, assets, reader, resolve, rows};
+use crate::error::{Error, Result, failed, invalid, sqlite};
+use pop_contracts::app::{AppMetadata, Author, WindowFrame};
+use pop_contracts::wire::MANIFEST_BYTES;
+use pop_core::app::AppDefinition;
 use rusqlite::Connection;
 use std::fs;
 use std::path::Path;
@@ -105,7 +104,7 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
         keys.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))).map_err(sqlite("read assets"))?
     {
         let (key, size) = row.map_err(sqlite("read assets"))?;
-        let kind = crate::media::asset_key(&key).ok_or_else(|| invalid("Invalid app asset key"))?;
+        let kind = pop_contracts::media::asset_key(&key).ok_or_else(|| invalid("Invalid app asset key"))?;
         if !key.starts_with("media/") && size == 0 {
             return Err(invalid(format!("Resource {key} is empty")));
         }
@@ -216,8 +215,12 @@ pub fn export_artwork(path: &Path, name: Artwork, output: &Path) -> Result<bool>
 
 /// A summary for `pop inspect`: kind, markers, assets, artwork and the document's sizes,
 /// of a file every open would accept.
-pub fn inspect(path: &Path) -> Result<crate::engine::InspectInfo> {
-    use crate::engine::{AttachmentTotals, FileKind, InspectInfo, NamedSize, StateSizes};
+pub fn inspect(path: &Path) -> Result<pop_contracts::wire::engine::InspectInfo> {
+    use pop_contracts::wire::engine::AttachmentTotals;
+    use pop_contracts::wire::engine::FileKind;
+    use pop_contracts::wire::engine::InspectInfo;
+    use pop_contracts::wire::engine::NamedSize;
+    use pop_contracts::wire::engine::StateSizes;
     let conn = reader(path)?;
     // The summary reads the state the checks passed.
     let conn = conn.unchecked_transaction().map_err(sqlite("read"))?;

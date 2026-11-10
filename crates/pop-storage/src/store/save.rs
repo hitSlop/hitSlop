@@ -21,7 +21,9 @@ pub enum Pressure {
 impl Pressure {
     /// `Near` once the saved history uses three quarters of either limit.
     pub fn from_usage(bytes: u64, rows: u64) -> Self {
-        if bytes >= crate::STORAGE_BYTES as u64 * 3 / 4 || rows >= crate::STORAGE_ROWS as u64 * 3 / 4 {
+        if bytes >= pop_contracts::wire::STORAGE_BYTES as u64 * 3 / 4
+            || rows >= pop_contracts::wire::STORAGE_ROWS as u64 * 3 / 4
+        {
             Self::Near
         } else {
             Self::Ok
@@ -46,11 +48,11 @@ impl Metadata {
 /// The storage limits every size decision checks: at most `STORAGE_ROWS` saved updates and
 /// `STORAGE_BYTES` of checkpoint and updates.
 pub(super) fn within(rows: i64, bytes: i64) -> bool {
-    rows <= crate::STORAGE_ROWS as i64 && bytes <= crate::STORAGE_BYTES as i64
+    rows <= pop_contracts::wire::STORAGE_ROWS as i64 && bytes <= pop_contracts::wire::STORAGE_BYTES as i64
 }
 /// A checkpoint row's size: SQLite bounds the whole row, its header too.
 pub(super) fn checkpoint_row(bytes: usize) -> i64 {
-    bytes as i64 + crate::wire::STORAGE_ROW_OVERHEAD as i64
+    bytes as i64 + pop_contracts::wire::STORAGE_ROW_OVERHEAD as i64
 }
 pub(super) fn bounds(conn: &Connection) -> Result<Metadata> {
     let (rows, update_bytes, checkpoint_bytes) = rows::state_sizes(conn)?;
@@ -62,8 +64,8 @@ pub(super) fn checked_bounds(conn: &Connection) -> Result<Metadata> {
     if !within(meta.rows, meta.stored()) {
         return Err(failed(format!(
             "Document exceeds storage limits ({} MiB or {} updates); keep the file for recovery",
-            crate::STORAGE_BYTES >> 20,
-            crate::STORAGE_ROWS
+            pop_contracts::wire::STORAGE_BYTES >> 20,
+            pop_contracts::wire::STORAGE_ROWS
         )));
     }
     Ok(meta)

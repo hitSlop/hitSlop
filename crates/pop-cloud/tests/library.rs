@@ -2,14 +2,13 @@
 use crate::support;
 use pop_cloud::{Library, LibraryUpdate, local};
 use pop_runtime::owner::{Owner, Request};
-use pop_sharing_protocol::{document::DocumentRole, library::AccountEntry};
+use pop_sharing_protocol::document::DocumentRole;
+use pop_sharing_protocol::library::AccountEntry;
 use pop_storage::store::Mode;
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 fn fixture() -> (tempfile::TempDir, PathBuf) {
-    support::fixture()
+    support::template_fixture()
 }
 
 fn catalog(id: &str, revision: u64, title: &str) -> AccountEntry {
@@ -127,7 +126,7 @@ fn reading_entries_does_not_index_a_new_recovery_file() {
     let root = dir.path().join("library");
     let library = Library::open(&root, "account-a").unwrap();
     let source = library.create(&template, "Source").unwrap();
-    let scope: String = Sha256::digest(b"account-a").iter().map(|byte| format!("{byte:02x}")).collect();
+    let scope: String = pop_contracts::hex(&Sha256::digest(b"account-a"));
     let recovered = root.join("accounts").join(scope).join("relay-state/Recovered/complete.pop");
     std::fs::create_dir_all(recovered.parent().unwrap()).unwrap();
     let owner = Owner::open(Path::new(&source.path), Mode::Document, Arc::new(|_| {})).unwrap();
@@ -150,7 +149,7 @@ fn recovery_completed_before_indexing_is_discovered_after_restart_and_hidden_fro
     let root = dir.path().join("library");
     let account = Library::open(&root, "account-a").unwrap();
     let source = account.create(&template, "Source").unwrap();
-    let scope: String = Sha256::digest(b"account-a").iter().map(|byte| format!("{byte:02x}")).collect();
+    let scope: String = pop_contracts::hex(&Sha256::digest(b"account-a"));
     let recovered = root.join("accounts").join(scope).join("relay-state/Recovered/complete.pop");
     std::fs::create_dir_all(recovered.parent().unwrap()).unwrap();
     let owner = Owner::open(Path::new(&source.path), Mode::Document, Arc::new(|_| {})).unwrap();

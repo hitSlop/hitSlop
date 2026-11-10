@@ -1,14 +1,13 @@
 //! Shared live/closed command routing and bounded Unix transport. Fault peers exercise
 //! real socket loss and identity checks, not private call ordering.
 use crate::support;
-use pop_runtime::{
-    command::{self, ExportCompletion, ExportHandler, ExportRequest},
-    file,
-    owner::{Failure, Owner, Reply, Request},
-    registry,
-    socket::{self, Server},
-    store::{Mode, Store},
-};
+use pop_runtime::command::{ExportCompletion, ExportHandler, ExportRequest};
+use pop_runtime::owner::{Failure, Owner, Reply, Request};
+use pop_runtime::socket::Server;
+use pop_runtime::{command, socket};
+use pop_storage::store::{Mode, Store};
+use pop_storage::{file, registry};
+use pop_testkit::owner::{call, close, open};
 use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
@@ -37,7 +36,7 @@ fn document_declaring(capabilities: &[&str]) -> (tempfile::TempDir, PathBuf) {
     (dir, path)
 }
 /// The command protocol these requests are written in.
-const PROTOCOL: u64 = pop_runtime::ENGINE_PROTOCOL;
+const PROTOCOL: u64 = pop_contracts::wire::ENGINE_PROTOCOL;
 fn request(path: &Path, method: &str) -> Value {
     json!({"protocol":PROTOCOL,"method":method,"documentPath":std::fs::canonicalize(path).unwrap()})
 }
@@ -47,7 +46,7 @@ fn batch(path: &Path) -> Value {
     r
 }
 fn checked(text: String) -> Value {
-    assert!(serde_json::from_str::<pop_runtime::EngineReply>(&text).is_ok(), "invalid reply: {text}");
+    assert!(serde_json::from_str::<pop_contracts::wire::engine::EngineReply>(&text).is_ok(), "invalid reply: {text}");
     serde_json::from_str(&text).unwrap()
 }
 fn socket_request(mut value: Value) -> String {
@@ -57,23 +56,6 @@ fn socket_request(mut value: Value) -> String {
 fn run(mut value: Value) -> Value {
     value.as_object_mut().unwrap().remove("protocol");
     checked(command::request(&value.to_string(), PROTOCOL))
-}
-fn call(owner: &Owner, request: Request) -> std::result::Result<Reply, Failure> {
-    let (tx, rx) = mpsc::channel();
-    owner.submit(
-        request,
-        None,
-        Box::new(move |r| {
-            tx.send(r).unwrap();
-        }),
-    );
-    rx.recv_timeout(Duration::from_secs(5)).unwrap()
-}
-fn close(owner: &Owner) {
-    call(owner, Request::Close { preview: None, icon: None }).unwrap();
-}
-fn open(path: &Path) -> Arc<Owner> {
-    Arc::new(Owner::open(path, Mode::Document, Arc::new(|_| {})).unwrap())
 }
 
 #[test]
@@ -123,7 +105,7 @@ fn protocol_preflight_refuses_a_newer_large_payload_without_writing() {
     let reply = checked(command::request("not this protocol's JSON", PROTOCOL + 1));
     assert_eq!(reply["reason"], "requires_update");
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
     let discovery: Value = serde_json::from_str(&registry::discovery(&path).unwrap().unwrap()).unwrap();
     let socket = Path::new(discovery["socket"].as_str().unwrap());
@@ -142,7 +124,7 @@ fn protocol_preflight_refuses_a_newer_large_payload_without_writing() {
 #[test]
 fn future_socket_protocol_is_refused_before_interpreting_its_payload() {
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     let before = std::fs::read(&path).unwrap();
     // Valid JSON whose number is outside this build's value representation. It
     // belongs to the future protocol, not to this build's request decoder.
@@ -210,7 +192,7 @@ fn closed_commands_edit_theme_data_and_attachments_then_reopen() {
 #[test]
 fn live_commands_use_the_owner_and_discovery_can_withdraw_and_republish() {
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
     assert!(registry::discovery(&path).unwrap().is_some());
     assert_eq!(run(batch(&path))["ok"], true);
@@ -244,7 +226,7 @@ fn live_commands_use_the_owner_and_discovery_can_withdraw_and_republish() {
 #[test]
 fn malformed_unsupported_and_expired_commands_never_mutate() {
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
     let malformed =
         checked(socket::call(server.path(), &json!({"protocol":PROTOCOL,"method":"surprise"}).to_string()).unwrap());
@@ -279,7 +261,7 @@ fn malformed_unsupported_and_expired_commands_never_mutate() {
 #[test]
 fn partial_frames_and_oversized_requests_are_bounded() {
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
     let get = socket_request(request(&path, "get"));
     let mut stream = UnixStream::connect(server.path()).unwrap();
@@ -299,7 +281,7 @@ fn partial_frames_and_oversized_requests_are_bounded() {
 #[test]
 fn the_socket_client_limit_is_bounded() {
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     // A reply can arrive before its worker releases its slot. Start with no previous
     // clients, so none of these partial frames is rejected by a finishing worker.
     let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
@@ -333,7 +315,7 @@ fn line(stream: &mut UnixStream) -> String {
 }
 fn peer_reply(hello: Value, response: &str) -> (String, usize) {
     let (dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     let saved = std::fs::read(&path).unwrap();
     let listener = mock(&owner, dir.path());
     listener.set_nonblocking(true).unwrap();
@@ -441,7 +423,7 @@ fn peer_unfamiliar_outcome_is_forwarded_byte_for_byte() {
 #[test]
 fn a_lost_mutation_reply_is_unknown_and_is_never_replayed() {
     let (dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     let listener = mock(&owner, dir.path());
     let actor = owner.clone();
     let peer = std::thread::spawn(move || {
@@ -476,7 +458,7 @@ fn a_lost_mutation_reply_is_unknown_and_is_never_replayed() {
 #[test]
 fn a_batch_discarded_before_its_save_confirms_reports_an_unknown_outcome() {
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
     let lock = rusqlite::Connection::open(&path).unwrap();
     lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
@@ -518,7 +500,7 @@ fn page_json(reply: &command::PageDispatch) -> Value {
 #[test]
 fn page_configuration_flood_is_bounded_and_flush_still_progresses() {
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     owner.attach("page".into());
     let (entered, blocked) = mpsc::sync_channel(1);
     let (release, gate) = mpsc::channel();
@@ -570,9 +552,10 @@ fn page_configuration_flood_is_bounded_and_flush_still_progresses() {
 #[test]
 fn typed_page_requests_keep_validation_and_the_owner_view_fence() {
     use command::PageDispatch;
-    use pop_runtime::page_wire::{HostAction, PageRequest};
+    use pop_contracts::wire::page::HostAction;
+    use pop_contracts::wire::page::PageRequest;
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     owner.attach("page".into());
     let request = |view: &str, width| {
         let (tx, rx) = mpsc::channel();
@@ -595,7 +578,7 @@ fn typed_page_requests_keep_validation_and_the_owner_view_fence() {
     assert!(matches!(
         page(&owner, "page", r#"{"method":"haptics.play","feedback":{"kind":"selection"}}"#),
         PageDispatch::Host {
-            action: HostAction::HapticsPlay { feedback: pop_runtime::page_wire::HapticFeedback::Selection {} }
+            action: HostAction::HapticsPlay { feedback: pop_contracts::wire::page::HapticFeedback::Selection {} }
         }
     ));
     assert_eq!(
@@ -609,7 +592,7 @@ fn typed_page_requests_keep_validation_and_the_owner_view_fence() {
 #[test]
 fn page_requests_answer_the_page_and_refuse_what_it_may_not_do() {
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     owner.attach("page".into());
     let opened = page_json(&page(&owner, "page", r#"{"method":"open"}"#));
     assert_eq!(opened["ok"], true);
@@ -626,7 +609,9 @@ fn page_requests_answer_the_page_and_refuse_what_it_may_not_do() {
     assert_eq!(put["byteLength"], 3);
     let reader = owner.resource_reader().unwrap();
     assert_eq!(
-        reader.read_range(pop_runtime::file::ResourceRoute::Attachment, put["id"].as_str().unwrap(), 0, 3).unwrap(),
+        reader
+            .read_range(pop_contracts::resources::ResourceRoute::Attachment, put["id"].as_str().unwrap(), 0, 3)
+            .unwrap(),
         Some(b"abc".to_vec())
     );
     assert_eq!(page_json(&page(&owner, "page", r#"{"method":"flush"}"#)), json!({"ok":true,"method":"flush"}));
@@ -710,7 +695,7 @@ impl ExportHandler for Delayed {
 #[test]
 fn stopping_server_and_closing_owner_preserves_an_admitted_export_reply() {
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     let (tx, rx) = mpsc::channel();
     let server = Server::start(owner.clone(), Arc::new(Delayed(Mutex::new(tx)))).unwrap();
     let mut export = request(&path, "export");
@@ -731,7 +716,7 @@ fn stopping_server_and_closing_owner_preserves_an_admitted_export_reply() {
 #[test]
 fn an_expired_export_callback_cannot_publish_late() {
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     let (tx, rx) = mpsc::channel();
     let exporter: Arc<dyn ExportHandler> = Arc::new(Delayed(Mutex::new(tx)));
     let mut export = request(&path, "export");
@@ -764,7 +749,7 @@ impl ExportHandler for Panics {
 #[test]
 fn a_client_that_panics_frees_its_place() {
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     let server = Server::start(owner.clone(), Arc::new(Panics)).unwrap();
     let mut export = request(&path, "export");
     export["format"] = "png".into();
@@ -794,7 +779,7 @@ fn exports_reach_a_live_owner_or_render_a_closed_documents_saved_state() {
     // `command::request` has no evaluator to render with.
     let refused = run(export.clone());
     assert_eq!((refused["code"].as_str(), refused["reason"].as_str()), (Some("rejected"), Some("invalid_request")));
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
     assert_eq!(run(export.clone())["error"], "No export", "the live owner's renderer answers");
     close(&owner);
@@ -805,7 +790,7 @@ fn exports_reach_a_live_owner_or_render_a_closed_documents_saved_state() {
         let busy = registry::Lease::acquire(&path).unwrap();
         let pdf = b"%PDF-1.7\n%%EOF".to_vec();
         export.as_object_mut().unwrap().remove("protocol");
-        let request = pop_runtime::EngineRequest::parse(&export.to_string()).unwrap();
+        let request = pop_contracts::wire::engine::EngineRequest::parse(&export.to_string()).unwrap();
         let rendered = command::request_with_evaluator(request, PROTOCOL, Some(support::renderer(":", &pdf)));
         assert_eq!(checked(rendered), json!({"ok":true,"method":"export","output":output}));
         assert_eq!(std::fs::read(&output).unwrap(), pdf);
@@ -817,9 +802,9 @@ fn exports_reach_a_live_owner_or_render_a_closed_documents_saved_state() {
 #[test]
 fn page_config_and_native_actions_share_the_owners_lifecycle_fence() {
     use command::PageDispatch;
-    use pop_runtime::page_wire::HostAction;
+    use pop_contracts::wire::page::HostAction;
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     owner.attach("page".into());
     let config = page_json(&page(&owner, "page", r#"{"method":"config"}"#));
     assert_eq!(config["ok"], true);
@@ -846,19 +831,19 @@ fn page_config_and_native_actions_share_the_owners_lifecycle_fence() {
 #[test]
 fn speech_requests_reach_the_host_only_when_the_app_declared_speech() {
     use command::PageDispatch;
-    use pop_runtime::page_wire::HostAction;
+    use pop_contracts::wire::page::HostAction;
     let id = "0123456789abcdef".repeat(4);
     let request = json!({"method":"speech.transcribe","attachment":id,"locale":"en-US"}).to_string();
 
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     owner.attach("page".into());
     let undeclared = page(&owner, "page", &request);
     assert!(matches!(undeclared, PageDispatch::Reply { failure: None, .. }), "a definite answer, not a fault");
     let outcome = &page_json(&undeclared)["outcome"];
     assert_eq!((outcome["status"].as_str(), outcome["reason"].as_str()), (Some("unavailable"), Some("notDeclared")));
     assert!(outcome["message"].as_str().unwrap().contains("capabilities"));
-    let typed = pop_runtime::page_wire::PageRequest::decode(&request).unwrap();
+    let typed = pop_contracts::wire::page::PageRequest::decode(&request).unwrap();
     let (reply, received) = mpsc::channel();
     command::page_typed(&owner, "page".into(), typed, move |dispatch| reply.send(dispatch).unwrap());
     let typed = received.recv_timeout(Duration::from_secs(5)).unwrap();
@@ -868,7 +853,7 @@ fn speech_requests_reach_the_host_only_when_the_app_declared_speech() {
     assert_eq!(page_json(&page(&owner, "page", &request))["code"], "closing");
 
     let (_dir, path) = document_declaring(&["speech"]);
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     owner.attach("page".into());
     match page(&owner, "page", &request) {
         PageDispatch::Host { action: HostAction::SpeechTranscribe { attachment, locale } } => {
@@ -892,4 +877,19 @@ fn speech_requests_reach_the_host_only_when_the_app_declared_speech() {
     assert_eq!(page_json(&malformed)["reason"], "invalid_request");
     assert_eq!(page_json(&page(&owner, "replaced", &request))["code"], "owner_replaced");
     close(&owner);
+}
+
+#[test]
+fn the_permanent_protocol_refusal_keeps_its_exact_bytes() {
+    let error = pop_contracts::Error {
+        code: pop_contracts::wire::Code::RequiresUpdate,
+        message: "Update pop".into(),
+        op_index: None,
+        path: vec![],
+    }
+    .into();
+    assert_eq!(
+        pop_runtime::command::failure(error, false, false),
+        r#"{"ok":false,"error":"Update pop","code":"rejected","reason":"requires_update"}"#
+    );
 }

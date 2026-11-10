@@ -1,5 +1,5 @@
 //! A fresh bounded QuickJS realm, with no host functions exposed to authored code.
-use crate::{Job, JobKind, OUTPUT, RUNTIME_ABI};
+use pop_contracts::evaluator::{Job, JobKind, OUTPUT, RUNTIME_ABI};
 use rquickjs::{CatchResultExt, Function};
 /// One prelude per admitted runtime ABI, index `abi - 1`: raising `RUNTIME_ABI` does not
 /// compile until the new prelude is added, and a released ABI's prelude stays. A released
@@ -25,7 +25,9 @@ pub(crate) fn evaluate_job(input: Job<'_>, interrupted: impl FnMut() -> bool + '
             {
                 let raster = input.raster.ok_or("Raster job requires frames and images")?;
                 raster.batch.validate()?;
-                if serde_json::to_vec(&raster.batch).map_err(|e| e.to_string())?.len() > crate::MARKUP_BYTES {
+                if serde_json::to_vec(&raster.batch).map_err(|e| e.to_string())?.len()
+                    > pop_contracts::evaluator::MARKUP_BYTES
+                {
                     return Err("Capture markup exceeds 16 MiB".into());
                 }
                 return crate::render::raster(raster, input.mode);

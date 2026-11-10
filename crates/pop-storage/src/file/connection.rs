@@ -1,17 +1,13 @@
 //! Connection policy and writer-owned transactions.
 use super::check::{markers, one};
 use super::{STORAGE_VERSION, check};
-use crate::error::failed;
-use crate::error::{Result, sqlite};
-use rusqlite::{Connection, Transaction, TransactionBehavior, config::DbConfig, limits::Limit};
-use {
-    rusqlite::OpenFlags,
-    std::{
-        fs,
-        path::{Path, PathBuf},
-        time::Duration,
-    },
-};
+use crate::error::{Result, failed, sqlite};
+use rusqlite::config::DbConfig;
+use rusqlite::limits::Limit;
+use rusqlite::{Connection, OpenFlags, Transaction, TransactionBehavior};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::time::Duration;
 
 /// The file's path with its folder resolved: NOFOLLOW refuses a symbolic link anywhere in
 /// a path, while the file itself must not be one.
@@ -47,7 +43,8 @@ fn configure_connection(conn: &Connection) -> Result<()> {
         .map_err(sqlite("open"))?;
     let version = one(conn, "PRAGMA user_version")?;
     if version <= STORAGE_VERSION {
-        conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, crate::STORAGE_BYTES as i32).map_err(sqlite("open"))?;
+        conn.set_limit(Limit::SQLITE_LIMIT_LENGTH, pop_contracts::wire::STORAGE_BYTES as i32)
+            .map_err(sqlite("open"))?;
     }
     Ok(())
 }

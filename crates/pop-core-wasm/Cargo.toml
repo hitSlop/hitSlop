@@ -14,7 +14,8 @@ test = false
 doctest = false
 
 [dependencies]
-pop-core = { path = "../pop-core", default-features = false }
+pop-contracts = { path = "../pop-contracts" }
+pop-core = { path = "../pop-core" }
 
 # Only the WASM build compiles the adapter: on the host, wasm-bindgen's proc macros would
 # change the features of every other proc macro, and so the whole host graph.

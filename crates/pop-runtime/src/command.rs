@@ -1,10 +1,9 @@
 //! Shared page admission and replies; native socket routing lives in `native`.
-use crate::{
-    Code,
-    app::Capability,
-    owner::{self, Failure, FailureKind, Owner},
-    wire::{self, OutcomeCode, PageRequest},
-};
+use crate::owner;
+use crate::owner::{Failure, FailureKind, Owner};
+use pop_contracts::app::Capability;
+use pop_contracts::wire;
+use pop_contracts::wire::{Code, OutcomeCode, PageRequest};
 use serde_json::value::RawValue;
 mod native;
 pub use native::*;
@@ -161,7 +160,7 @@ fn page_validated(
             }),
         ),
         PageRequest::Apply { batch } => (
-            Request::Apply { batch, origin: crate::Origin::Page },
+            Request::Apply { batch, origin: pop_core::Origin::Page },
             Box::new(|reply| match reply {
                 Reply::Applied { sequence, ids, text } => Some(Success::Apply {
                     ok: True,
@@ -282,9 +281,6 @@ fn page_validated(
 pub fn protocol() -> String {
     serde_json::json!({ "version": wire::ENGINE_PROTOCOL }).to_string()
 }
-/// What to say when a caller names `version`: nothing when this build serves it, otherwise
-/// which side is older. The wording is part of the permanent refusal path.
-pub use pop_contracts::wire::socket::protocol_mismatch;
 
 #[cfg(test)]
 mod tests {

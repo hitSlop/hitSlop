@@ -1,16 +1,16 @@
 //! The device-local receipt of the last version the relay and the local save both hold,
 //! never document state or credentials.
-use crate::{client::*, transport};
+use crate::client::*;
+use crate::transport;
+use pop_contracts::hex;
+use pop_core::sync::PauseKind;
 use pop_runtime::owner::{Owner, Reply, Request};
-use pop_sharing_protocol::hex;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::{
-    fs::{File, OpenOptions},
-    io::{Read, Write},
-    path::PathBuf,
-};
-use std::{path::Path, time::Instant};
+use std::fs::{File, OpenOptions};
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 /// Local journal failures retain retryability and their underlying cause.
 #[derive(Debug)]

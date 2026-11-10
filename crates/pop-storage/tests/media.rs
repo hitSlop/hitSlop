@@ -1,4 +1,5 @@
-use pop_storage::media::{ASSET_TYPES, asset_key, asset_type, attachment_type, check_asset};
+use pop_contracts::media::{ASSET_TYPES, asset_key, asset_type};
+use pop_storage::media::{attachment_type, check_asset};
 
 #[test]
 fn attachments_use_passive_signatures_and_never_executable_text() {

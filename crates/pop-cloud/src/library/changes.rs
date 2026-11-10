@@ -35,7 +35,7 @@ mod tests {
     use super::*;
     #[test]
     fn snapshot_callbacks_can_read_committed_rows_after_projection_locks_are_released() {
-        let (directory, template) = crate::test_support::fixture();
+        let (directory, template) = crate::test_support::template_fixture();
         let library = Library::open(&directory.path().join("library"), "account-a").unwrap();
         let weak = Arc::downgrade(&library);
         let snapshots = Arc::new(Mutex::new(Vec::new()));

@@ -1,19 +1,22 @@
 //! The document file: packing a build, the checks every open runs, creating and copying
 //! documents, the writer lock and discovery, attachments, artwork, assets and recovery.
 use crate::support;
-use pop_core::{Code, Origin};
-use pop_storage::file::{self, Artwork, Kind, TemplateSource};
-use pop_storage::registry::{self, Lease};
+use pop_contracts::catalog::TemplateSource;
+use pop_contracts::wire::Code;
+use pop_core::Origin;
+use pop_storage::file::{Artwork, Kind};
+use pop_storage::registry::Lease;
 use pop_storage::store::{Error, Mode, Store};
-use rusqlite::{Connection, config::DbConfig};
+use pop_storage::{file, registry};
+use pop_testkit::images::{decoded, encoded, png, render_of};
+use pop_testkit::packed::{
+    APP, INITIAL, RenderedArtwork, SCHEMA, code, document, font, font_key, raw, renders, stage, template, temporaries,
+};
+use rusqlite::Connection;
+use rusqlite::config::DbConfig;
 use std::fs;
 use std::path::{Path, PathBuf};
-use support::ApplyJson;
-use support::{App, isolate_registry, registry_folder, write_app};
-
-const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"}}}"#;
-const INITIAL: &str = r#"{"title":"Initial"}"#;
-const APP: App = App::new(SCHEMA, INITIAL);
+use support::{App, ApplyJson, registry_folder, write_app};
 
 /// Markers restart at 1, so a file an older product wrote can hold this build's tables and
 /// markers. Only its SQLite application ID tells it apart: it is refused before anything
@@ -195,8 +198,8 @@ fn widget_program_is_required_at_pack_and_private_when_opened() {
     let store = Store::open(&document, Mode::Snapshot).unwrap();
     assert!(store.app().widget.as_ref().unwrap().contains("__popWidget"));
     let reader = store.resource_reader().unwrap();
-    assert!(reader.info(file::ResourceRoute::App, "widget.js").unwrap().is_none());
-    assert!(reader.read_range(file::ResourceRoute::App, "widget.js", 0, 100).unwrap().is_none());
+    assert!(reader.info(pop_contracts::resources::ResourceRoute::App, "widget.js").unwrap().is_none());
+    assert!(reader.read_range(pop_contracts::resources::ResourceRoute::App, "widget.js", 0, 100).unwrap().is_none());
 }
 
 fn crashed_owner(doc: &Path, json: &str) {
@@ -212,54 +215,6 @@ fn crashed_owner(doc: &Path, json: &str) {
         .unwrap();
     drop(lease);
     fs::write(file, json).unwrap();
-}
-/// A build's stage: its explicit BuildInput and assets.
-fn stage(dir: &Path) -> PathBuf {
-    isolate_registry();
-    let stage = dir.join("stage");
-    fs::create_dir_all(stage.join("assets")).unwrap();
-    write_app(&stage, APP);
-    fs::write(stage.join("assets/ui.js"), "export default { mount() { return {}; } };\n".repeat(64)).unwrap();
-    support::add_asset(&stage, "ui.css", "text/css", b"body { color: var(--pop-accent); }");
-    support::add_asset(&stage, &font_key(), "font/woff2", &font());
-    stage
-}
-fn font() -> Vec<u8> {
-    let mut bytes: Vec<u8> = (0..=255u8).cycle().take(4096).collect();
-    bytes[..4].copy_from_slice(b"wOF2");
-    bytes
-}
-fn font_key() -> String {
-    support::media_key(&font(), "woff2")
-}
-fn template(dir: &Path) -> PathBuf {
-    let out = dir.join("Template.pop");
-    support::pack(&stage(dir), &out).unwrap();
-    out
-}
-fn document(dir: &Path) -> PathBuf {
-    let doc = dir.join("Doc.pop");
-    file::create_document(&template(dir), &doc).unwrap();
-    doc
-}
-fn raw(path: &Path) -> Connection {
-    let conn = Connection::open(path).unwrap();
-    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, false).unwrap();
-    conn
-}
-fn code(error: Error) -> Code {
-    match error {
-        Error::Rejected(e) => e.code,
-        other => panic!("expected a refusal, got {other:?}"),
-    }
-}
-fn temporaries(dir: &Path) -> Vec<String> {
-    fs::read_dir(dir)
-        .unwrap()
-        .filter_map(|e| e.ok())
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .filter(|n| n.ends_with(".tmp"))
-        .collect()
 }
 
 #[test]
@@ -457,18 +412,9 @@ fn raised(doc: &Path) -> [String; 3] {
     let storage: i64 = raw(doc).query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
     [
         format!("PRAGMA user_version={}", storage + 1),
-        format!("UPDATE app SET package_format={}", pop_core::PACKAGE_FORMAT + 1),
-        format!("UPDATE app SET runtime_abi={}", pop_core::RUNTIME_ABI + 1),
+        format!("UPDATE app SET package_format={}", pop_contracts::wire::PACKAGE_FORMAT + 1),
+        format!("UPDATE app SET runtime_abi={}", pop_contracts::wire::RUNTIME_ABI + 1),
     ]
-}
-fn png(width: u32, height: u32, color_type: u8) -> Vec<u8> {
-    let mut bytes = vec![];
-    let mut encoder = png::Encoder::new(&mut bytes, width, height);
-    encoder.set_color(if color_type == 6 { png::ColorType::Rgba } else { png::ColorType::Rgb });
-    encoder.set_depth(png::BitDepth::Eight);
-    let channels = if color_type == 6 { 4 } else { 3 };
-    encoder.write_header().unwrap().write_image_data(&vec![255; width as usize * height as usize * channels]).unwrap();
-    bytes
 }
 /// Intentionally no pixels: dimensions are refused before decoding a frame.
 fn oversized_png_header() -> Vec<u8> {
@@ -513,17 +459,6 @@ fn a_stage_packs_into_a_template_and_a_rebuild_replaces_only_templates() {
     assert!(temporaries(dir.path()).is_empty());
 }
 
-/// A real PNG of 8-bit RGBA `pixels`, stored uncompressed.
-fn encoded(width: u32, height: u32, pixels: &[u8]) -> Vec<u8> {
-    let mut bytes = vec![];
-    let mut encoder = png::Encoder::new(&mut bytes, width, height);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    encoder.set_compression(png::Compression::NoCompression);
-    encoder.write_header().unwrap().write_image_data(pixels).unwrap();
-    bytes
-}
-
 #[test]
 fn pack_refuses_a_png_header_without_pixels_and_keeps_the_previous_template() {
     let dir = tempfile::tempdir().unwrap();
@@ -536,22 +471,6 @@ fn pack_refuses_a_png_header_without_pixels_and_keeps_the_previous_template() {
     support::artwork(&stage, "preview", &image[..33]);
     assert!(support::pack(&stage, &output).is_err(), "A valid IHDR without pixel data is not an image");
     assert_eq!(fs::read(output).unwrap(), before);
-}
-/// A PNG's pixels as 8-bit RGBA, whatever colour type it stores.
-fn decoded(png: &[u8]) -> Vec<u8> {
-    let mut decoder = png::Decoder::new(std::io::Cursor::new(png));
-    decoder.set_transformations(png::Transformations::normalize_to_color8());
-    let mut reader = decoder.read_info().unwrap();
-    let mut buffer = vec![0; reader.output_buffer_size().unwrap()];
-    let info = reader.next_frame(&mut buffer).unwrap();
-    let pixels = &buffer[..info.buffer_size()];
-    match info.color_type {
-        png::ColorType::Rgba => pixels.to_vec(),
-        png::ColorType::Rgb => pixels.chunks(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect(),
-        png::ColorType::GrayscaleAlpha => pixels.chunks(2).flat_map(|p| [p[0], p[0], p[0], p[1]]).collect(),
-        png::ColorType::Grayscale => pixels.iter().flat_map(|&g| [g, g, g, 255]).collect(),
-        png::ColorType::Indexed => unreachable!("normalizing expands a palette"),
-    }
 }
 
 /// Packing stores artwork losslessly smaller: every pixel decodes the same, fully
@@ -580,25 +499,6 @@ fn packed_artwork_is_losslessly_smaller() {
         assert!(stored.len() < input.len(), "the {name} is stored smaller");
         assert_eq!(&decoded(&stored), pixels, "the {name} decodes to the same pixels");
     }
-}
-
-type RenderedArtwork = Result<Vec<(Artwork, Option<Vec<u8>>)>, Error>;
-/// A stand-in for the capture renderer: it draws each role asked for with `draw` and notes
-/// each batch it was asked for, from the staged template.
-fn renders<'a>(
-    asked: &'a std::cell::RefCell<Vec<Vec<Artwork>>>,
-    draw: impl Fn(Artwork) -> Option<Vec<u8>> + 'a,
-) -> impl Fn(&Path, &[Artwork]) -> RenderedArtwork + 'a {
-    move |template, roles| {
-        assert_eq!(file::open(template, true).unwrap().kind, Kind::Template, "renders the staged template");
-        asked.borrow_mut().push(roles.to_vec());
-        Ok(roles.iter().map(|&name| (name, draw(name))).collect())
-    }
-}
-/// A 512 × 512 image in `shade`, uncompressed as a renderer returns it, and its pixels.
-fn render_of(shade: u8) -> (Vec<u8>, Vec<u8>) {
-    let pixels: Vec<u8> = (0..512 * 512usize).flat_map(|i| [shade, (i % 251) as u8, 0x77, 255]).collect();
-    (encoded(512, 512, &pixels), pixels)
 }
 
 /// Rendered artwork is stored exactly as supplied artwork is: checked, then optimized, so a
@@ -724,7 +624,7 @@ fn pack_checks_the_whole_build_before_publishing_anything() {
     }
     let dir = tempfile::tempdir().unwrap();
     let stage = stage(dir.path());
-    fs::write(stage.join("assets/ui.js"), vec![b' '; pop_core::ASSET_FILE_BYTES + 1]).unwrap();
+    fs::write(stage.join("assets/ui.js"), vec![b' '; pop_contracts::wire::ASSET_FILE_BYTES + 1]).unwrap();
     assert!(support::pack(&stage, &dir.path().join("Big.pop")).is_err(), "an asset over 25 MiB");
     write_app(&stage, App { abi: 99, ..APP });
 
@@ -811,7 +711,7 @@ fn hostile_layouts_and_rows_are_refused_before_any_value_is_read() {
     raw(&doc)
         .execute(
             "INSERT INTO assets VALUES('big.bin', 'application/octet-stream', 'identity', ?1, zeroblob(?1))",
-            [pop_core::ASSET_FILE_BYTES as i64 + 1],
+            [pop_contracts::wire::ASSET_FILE_BYTES as i64 + 1],
         )
         .unwrap();
     let started = std::time::Instant::now();
@@ -822,7 +722,7 @@ fn hostile_layouts_and_rows_are_refused_before_any_value_is_read() {
     raw(&doc)
         .execute(
             "INSERT INTO assets VALUES('bomb.js', 'text/javascript', 'br', ?, x'789c')",
-            [pop_core::ASSET_FILE_BYTES as i64 + 1],
+            [pop_contracts::wire::ASSET_FILE_BYTES as i64 + 1],
         )
         .unwrap();
     assert_eq!(code(file::open(&doc, true).err().unwrap()), Code::InvalidRequest);
@@ -852,7 +752,7 @@ fn a_newer_app_format_is_refused_before_its_tables_are_compared() {
              CREATE TABLE wider(key TEXT PRIMARY KEY, media_type TEXT NOT NULL, encoding TEXT NOT NULL CHECK(encoding IN ('identity','br','zstd')), size INTEGER NOT NULL, bytes BLOB NOT NULL);
              INSERT INTO wider SELECT * FROM assets; DROP TABLE assets; ALTER TABLE wider RENAME TO assets;
              UPDATE app SET package_format={};",
-            pop_core::PACKAGE_FORMAT + 1
+            pop_contracts::wire::PACKAGE_FORMAT + 1
         ))
         .unwrap();
     let before = fs::read(&doc).unwrap();
@@ -966,8 +866,10 @@ fn template_folders_list_their_templates_and_why_others_were_left_out() {
         (TemplateSource::Installed, missing.clone()),
     ];
     let catalog = file::list_templates(&roots);
-    let folders: Vec<_> =
-        roots.iter().map(|(source, path)| file::Folder { source: *source, path: path.clone() }).collect();
+    let folders: Vec<_> = roots
+        .iter()
+        .map(|(source, path)| pop_contracts::catalog::Folder { source: *source, path: path.clone() })
+        .collect();
     assert_eq!(catalog.folders, folders, "every listed folder, made or not");
     let listed: Vec<_> = catalog.templates.iter().map(|t| (t.slug.as_str(), t.source, t.path.clone())).collect();
     assert_eq!(
@@ -979,7 +881,7 @@ fn template_folders_list_their_templates_and_why_others_were_left_out() {
     );
     assert_eq!(
         (catalog.templates[0].title.as_str(), &catalog.templates[0].categories[..]),
-        ("Checklist", &[pop_core::app::Category::Utilities][..])
+        ("Checklist", &[pop_contracts::app::Category::Utilities][..])
     );
     assert_eq!(serde_json::to_value(&catalog.templates[0]).unwrap()["categories"], serde_json::json!(["utilities"]));
     let left_out: Vec<_> = catalog.issues.iter().map(|issue| issue.split(':').next().unwrap()).collect();
@@ -1118,11 +1020,14 @@ fn attachments_are_content_addressed_bounded_and_verified() {
     assert_eq!(store.put_attachment(b"hello").unwrap(), first, "storing the same bytes again is a no-op");
     assert_eq!(store.attachment(&first.id).unwrap(), b"hello");
     assert_eq!(store.attachments().unwrap(), vec![first.clone()]);
-    assert_eq!(code(store.put_attachment(&vec![0; pop_core::ATTACHMENT_FILE_BYTES + 1]).unwrap_err()), Code::TooLarge);
+    assert_eq!(
+        code(store.put_attachment(&vec![0; pop_contracts::wire::ATTACHMENT_FILE_BYTES + 1]).unwrap_err()),
+        Code::TooLarge
+    );
     assert_eq!(code(store.attachment(&"0".repeat(64)).unwrap_err()), Code::PathNotFound);
     assert_eq!(code(store.attachment("../x").unwrap_err()), Code::InvalidId);
     // A document holds a bounded number of attachments; bytes it already holds still store.
-    for index in 1..pop_core::ATTACHMENT_COUNT {
+    for index in 1..pop_contracts::wire::ATTACHMENT_COUNT {
         store.put_attachment(format!("blob-{index}").as_bytes()).unwrap();
     }
     assert_eq!(code(store.put_attachment(b"one too many").unwrap_err()), Code::TooLarge);
@@ -1363,8 +1268,8 @@ fn commands_are_checked_definitions_and_private_programs() {
     assert_eq!(app.app.commands()[0].name, "addTask");
     let reader = Store::open(&template, Mode::Snapshot).unwrap().resource_reader().unwrap();
     for key in ["commands.js", "../commands.js", "media/commands.js"] {
-        assert!(reader.info(file::ResourceRoute::App, key).unwrap().is_none());
-        assert!(reader.read_range(file::ResourceRoute::App, key, 0, u64::MAX).unwrap().is_none());
+        assert!(reader.info(pop_contracts::resources::ResourceRoute::App, key).unwrap().is_none());
+        assert!(reader.read_range(pop_contracts::resources::ResourceRoute::App, key, 0, u64::MAX).unwrap().is_none());
     }
     raw(&template)
         .execute("UPDATE assets SET bytes=x'ff',size=1,encoding='identity' WHERE key='commands.js'", [])
@@ -1376,7 +1281,9 @@ fn commands_are_checked_definitions_and_private_programs() {
 
 #[test]
 fn resource_responses_share_range_and_header_policy() {
-    use file::{ResourceInfo, ResourceRoute, resource_response};
+    use pop_contracts::resources::ResourceInfo;
+    use pop_contracts::resources::ResourceRoute;
+    use pop_contracts::resources::resource_response;
     for (range, status, span) in [
         (None, 200, Some((0, 10))),
         (Some("bytes=0-1"), 206, Some((0, 2))),
@@ -1427,7 +1334,7 @@ fn resource_responses_share_range_and_header_policy() {
 
 #[test]
 fn resources_are_served_whole_or_in_ranges_with_checked_types() {
-    use file::ResourceRoute::App;
+    use pop_contracts::resources::ResourceRoute::App;
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
     let reader = Store::open(&doc, Mode::Snapshot).unwrap().resource_reader().unwrap();
@@ -1465,7 +1372,7 @@ fn artwork_is_checked_as_every_open_checks_it() {
     let preview = png(640, 480, 6);
     store.set_artwork(&[(Artwork::Preview, &preview)]).unwrap();
     let mut oversized = png(640, 480, 6);
-    oversized.resize(pop_core::ASSET_FILE_BYTES + 1, 0);
+    oversized.resize(pop_contracts::wire::ASSET_FILE_BYTES + 1, 0);
     let huge = oversized_png_header();
     for (name, bytes) in [
         (Artwork::Preview, oversized.as_slice()),
@@ -1689,7 +1596,8 @@ fn the_app_row_seals_assets_against_conflict_and_rowid_bypasses() {
 
 #[test]
 fn attachment_urls_check_the_whole_blob_before_serving_even_one_byte() {
-    use file::ResourceRoute::{App, Attachment};
+    use pop_contracts::resources::ResourceRoute::App;
+    use pop_contracts::resources::ResourceRoute::Attachment;
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
     let store = Store::open(&doc, Mode::Document).unwrap();
@@ -1725,7 +1633,9 @@ fn attachment_urls_check_the_whole_blob_before_serving_even_one_byte() {
 // name is only a catalog label. Oracle: the file lists, opens and edits, under `other`.
 #[test]
 fn a_category_this_build_does_not_know_reads_as_other() {
-    use pop_core::app::Category::{Other, Popular, Utilities};
+    use pop_contracts::app::Category::Other;
+    use pop_contracts::app::Category::Popular;
+    use pop_contracts::app::Category::Utilities;
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
     for (primary, secondary, expected) in [
@@ -1782,7 +1692,7 @@ fn saved_apps_open_under_their_format_and_damaged_artwork_reads_as_absent() {
 // content, and a damaged blob is still damage.
 #[test]
 fn an_attachment_labelled_octet_stream_reads_whatever_the_classifier_now_says() {
-    use file::ResourceRoute::Attachment;
+    use pop_contracts::resources::ResourceRoute::Attachment;
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
     let store = Store::open(&doc, Mode::Document).unwrap();
@@ -1820,7 +1730,7 @@ fn an_attachment_labelled_octet_stream_reads_whatever_the_classifier_now_says() 
 
 #[test]
 fn streaming_attachment_verification_preserves_large_iso_brand_headers() {
-    use file::ResourceRoute::Attachment;
+    use pop_contracts::resources::ResourceRoute::Attachment;
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
     let store = Store::open(&doc, Mode::Document).unwrap();

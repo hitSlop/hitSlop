@@ -5,7 +5,8 @@
 //! Host dispatches share ordinary admission. Two independent-copy producers may be
 //! outstanding; generated snapshot bytes also retain a lease through their completion.
 use super::Request;
-use std::io::{self, Write};
+use std::io;
+use std::io::Write;
 use std::sync::{Arc, Mutex};
 
 const ORDINARY_REQUESTS: usize = 128;
@@ -149,7 +150,7 @@ fn retained_bytes(request: &Request) -> usize {
 }
 // Capacity accounting estimates memory retained by the request, not total process
 // memory. Keep the serialized-size charge too: JSON escaping can cost more than storage.
-fn batch_capacity(batch: &crate::Batch) -> usize {
+fn batch_capacity(batch: &pop_contracts::wire::Batch) -> usize {
     let mut bytes = vector_capacity(&batch.intents).saturating_add(optional_string(&batch.if_version));
     for intent in &batch.intents {
         bytes = bytes.saturating_add(intent_capacity(intent));
@@ -162,19 +163,19 @@ fn vector_capacity<T>(items: &Vec<T>) -> usize {
 fn optional_string(value: &Option<String>) -> usize {
     value.as_ref().map_or(0, String::capacity)
 }
-fn path_capacity(path: &Vec<crate::Segment>) -> usize {
+fn path_capacity(path: &Vec<pop_contracts::wire::Segment>) -> usize {
     path.iter().fold(vector_capacity(path), |bytes, segment| {
         bytes.saturating_add(match segment {
-            crate::Segment::Key(key) => key.capacity(),
-            crate::Segment::Id { id } => id.capacity(),
-            crate::Segment::Index { .. } => 0,
+            pop_contracts::wire::Segment::Key(key) => key.capacity(),
+            pop_contracts::wire::Segment::Id { id } => id.capacity(),
+            pop_contracts::wire::Segment::Index { .. } => 0,
         })
     })
 }
-fn anchor_capacity(anchor: &Option<crate::Anchor>) -> usize {
+fn anchor_capacity(anchor: &Option<pop_contracts::wire::Anchor>) -> usize {
     match anchor {
-        Some(crate::Anchor::Before { before }) => before.capacity(),
-        Some(crate::Anchor::After { after }) => after.capacity(),
+        Some(pop_contracts::wire::Anchor::Before { before }) => before.capacity(),
+        Some(pop_contracts::wire::Anchor::After { after }) => after.capacity(),
         None => 0,
     }
 }
@@ -200,8 +201,8 @@ pub(super) fn value_capacity(value: &serde_json::Value) -> usize {
         serde_json::Value::Null | serde_json::Value::Bool(_) | serde_json::Value::Number(_) => 0,
     }
 }
-fn intent_capacity(intent: &crate::Intent) -> usize {
-    use crate::Intent;
+fn intent_capacity(intent: &pop_contracts::wire::Intent) -> usize {
+    use pop_contracts::wire::Intent;
     match intent {
         Intent::Set { path, value, from, .. } => {
             path_capacity(path).saturating_add(value_capacity(value)).saturating_add(optional_string(from))

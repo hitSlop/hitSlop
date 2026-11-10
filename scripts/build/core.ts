@@ -74,6 +74,11 @@ export async function buildCoreWasm() {
  * (`.github/workflows/engines.yml`); a local build covers only this machine. */
 export const enginePlatforms = platforms.map(item => item.platform);
 
+/** Release-only corpus capture; never bundled with the document engine. */
+export async function buildCompat(): Promise<void> {
+  await run(["cargo", "build", "--locked", "--profile", cargoProfile(), "-p", "pop-compat"]);
+}
+
 /** The CLI's file engine (`cargoOutput("pop-engine")`), from the same locked core. On a Mac
  * it builds with the app's core library: alone, the engine's graph would differ (the
  * library's build dependencies add features), and each build would undo the other. */

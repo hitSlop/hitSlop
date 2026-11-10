@@ -4,18 +4,18 @@
 mod actor;
 mod admission;
 mod failure;
-use crate::file::{self, Artwork};
-use crate::{Origin, store, theme};
 use actor::Message;
 pub use actor::{SyncConnection, SyncEvent, SyncSink};
 pub(crate) use admission::{Permit, serialized_size};
 pub use failure::{Failure, FailureKind};
+use pop_core::{Origin, theme};
 pub use pop_runner::Evaluator;
+use pop_storage::file::Artwork;
+use pop_storage::{file, store};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
-use std::time::Duration;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 type Result<T> = std::result::Result<T, Failure>;
 /// Native theme controls use this typed adapter to the same batch path as page edits.
@@ -26,20 +26,26 @@ pub enum ThemeChange {
 }
 pub fn theme_request(change: ThemeChange) -> Request {
     let intent = match change {
-        ThemeChange::Set { values } => {
-            crate::Intent::SetTheme { values: values.into_iter().map(|(k, v)| (k, Some(v))).collect(), replace: None }
+        ThemeChange::Set { values } => pop_contracts::wire::Intent::SetTheme {
+            values: values.into_iter().map(|(k, v)| (k, Some(v))).collect(),
+            replace: None,
+        },
+        ThemeChange::ResetAll => {
+            pop_contracts::wire::Intent::SetTheme { values: Default::default(), replace: Some(true) }
         }
-        ThemeChange::ResetAll => crate::Intent::SetTheme { values: Default::default(), replace: Some(true) },
-        ThemeChange::ImportFile { file } => crate::Intent::ImportTheme { file },
+        ThemeChange::ImportFile { file } => pop_contracts::wire::Intent::ImportTheme { file },
     };
-    Request::Apply { batch: crate::Batch { intents: vec![intent], if_version: None }, origin: Origin::Window }
+    Request::Apply {
+        batch: pop_contracts::wire::Batch { intents: vec![intent], if_version: None },
+        origin: Origin::Window,
+    }
 }
 
 pub enum Request {
     /// The document as it reads (`Document::reading`), and its publication sequence.
     State,
     Apply {
-        batch: crate::Batch,
+        batch: pop_contracts::wire::Batch,
         origin: Origin,
     },
     Undo {
@@ -128,7 +134,7 @@ pub enum Reply {
     Unit,
     /// One reading and its publication sequence.
     State {
-        reading: crate::Reading,
+        reading: pop_contracts::wire::Reading,
         sequence: u64,
     },
     /// A theme file, the bytes every export writes.
@@ -139,7 +145,7 @@ pub enum Reply {
     Applied {
         sequence: u64,
         ids: Vec<String>,
-        text: Option<crate::TextEdit>,
+        text: Option<pop_core::TextEdit>,
     },
     Theme {
         state: theme::ThemeState,

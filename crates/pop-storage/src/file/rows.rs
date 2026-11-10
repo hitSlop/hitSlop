@@ -5,8 +5,8 @@
 
 use super::Artwork;
 use super::assets::Encoding;
-use crate::app::AppDefinition;
 use crate::error::{Result, sqlite};
+use pop_core::app::AppDefinition;
 use rusqlite::{Connection, OptionalExtension, params};
 
 /// The history's first row, a snapshot, and the updates saved after it, in order: streamed
@@ -47,7 +47,7 @@ pub(crate) fn append_history(conn: &Connection, bytes: &[u8]) -> Result<()> {
 /// The document row that makes a copy of a template a document.
 pub(crate) fn add_document(conn: &Connection) -> Result<()> {
     let mut bytes = [0u8; 16];
-    crate::random(&mut bytes);
+    crate::random(&mut bytes).expect("random bytes");
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     let hex = crate::hex(&bytes);
@@ -130,7 +130,7 @@ pub(crate) fn read_artwork(conn: &Connection, name: Artwork) -> Result<Option<Ve
         .prepare_cached("SELECT length(png) FROM artwork WHERE name=?")
         .and_then(|mut s| s.query_row([name], |r| r.get(0)).optional())
         .map_err(sqlite("read artwork"))?;
-    if length.is_none_or(|n| n as usize > crate::ASSET_FILE_BYTES) {
+    if length.is_none_or(|n| n as usize > pop_contracts::wire::ASSET_FILE_BYTES) {
         return Ok(None);
     }
     let png: Option<Vec<u8>> = conn

@@ -25,7 +25,7 @@ export async function buildCoreIOS() {
   await buildCoreNative();
   const targets = ["aarch64-apple-ios", "aarch64-apple-ios-sim"];
   for (const target of targets) {
-    await run(["cargo", "build", "--locked", "--profile", cargoProfile(), "-p", "pop-core-ffi", "--no-default-features", "--features", "mobile-capture", "--target", target]);
+    await run(["cargo", "build", "--locked", "--profile", cargoProfile(), "-p", "pop-core-ffi", "--target", target]);
   }
   const generated = join(repository, "apps/apple/Packages/PopApple/Generated");
   const temporary = await mkdtemp(join(tmpdir(), "pop-ios-framework-"));

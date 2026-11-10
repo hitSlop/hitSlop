@@ -4,7 +4,8 @@
 //! renders a closed document's export in this executable's restricted evaluator. Only
 //! opening a window needs dotpop.app. Only build/protocol queries and the exact restricted
 //! evaluator entry point are outside the JSON wire.
-use pop_core::{Code, EngineRequest, EngineSuccess, engine::True};
+use pop_contracts::wire::Code;
+use pop_contracts::wire::engine::{EngineRequest, EngineSuccess, True};
 use pop_runtime::command;
 use pop_runtime::owner::{Failure, FailureKind};
 use pop_storage::{file, registry, store};
@@ -27,7 +28,7 @@ fn rejected(reason: Code, error: impl std::fmt::Display) -> String {
 }
 /// A file operation's refusal: nothing changed.
 fn refusal(code: Code, message: impl Into<String>) -> store::Error {
-    store::Error::Rejected(pop_core::Error { code, message: message.into(), op_index: None, path: vec![] })
+    store::Error::Rejected(pop_contracts::Error { code, message: message.into(), op_index: None, path: vec![] })
 }
 /// The restricted evaluator: this same executable, run with `--evaluate-command`.
 fn evaluator() -> Result<pop_runner::Evaluator, String> {
@@ -79,8 +80,8 @@ fn dispatch(request: EngineRequest) -> String {
             }
             EngineRequest::ArtworkExport { file: path, target, output } => {
                 let name = match target {
-                    pop_core::engine::ArtworkTarget::Icon => file::Artwork::Icon,
-                    pop_core::engine::ArtworkTarget::Preview => file::Artwork::Preview,
+                    pop_contracts::wire::engine::ArtworkTarget::Icon => file::Artwork::Icon,
+                    pop_contracts::wire::engine::ArtworkTarget::Preview => file::Artwork::Preview,
                 };
                 let present = file::export_artwork(Path::new(&path), name, Path::new(&output))?;
                 EngineSuccess::ArtworkExport { ok: True, output: present.then_some(output) }
@@ -120,8 +121,10 @@ fn request(input: &str, protocol: u64) -> String {
         Err(error) => return rejected(Code::InvalidRequest, error),
     };
     match request.route() {
-        pop_core::engine::Route::Document => command::request_with_evaluator(request, protocol, evaluator().ok()),
-        pop_core::engine::Route::File => dispatch(request),
+        pop_contracts::wire::engine::Route::Document => {
+            command::request_with_evaluator(request, protocol, evaluator().ok())
+        }
+        pop_contracts::wire::engine::Route::File => dispatch(request),
     }
 }
 fn main() -> ExitCode {
@@ -139,7 +142,7 @@ fn main() -> ExitCode {
             eprintln!("Invalid client protocol");
             return ExitCode::from(2);
         };
-        if let Some(message) = command::protocol_mismatch(version) {
+        if let Some(message) = pop_contracts::wire::socket::protocol_mismatch(version) {
             eprintln!("{message}");
             return ExitCode::from(2);
         }
@@ -153,28 +156,6 @@ fn main() -> ExitCode {
     if args == ["--build-id"] {
         println!("{}", pop_runtime::BUILD_ID);
         return ExitCode::SUCCESS;
-    }
-    if args == ["--limits"] {
-        println!("{}", serde_json::to_string(&pop_core::app::AppDefinition::open_limits()).expect("limits encode"));
-        return ExitCode::SUCCESS;
-    }
-    if args.len() == 2 && args[0] == "--acceptance-vectors" {
-        let result = (|| -> Result<(), Box<dyn std::error::Error>> {
-            let vectors = pop_core::app::AppDefinition::acceptance_vectors()?;
-            let folder = Path::new(&args[1]);
-            std::fs::create_dir_all(folder)?;
-            for (name, vector) in vectors {
-                std::fs::write(folder.join(format!("{name}.json")), serde_json::to_vec_pretty(&vector)?)?;
-            }
-            Ok(())
-        })();
-        return match result {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("Acceptance vectors: {error}");
-                ExitCode::FAILURE
-            }
-        };
     }
     if let Some(folder) = std::env::var_os("POP_TEST_REGISTRY").filter(|folder| !folder.is_empty()) {
         let _ = registry::use_folder(Path::new(&folder));

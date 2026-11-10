@@ -1,10 +1,17 @@
-//! Stored app rows, captured by the producing engine and decoded by later builds.
+//! Stored app rows, captured by the release tool and decoded by later builds.
 //! The three row payloads are Brotli-compressed JSON, encoded as base64 within the
 //! vector's JSON file. Keep the full byte-bound cases without inflating each release's
 //! corpus; integrity hashes the compressed representation, replay checks the raw row.
-use super::*;
-use crate::app::AppDefinition;
-use crate::{Result, encode};
+use crate::encode;
+use pop_contracts::Result;
+use pop_contracts::wire::{
+    APP_TEXT_BYTES, ASSET_FILE_BYTES, ATTACHMENT_ID_LENGTH, COMMAND_NAME_BYTES, COMMANDS, DEFINITION_BYTES,
+    DESCRIPTOR_DEPTH, DESCRIPTOR_DESCRIPTION, DESCRIPTOR_FIELDS, ENUM_VALUES, MANIFEST_BYTES, OPEN_WINDOW_MAX,
+    OPEN_WINDOW_MIN_HEIGHT, OPEN_WINDOW_MIN_WIDTH, PACKAGE_FORMAT, RUNTIME_ABI, SHAPE_COMMANDS, SHAPE_PATH,
+    SHAPE_RADIUS, SHAPE_SEGMENTS, SHAPE_VIEW_BOX, SHAPE_VIEW_BOX_MIN, THEME_LIMIT, THEME_NAME_LIMIT, THEME_TOKENS,
+    open_limits,
+};
+use pop_core::app::AppDefinition;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -58,7 +65,10 @@ impl AcceptanceVector {
         let metadata: Value = serde_json::from_str(&encode(app.metadata())).expect("encoded metadata");
         let definition: Value = serde_json::from_str(&app.definition_json()).expect("encoded definition");
         if !retains(&self.accepted.metadata, &metadata) || !retains(&self.accepted.definition, &definition) {
-            return Err(crate::err(crate::Code::InvalidBytes, "Accepted row re-encodes differently"));
+            return Err(pop_contracts::Error::new(
+                pop_contracts::Code::InvalidBytes,
+                "Accepted row re-encodes differently",
+            ));
         }
         Ok(())
     }
@@ -79,49 +89,43 @@ fn retains(expected: &Value, current: &Value) -> bool {
     }
 }
 
-impl AppDefinition {
-    /// Positive raw-row acceptance cases for release capture, checked by this reader.
-    pub fn acceptance_vectors() -> Result<Vec<(String, AcceptanceVector)>> {
-        acceptance_vectors()
-    }
-
-    /// Classifies the decompressed JSON payloads without parsing the large stored rows.
-    pub fn acceptance_vector_is_large(input: &str) -> Result<bool> {
-        use std::io::Read;
-        let stored: Value =
-            serde_json::from_str(input).map_err(|error| crate::err(crate::Code::InvalidBytes, error))?;
-        let mut total = 0;
-        for field in ["metadata", "definition", "accepted"] {
-            let encoded = stored[field]
-                .as_str()
-                .ok_or_else(|| crate::err(crate::Code::InvalidBytes, "Missing vector payload"))?;
-            let bytes = data_encoding::BASE64
-                .decode(encoded.as_bytes())
-                .map_err(|error| crate::err(crate::Code::InvalidBytes, error))?;
-            let mut reader = brotli::Decompressor::new(bytes.as_slice(), 4096);
-            let mut buffer = [0; 8192];
-            loop {
-                let read = reader.read(&mut buffer).map_err(|error| crate::err(crate::Code::InvalidBytes, error))?;
-                if read == 0 {
-                    break;
-                }
-                total += read;
-                if total > LARGE_ACCEPTANCE_VECTOR_BYTES {
-                    return Ok(true);
-                }
+/// Classifies the decompressed JSON payloads without parsing the large stored rows.
+pub fn acceptance_vector_is_large(input: &str) -> Result<bool> {
+    use std::io::Read;
+    let stored: Value = serde_json::from_str(input)
+        .map_err(|error| pop_contracts::Error::new(pop_contracts::Code::InvalidBytes, error))?;
+    let mut total = 0;
+    for field in ["metadata", "definition", "accepted"] {
+        let encoded = stored[field]
+            .as_str()
+            .ok_or_else(|| pop_contracts::Error::new(pop_contracts::Code::InvalidBytes, "Missing vector payload"))?;
+        let bytes = data_encoding::BASE64
+            .decode(encoded.as_bytes())
+            .map_err(|error| pop_contracts::Error::new(pop_contracts::Code::InvalidBytes, error))?;
+        let mut reader = brotli::Decompressor::new(bytes.as_slice(), 4096);
+        let mut buffer = [0; 8192];
+        loop {
+            let read = reader
+                .read(&mut buffer)
+                .map_err(|error| pop_contracts::Error::new(pop_contracts::Code::InvalidBytes, error))?;
+            if read == 0 {
+                break;
+            }
+            total += read;
+            if total > LARGE_ACCEPTANCE_VECTOR_BYTES {
+                return Ok(true);
             }
         }
-        Ok(false)
     }
-
-    /// Decodes and compares a captured row with its producing reader's typed result.
-    pub fn check_acceptance_vector(input: &str) -> Result<()> {
-        let vector: AcceptanceVector =
-            serde_json::from_str(input).map_err(|error| crate::err(crate::Code::InvalidBytes, error))?;
-        vector.check()
-    }
+    Ok(false)
 }
 
+/// Decodes and compares a captured row with its producing reader's typed result.
+pub fn check_acceptance_vector(input: &str) -> Result<()> {
+    let vector: AcceptanceVector = serde_json::from_str(input)
+        .map_err(|error| pop_contracts::Error::new(pop_contracts::Code::InvalidBytes, error))?;
+    vector.check()
+}
 fn base() -> (Value, Value) {
     (
         json!({
@@ -223,9 +227,11 @@ fn acceptance_vectors_with_large(include_large: bool) -> Result<Vec<(String, Acc
     for _ in 0..100 {
         let data = format!("M0 0A{radius} {radius} 0 1 1 {radius} 0");
         let shape = json!({"path": data});
-        if let Ok(crate::shape::Silhouette::Path { segments, .. }) =
-            crate::shape::silhouette(Some(&shape), f64::from(OPEN_WINDOW_MIN_WIDTH), f64::from(OPEN_WINDOW_MIN_HEIGHT))
-            && segments.len() >= SHAPE_SEGMENTS - (SHAPE_COMMANDS - 2)
+        if let Ok(pop_contracts::shape::Silhouette::Path { segments, .. }) = pop_core::shape::silhouette(
+            Some(&shape),
+            f64::from(OPEN_WINDOW_MIN_WIDTH),
+            f64::from(OPEN_WINDOW_MIN_HEIGHT),
+        ) && segments.len() >= SHAPE_SEGMENTS - (SHAPE_COMMANDS - 2)
         {
             expanded_path = Some(format!("{data}{}", "l0 0".repeat(SHAPE_SEGMENTS - segments.len())));
             break;
@@ -234,8 +240,8 @@ fn acceptance_vectors_with_large(include_large: bool) -> Result<Vec<(String, Acc
     }
     let shape = json!({"path": expanded_path.expect("an arc can reach the stored segment bound")});
     let silhouette =
-        crate::shape::silhouette(Some(&shape), f64::from(OPEN_WINDOW_MIN_WIDTH), f64::from(OPEN_WINDOW_MIN_HEIGHT))?;
-    let crate::shape::Silhouette::Path { segments, .. } = silhouette else { unreachable!() };
+        pop_core::shape::silhouette(Some(&shape), f64::from(OPEN_WINDOW_MIN_WIDTH), f64::from(OPEN_WINDOW_MIN_HEIGHT))?;
+    let pop_contracts::shape::Silhouette::Path { segments, .. } = silhouette else { unreachable!() };
     assert_eq!(segments.len(), SHAPE_SEGMENTS);
     row["window"]["shape"] = shape;
     push(&mut out, "path-segment-max", &metadata, &row)?;
@@ -259,11 +265,14 @@ fn acceptance_vectors_with_large(include_large: bool) -> Result<Vec<(String, Acc
     }
     row["document"] = json!({"kind": "object", "properties": fields});
     push(&mut out, "descriptor-fields-max", &metadata, &row)?;
+    let max_safe =
+        i64::try_from(open_limits().into_iter().find(|limit| limit.name == "MAX_SAFE").expect("integer bound").value)
+            .expect("integer bound fits i64");
     row["document"] = json!({"kind": "object", "properties": {
         "choice": {"kind": "enum", "values": (0..ENUM_VALUES).map(|n| format!("value{n}")).collect::<Vec<_>>(),
             "description": "d".repeat(DESCRIPTOR_DESCRIPTION as usize)},
-        "integer": {"kind": "integer", "min": -crate::MAX_SAFE, "max": crate::MAX_SAFE},
-        "string": {"kind": "string", "minLength": 0, "maxLength": crate::MAX_SAFE},
+        "integer": {"kind": "integer", "min": -max_safe, "max": max_safe},
+        "string": {"kind": "string", "minLength": 0, "maxLength": max_safe},
     }});
     push(&mut out, "enum-description-integer-max", &metadata, &row)?;
     if include_large || APP_TEXT_BYTES <= LARGE_ACCEPTANCE_VECTOR_BYTES {
@@ -351,7 +360,8 @@ fn acceptance_vectors_with_large(include_large: bool) -> Result<Vec<(String, Acc
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use super::{acceptance_vector_is_large, acceptance_vectors_with_large, check_acceptance_vector, retains};
+    use serde_json::json;
     #[test]
     fn reencoding_retains_known_members_and_allows_later_optional_members() {
         let expected = json!({"tokens": [{"token": "accent", "color": "#123456"}]});
@@ -382,12 +392,12 @@ mod tests {
         for (name, vector) in vectors {
             let stored = serde_json::to_string_pretty(&vector).unwrap();
             bytes += stored.len();
-            if AppDefinition::acceptance_vector_is_large(&stored).unwrap() != large {
+            if acceptance_vector_is_large(&stored).unwrap() != large {
                 continue;
             }
             cases += 1;
             vector.check().unwrap_or_else(|error| panic!("{name}: {error}"));
-            AppDefinition::check_acceptance_vector(&stored).unwrap_or_else(|error| panic!("{name}: {error}"));
+            check_acceptance_vector(&stored).unwrap_or_else(|error| panic!("{name}: {error}"));
         }
         assert!(cases > 0, "no vectors selected");
         assert!(bytes <= 3 * 1024 * 1024, "acceptance vectors occupy {bytes} bytes; budget is 3 MiB");

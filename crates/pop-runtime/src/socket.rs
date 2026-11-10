@@ -1,23 +1,18 @@
 //! One bounded newline-JSON exchange per Unix connection. The writer lock remains the
 //! authority; the listener owns only its socket and the owner's discovery publication.
-use crate::{
-    Code,
-    command::{self, ExportHandler, Result},
-    owner::{Failure, FailureKind, Owner},
-};
+use crate::command;
+use crate::command::{ExportHandler, Result};
+use crate::owner::{Failure, FailureKind, Owner};
+use pop_contracts::wire::Code;
 use std::fs;
 use std::io::{Read, Write};
 use std::net::Shutdown;
 use std::os::fd::AsRawFd;
-use std::os::unix::{
-    fs::{MetadataExt, PermissionsExt},
-    net::{UnixListener, UnixStream},
-};
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, AtomicUsize, Ordering},
-};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 fn io(error: impl std::fmt::Display) -> Failure {
@@ -114,11 +109,11 @@ fn write_line(stream: &mut UnixStream, input: &str, deadline: Instant) -> Result
 }
 /// A client's one exchange. Mutations are never retried here, including partial writes.
 pub fn call(path: &Path, input: &str) -> Result<String> {
-    let header: crate::wire::socket::ProtocolHeader =
+    let header: pop_contracts::wire::socket::ProtocolHeader =
         serde_json::from_str(input).map_err(|_| Failure::rejected(Code::InvalidRequest, "Invalid socket request"))?;
-    let hello = crate::encode(&crate::wire::socket::Hello::Hello { protocol: header.protocol });
+    let hello = crate::encode(&pop_contracts::wire::socket::Hello::Hello { protocol: header.protocol });
     let response = exchange(path, &hello, Some(4096))?;
-    let hello = match serde_json::from_str::<crate::wire::socket::HelloSuccess>(&response) {
+    let hello = match serde_json::from_str::<pop_contracts::wire::socket::HelloSuccess>(&response) {
         Ok(hello) => hello,
         Err(_) => {
             // Return a refusal unchanged. The command router validates the failure header;
@@ -183,7 +178,7 @@ impl Server {
             return Err(io("Unsafe socket directory"));
         }
         fs::set_permissions(&folder, fs::Permissions::from_mode(0o700)).map_err(io)?;
-        let path = folder.join(format!("{}.sock", crate::random_hex(16)));
+        let path = folder.join(format!("{}.sock", crate::random_hex(16).expect("random socket identity")));
         let listener = UnixListener::bind(&path).map_err(io)?;
         let setup = fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).map_err(io);
         if let Err(error) = setup {
@@ -221,7 +216,7 @@ impl Server {
         if self.shared.stopped.load(Ordering::Acquire) {
             return Err(Failure::new(FailureKind::Closed, "Socket server is stopped"));
         }
-        self.shared.owner.publish_discovery(&crate::encode(&crate::wire::socket::Discovery {
+        self.shared.owner.publish_discovery(&crate::encode(&pop_contracts::wire::socket::Discovery {
             document_path: self.shared.owner.path().to_string_lossy().into_owned(),
             socket: self.path.to_string_lossy().into_owned(),
         }))

@@ -1,10 +1,11 @@
 //! Bounded PNG acceptance. Pixel validation borrows one decoder row at a time;
 //! neither artwork nor skins allocate a full decoded frame here.
-use crate::{Code, Result, err};
+use crate::{Result, err};
 use png::{BitDepth, ColorType, DecodeOptions, Decoder, Limits};
+use pop_contracts::wire::Code;
 use std::io::Cursor;
 
-use crate::wire::PNG_DECODER_BYTES as DECODER_BYTES;
+use pop_contracts::wire::PNG_DECODER_BYTES as DECODER_BYTES;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Purpose {
@@ -21,7 +22,7 @@ pub struct CheckedPng {
     pub scale: u8,
 }
 
-fn invalid(message: impl ToString) -> crate::Error {
+fn invalid(message: impl ToString) -> pop_contracts::Error {
     err(Code::InvalidRequest, message)
 }
 fn decoder<R: std::io::BufRead + std::io::Seek>(source: R) -> Decoder<R> {
@@ -36,9 +37,9 @@ fn decoder<R: std::io::BufRead + std::io::Seek>(source: R) -> Decoder<R> {
 fn dimensions(width: u32, height: u32) -> Result<()> {
     if width == 0
         || height == 0
-        || width as usize > crate::IMAGE_SIDE
-        || height as usize > crate::IMAGE_SIDE
-        || width.checked_mul(height).is_none_or(|pixels| pixels as usize > crate::IMAGE_PIXELS)
+        || width as usize > pop_contracts::wire::IMAGE_SIDE
+        || height as usize > pop_contracts::wire::IMAGE_SIDE
+        || width.checked_mul(height).is_none_or(|pixels| pixels as usize > pop_contracts::wire::IMAGE_PIXELS)
     {
         return Err(invalid("PNG exceeds the image dimension limit"));
     }
@@ -54,7 +55,7 @@ pub(crate) fn header(bytes: &[u8]) -> Result<()> {
 }
 
 pub fn check(bytes: &[u8], purpose: Purpose) -> Result<CheckedPng> {
-    if bytes.len() > crate::ASSET_FILE_BYTES {
+    if bytes.len() > pop_contracts::wire::ASSET_FILE_BYTES {
         return Err(invalid("PNG exceeds the asset byte limit"));
     }
     refuse_animation(bytes)?;
@@ -75,7 +76,7 @@ pub fn check(bytes: &[u8], purpose: Purpose) -> Result<CheckedPng> {
         let scale = match purpose {
             Purpose::Preview => 1,
             Purpose::Icon => {
-                if (info.width, info.height) != (crate::wire::ICON_SIDE, crate::wire::ICON_SIDE) {
+                if (info.width, info.height) != (pop_contracts::wire::ICON_SIDE, pop_contracts::wire::ICON_SIDE) {
                     return Err(invalid("Icon artwork must be 512 × 512 pixels"));
                 }
                 1
@@ -103,7 +104,7 @@ pub fn check(bytes: &[u8], purpose: Purpose) -> Result<CheckedPng> {
         let channels = if info.color_type == ColorType::Rgba { 4 } else { 3 };
         let sample = if info.bit_depth == BitDepth::Sixteen { 2 } else { 1 };
         let row = (info.width as usize).checked_mul(channels * sample);
-        if row.is_none_or(|length| length > crate::IMAGE_SIDE * 8) {
+        if row.is_none_or(|length| length > pop_contracts::wire::IMAGE_SIDE * 8) {
             return Err(invalid("PNG row exceeds its byte limit"));
         }
         result = CheckedPng { width: info.width, height: info.height, scale };

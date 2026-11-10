@@ -1,6 +1,6 @@
 //! Agent commands evaluate off the serial owner in a native child process.
 use super::*;
-use crate::engine::{False, True};
+use pop_contracts::wire::engine::{False, True};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -22,10 +22,12 @@ impl Invocation {
         take(&mut self.callback)
     }
 }
-const _: () =
-    assert!(crate::RUNTIME_ABI == pop_runner::RUNTIME_ABI, "add the new evaluator ABI arm before raising the marker");
+const _: () = assert!(
+    pop_contracts::wire::RUNTIME_ABI == pop_contracts::evaluator::RUNTIME_ABI,
+    "add the new evaluator ABI arm before raising the marker"
+);
 
-const _: () = assert!(crate::RUNTIME_ABI == 1, "add a current_intents arm before raising RUNTIME_ABI");
+const _: () = assert!(pop_contracts::wire::RUNTIME_ABI == 1, "add a current_intents arm before raising RUNTIME_ABI");
 
 pub(super) struct Work {
     runtime_abi: u64,
@@ -54,7 +56,7 @@ struct Refusal {
 /// vocabulary differs translates its own reply here before decoding. ABI 1's are today's:
 /// they change only additively (see the engineering contract), and the core never loosens
 /// what it accepts to admit them.
-fn current_intents(abi: u64, intents: Vec<Value>) -> Result<Vec<crate::Intent>> {
+fn current_intents(abi: u64, intents: Vec<Value>) -> Result<Vec<pop_contracts::wire::Intent>> {
     match abi {
         1 => intents
             .into_iter()
@@ -90,7 +92,7 @@ impl Work {
     pub(super) fn finish(self, output: std::result::Result<String, String>) -> Message {
         let result = contained(|| {
             let output = output.map_err(host_fault)?;
-            if output.len() > pop_runner::OUTPUT {
+            if output.len() > pop_contracts::evaluator::OUTPUT {
                 return Err(host_fault("Command output is too large"));
             }
             serde_json::from_str(&output).map_err(|_| match serde_json::from_str::<Refusal>(&output) {
@@ -134,7 +136,7 @@ impl Actor {
         }
         let now = self.unix_ms;
         let mut bytes = [0; 16];
-        getrandom::getrandom(&mut bytes).map_err(rejected)?;
+        pop_core::random(&mut bytes).map_err(rejected)?;
         let seed = std::array::from_fn(|i| u32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().expect("four bytes")));
         self.evaluate_command(Invocation {
             generation: self.generation,
@@ -211,7 +213,7 @@ impl Actor {
             }
             let output = result?;
             let intents = current_intents(self.store.app().runtime_abi, output.intents)?;
-            let batch = crate::Batch { intents, if_version: Some(invocation.version.clone()) };
+            let batch = pop_contracts::wire::Batch { intents, if_version: Some(invocation.version.clone()) };
             let accepted = self.edited(|core| core.apply_command(batch, invocation.origin, &invocation.name))?;
             self.accepted(accepted.sequence, accepted.publication, accepted.theme_changed);
             Ok(Reply::Command {
@@ -245,7 +247,7 @@ mod tests {
     use serde_json::json;
 
     fn fixture() -> (tempfile::TempDir, Arc<store::Store>) {
-        crate::registry::use_folder(&std::env::temp_dir().join("pop-test-registry")).unwrap();
+        pop_storage::registry::use_folder(&std::env::temp_dir().join("pop-test-registry")).unwrap();
         let dir = tempfile::tempdir().unwrap();
         let assets = dir.path().join("assets");
         std::fs::create_dir(&assets).unwrap();
@@ -273,9 +275,9 @@ mod tests {
             "artwork":{}
         });
         let template = dir.path().join("Template.pop");
-        crate::file::pack(&input.to_string(), dir.path(), &template, None).unwrap();
+        pop_storage::file::pack(&input.to_string(), dir.path(), &template, None).unwrap();
         let document = dir.path().join("Document.pop");
-        crate::file::create_document(&template, &document).unwrap();
+        pop_storage::file::create_document(&template, &document).unwrap();
         let store = Arc::new(store::Store::open(&document, store::Mode::Document).unwrap());
         (dir, store)
     }

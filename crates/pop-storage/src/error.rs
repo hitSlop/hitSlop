@@ -22,7 +22,7 @@ pub enum Error {
     Closed,
     /// The request breaks a document rule (a theme value, for example); nothing changed.
     #[error("{0}")]
-    Rejected(crate::Error),
+    Rejected(pop_contracts::Error),
     #[error("{0}")]
     Failed(String),
 }
@@ -31,14 +31,14 @@ pub fn failed(message: impl ToString) -> Error {
     Error::Failed(message.to_string())
 }
 /// A refusal under a core error code; nothing changed.
-pub fn rejected(code: crate::Code, message: impl ToString) -> Error {
+pub fn rejected(code: pop_contracts::wire::Code, message: impl ToString) -> Error {
     Error::Rejected(crate::err(code, message))
 }
 pub fn invalid(message: impl ToString) -> Error {
-    rejected(crate::Code::InvalidRequest, message)
+    rejected(pop_contracts::wire::Code::InvalidRequest, message)
 }
 pub(crate) fn requires_update(message: impl ToString) -> Error {
-    rejected(crate::Code::RequiresUpdate, message)
+    rejected(pop_contracts::wire::Code::RequiresUpdate, message)
 }
 /// A SQLite failure as a storage outcome: full, busy, moved, or failed doing `action`.
 pub(crate) fn sqlite(action: &str) -> impl FnOnce(rusqlite::Error) -> Error + '_ {

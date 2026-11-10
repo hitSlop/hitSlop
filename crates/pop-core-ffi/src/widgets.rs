@@ -1,5 +1,6 @@
-use pop_runtime::capture::widgets::{WidgetFamily, WidgetLimits, WidgetViewport};
-use pop_runtime::capture::{CaptureFormat, CaptureOutput, CaptureValue};
+use pop_contracts::capture::{CaptureFormat, CaptureOutput};
+use pop_contracts::widgets::{WidgetFamily, WidgetLimits, WidgetViewport};
+use pop_runtime::capture::CaptureValue;
 
 #[uniffi::remote(Enum)]
 pub enum CaptureFormat {
@@ -46,10 +47,7 @@ pub struct CaptureRuntime {
 impl CaptureRuntime {
     #[uniffi::constructor]
     pub fn new(evaluator_path: String) -> Result<std::sync::Arc<Self>, crate::CoreError> {
-        #[cfg(target_os = "ios")]
-        let evaluator = pop_runtime::owner::Evaluator::in_process_capture(evaluator_path.into());
-        #[cfg(not(target_os = "ios"))]
-        let evaluator = pop_runtime::owner::Evaluator::process(evaluator_path.into(), vec![]);
+        let evaluator = pop_runtime::evaluator(evaluator_path.into());
         let evaluator = evaluator.map_err(pop_storage::store::Error::Failed)?;
         Ok(std::sync::Arc::new(Self { evaluator }))
     }
@@ -91,7 +89,7 @@ pub struct WidgetLimits {
 }
 #[uniffi::export]
 pub fn widget_limits() -> WidgetLimits {
-    pop_runtime::capture::widgets::widget_limits()
+    pop_contracts::widgets::widget_limits()
 }
 
 #[uniffi::remote(Enum)]
@@ -108,7 +106,7 @@ pub struct WidgetViewport {
 }
 #[uniffi::export]
 pub fn widget_viewports() -> Vec<WidgetViewport> {
-    pop_runtime::capture::widgets::widget_viewports()
+    pop_contracts::widgets::widget_viewports()
 }
 
 #[derive(uniffi::Record)]
@@ -121,8 +119,8 @@ pub struct RenderedWidgets {
     pub source_version: String,
     pub images: Vec<RenderedWidgetImage>,
 }
-impl From<pop_runtime::capture::widgets::WidgetCapture> for RenderedWidgets {
-    fn from(capture: pop_runtime::capture::widgets::WidgetCapture) -> Self {
+impl From<pop_contracts::widgets::WidgetCapture> for RenderedWidgets {
+    fn from(capture: pop_contracts::widgets::WidgetCapture) -> Self {
         Self {
             source_version: capture.source_version,
             images: capture

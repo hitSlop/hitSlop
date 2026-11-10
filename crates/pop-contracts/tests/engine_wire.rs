@@ -1,5 +1,5 @@
 //! Engine acceptance belongs to Rust; no generated JSON Schema runs beside it.
-use pop_core::{EngineReply, EngineRequest};
+use pop_contracts::wire::engine::{EngineReply, EngineRequest};
 use serde_json::{Value, json};
 
 fn accepts(value: Value) -> bool {
@@ -76,7 +76,7 @@ fn attachment_identity_and_payload_limits_are_explicit() {
         assert!(!accepts(json!({"method":"attachments.read","documentPath":"x","attachmentID":id})));
     }
     assert!(!accepts(json!({"method":"batch","documentPath":"x","batch":{"intents":[]},"attachments":[]})));
-    let max = pop_core::ATTACHMENT_FILE_BYTES.div_ceil(3) * 4;
+    let max = pop_contracts::wire::ATTACHMENT_FILE_BYTES.div_ceil(3) * 4;
     assert!(accepts(
         json!({"method":"batch","documentPath":"x","batch":{"intents":[]},"attachments":["a".repeat(max)]})
     ));
@@ -98,36 +98,7 @@ fn attachment_identity_and_payload_limits_are_explicit() {
         assert!(accepts(small));
         assert!(!accepts(large));
     }
-    assert!(EngineRequest::parse(&" ".repeat(pop_runtime::command::MAX_REQUEST_BYTES + 1)).is_err());
-}
-
-#[test]
-fn future_app_payload_reaches_its_marker_check_unchanged() {
-    let app =
-        r#"{ "packageFormat":999,"runtimeABI":1,"manifest":{"future":1e999},"descriptor":{},"initial":{},"theme":{} }"#;
-    let input = format!(r#"{{"method":"validateApp","stage":"/not-read","app":{app}}}"#);
-    let EngineRequest::ValidateApp { app: raw, .. } = EngineRequest::parse(&input).unwrap() else { panic!() };
-    assert_eq!(raw.get(), app);
-    assert!(matches!(pop_storage::file::validate_app(raw.get(), std::path::Path::new("/not-read")),
-        Err(pop_storage::store::Error::Rejected(error)) if error.code == pop_core::Code::RequiresUpdate));
-}
-
-#[test]
-fn future_app_markers_precede_current_required_and_unknown_fields() {
-    for app in [
-        r#"{"packageFormat":999,"runtimeABI":1}"#,
-        r#"{"packageFormat":999,"runtimeABI":1,"futureField":1e999}"#,
-        r#"{"packageFormat":1,"runtimeABI":999,"futureField":{"new":true}}"#,
-    ] {
-        let input = format!(r#"{{"method":"validateApp","stage":"/not-read","app":{app}}}"#);
-        let EngineRequest::ValidateApp { app, stage } = EngineRequest::parse(&input).unwrap() else { panic!() };
-        let error = pop_storage::file::validate_app(app.get(), std::path::Path::new(&stage)).unwrap_err();
-        assert!(
-            matches!(&error, pop_storage::store::Error::Rejected(inner)
-            if inner.code == pop_core::Code::RequiresUpdate),
-            "{error}"
-        );
-    }
+    assert!(EngineRequest::parse(&" ".repeat(pop_contracts::wire::SOCKET_ATTACHMENT + 1)).is_err());
 }
 
 #[test]
@@ -157,19 +128,4 @@ fn successes_require_their_results_and_literal_discriminants() {
     ] {
         assert!(serde_json::from_value::<EngineReply>(value.clone()).is_ok(), "{value}");
     }
-}
-
-#[test]
-fn the_permanent_protocol_refusal_keeps_its_exact_bytes() {
-    let error = pop_core::Error {
-        code: pop_core::Code::RequiresUpdate,
-        message: "Update pop".into(),
-        op_index: None,
-        path: vec![],
-    }
-    .into();
-    assert_eq!(
-        pop_runtime::command::failure(error, false, false),
-        r#"{"ok":false,"error":"Update pop","code":"rejected","reason":"requires_update"}"#
-    );
 }

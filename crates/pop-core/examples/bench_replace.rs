@@ -42,7 +42,7 @@ fn main() {
             let mut publication_bytes = 0;
             for sample in 0..6 {
                 let mut document = Document::create(&app, &initial).unwrap();
-                let batch = pop_core::Batch::decode(&batch).unwrap();
+                let batch = pop_contracts::wire::Batch::decode(&batch).unwrap();
                 let start = Instant::now();
                 let applied = std::hint::black_box(document.apply_batch(batch, Origin::Agent).unwrap());
                 let elapsed = start.elapsed().as_secs_f64() * 1000.0;
@@ -78,7 +78,7 @@ fn main() {
     let mut publication_bytes = 0;
     for sample in 0..11 {
         let mut document = Document::create(&app, &initial).unwrap();
-        let batch = pop_core::Batch::decode(&batch).unwrap();
+        let batch = pop_contracts::wire::Batch::decode(&batch).unwrap();
         let start = Instant::now();
         let applied = std::hint::black_box(document.apply_batch(batch, Origin::Page).unwrap());
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;

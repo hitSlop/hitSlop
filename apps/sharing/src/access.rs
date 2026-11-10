@@ -266,7 +266,7 @@ impl CloudDocument {
                                 let _ = self.send(
                                     &ws,
                                     Frame::Error {
-                                        code: crate::frame::ErrorCode::Ended.into(),
+                                        code: pop_contracts::relay::frame::ErrorCode::Ended.into(),
                                         message: "Invitation revoked".into(),
                                     },
                                 );

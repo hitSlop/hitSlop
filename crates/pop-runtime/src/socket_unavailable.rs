@@ -1,13 +1,9 @@
 //! The mobile owner has no desktop discovery or socket listener.
-use crate::{
-    Code,
-    command::{ExportHandler, Result},
-    owner::{Failure, Owner},
-};
-use std::{
-    path::{Path, PathBuf},
-    sync::Arc,
-};
+use crate::command::{ExportHandler, Result};
+use crate::owner::{Failure, Owner};
+use pop_contracts::wire::Code;
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
 fn unavailable() -> Failure {
     Failure::rejected(Code::EngineError, "Desktop socket routing is unavailable on this host")
 }

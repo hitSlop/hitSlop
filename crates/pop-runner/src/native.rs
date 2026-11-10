@@ -1,5 +1,6 @@
 //! Native process driver for the shared evaluator.
 use super::*;
+use pop_contracts::evaluator::{INPUT, Job, RasterRequest, RenderReply, command_input};
 use std::borrow::Cow;
 use std::io::{Read, Write};
 use std::path::PathBuf;

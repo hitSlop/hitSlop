@@ -15,25 +15,17 @@ use crate::{client::Client, transport::account::Account};
 pub use error::{Error, Issue};
 use error::{Result, failed};
 use index::IndexedDocument;
+use pop_contracts::hex;
 use pop_runtime::owner::{Failure, FailureKind, Owner, Request};
-use pop_sharing_protocol::{
-    document::{AccessState, DocumentMetadata, DocumentRole},
-    hex,
-};
-use pop_storage::{
-    file,
-    store::{Mode, Store},
-};
+use pop_sharing_protocol::document::{AccessState, DocumentMetadata, DocumentRole};
+use pop_storage::file;
+use pop_storage::store::{Mode, Store};
 use rusqlite::{Connection, OptionalExtension, params};
 use sha2::{Digest, Sha256};
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-    sync::{
-        Arc, Mutex, Weak,
-        atomic::{AtomicBool, AtomicU64, Ordering},
-    },
-};
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, Weak};
 
 #[derive(Clone, Debug)]
 pub struct Entry {

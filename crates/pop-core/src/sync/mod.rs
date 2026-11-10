@@ -6,13 +6,14 @@
 //! what its version lacks. Nothing about sync is saved: each connection starts with a
 //! Hello carrying the document's version, and the relay's answer says what to send. A lost
 //! acknowledgement, a dropped socket or a crash heals with the next Hello.
-pub use pop_contracts::relay::{
+use pop_contracts::relay::{
     SyncPhase,
-    frame::{Ack, ErrorCode, Frame, MAX_FRAME, PROTOCOL, Permission, Record, Span, Version},
+    frame::{Ack, ErrorCode, Frame, PROTOCOL, Permission, Record, Span, Version},
 };
 
-use crate::{Applied, Code, Document};
+use crate::{Applied, Document};
 use loro::VersionVector;
+use pop_contracts::wire::Code;
 use serde::{Deserialize, Serialize};
 
 /// Stable recovery choices shared by every transport and UI.
@@ -353,7 +354,7 @@ impl Session {
         }
     }
 }
-fn refused(error: &crate::Error) -> String {
+fn refused(error: &pop_contracts::Error) -> String {
     match error.code {
         Code::RequiresUpdate => format!("Another copy needs a newer pop: {}", error.message),
         _ => format!("A shared change was refused: {}", error.message),

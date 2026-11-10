@@ -21,16 +21,13 @@ pub(crate) mod rows;
 
 pub use artwork::Artwork;
 pub(crate) use artwork::{check_artwork, optimize_png, pack_artwork};
-pub use assets::{
-    ResourceInfo, ResourceReader, ResourceRoute, ResourceSpan, ResponsePlan, content_type, resource_response,
-    valid_asset_path,
-};
-pub use catalog::{Catalog, Folder, Template, find_template, list_templates, open_template, template_source};
+pub use assets::{ResourceReader, content_type, valid_asset_path};
+pub use catalog::{find_template, list_templates, open_template, template_source};
 pub(crate) use copy::{Staged, copy};
 pub use copy::{copy_replica, create_document, new_output, publish_output};
 pub use pack::{APP_INPUT_BYTES, RenderArtwork, pack, validate_app};
 pub(crate) use places::document_destination;
-pub use places::{TemplateSource, template_roots};
+pub use places::template_roots;
 #[cfg(target_os = "macos")]
 pub use relocate::{RelocatedDocument, relocate_document};
 
@@ -44,7 +41,10 @@ pub fn delete_document(path: &std::path::Path) -> crate::store::Result<()> {
     document_location(path)?;
     let lease = crate::registry::Lease::acquire(path)?;
     if kind(path)? != Kind::Document {
-        return Err(crate::error::rejected(crate::Code::IsTemplate, "A template cannot be deleted as a document"));
+        return Err(crate::error::rejected(
+            pop_contracts::wire::Code::IsTemplate,
+            "A template cannot be deleted as a document",
+        ));
     }
     lease.check()?;
     std::fs::remove_file(path).map_err(crate::error::failed)

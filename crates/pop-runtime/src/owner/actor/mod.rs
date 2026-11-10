@@ -1,14 +1,14 @@
 //! Serial admission and dispatch. All sibling modules below operate on this one state.
 use super::*;
-use crate::{Code, Document};
+use pop_contracts::wire::Code;
+use pop_core::Document;
 mod barrier;
 mod commands;
 mod persistence;
 mod saving;
 mod sync;
 use commands::{Evaluation, Invocation, Work as EvaluationWork};
-use persistence::persistence;
-use persistence::{StorageAction, Work};
+use persistence::{StorageAction, Work, persistence};
 pub(super) use sync::Admission;
 use sync::{Link, SyncMessage};
 pub use sync::{SyncConnection, SyncEvent, SyncSink};

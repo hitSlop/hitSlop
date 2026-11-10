@@ -2,9 +2,8 @@
 //! document file. Faults are real ones: another connection holding the database, damage
 //! written from outside, a moved file.
 use crate::support;
-use pop_core::Document;
-use pop_core::Origin;
-use pop_core::{STORAGE_BYTES, STORAGE_ROWS};
+use pop_contracts::wire::{STORAGE_BYTES, STORAGE_ROWS};
+use pop_core::{Document, Origin};
 use pop_storage::file;
 use pop_storage::registry::Lease;
 use pop_storage::store::{Error, Mode, Share, Store};
@@ -12,8 +11,7 @@ use rusqlite::Connection;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use support::ApplyJson;
-use support::{App, isolate_registry, type_text, write_app};
+use support::{App, ApplyJson, isolate_registry, type_text, write_app};
 
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"},"rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"string"}}}}}}"#;
 const INITIAL: &str = r#"{"title":"Saved","rows":[]}"#;
@@ -150,7 +148,7 @@ fn damaged_history_is_refused_with_its_code_without_writing() {
             let before = std::fs::read(&path).unwrap();
             let error = Store::open(&path, mode).and_then(|store| store.document().map(drop)).unwrap_err();
             assert!(
-                matches!(&error, Error::Rejected(error) if error.code == pop_core::Code::InvalidBytes),
+                matches!(&error, Error::Rejected(error) if error.code == pop_contracts::wire::Code::InvalidBytes),
                 "damaged history must retain invalid_bytes: {error:?}"
             );
             assert_eq!(std::fs::read(&path).unwrap(), before, "refusal never rewrites stored history");
@@ -307,12 +305,15 @@ fn closing_a_large_document_keeps_no_history_and_compaction_trims_to_now() {
                 Origin::Page,
             )
             .unwrap_err();
-        assert_eq!(error.code, pop_core::Code::StaleBase);
+        assert_eq!(error.code, pop_contracts::wire::Code::StaleBase);
         assert_eq!(doc.state().unwrap(), unchanged);
     }
     for source in [&first, &second] {
         let old_updates = source.history_updates_since(&pop_core::HistoryVersion::default()).unwrap();
-        assert_eq!(doc.import_remote(&[&old_updates]).unwrap_err().code, pop_core::Code::MissingDependencies);
+        assert_eq!(
+            doc.import_remote(&[&old_updates]).unwrap_err().code,
+            pop_contracts::wire::Code::MissingDependencies
+        );
         assert_eq!(doc.state().unwrap(), unchanged);
     }
     let before = stored(&path);
@@ -389,10 +390,10 @@ fn session_too_large_to_keep(schema: &str) {
             Origin::Page,
         )
         .unwrap_err();
-    assert_eq!(error.code, pop_core::Code::StaleBase);
+    assert_eq!(error.code, pop_contracts::wire::Code::StaleBase);
     assert_eq!(doc.state().unwrap(), before, "old-token refusal preserves the document");
     for stale in [old_snapshot, old_updates] {
-        assert_eq!(doc.import_remote(&[&stale]).unwrap_err().code, pop_core::Code::MissingDependencies);
+        assert_eq!(doc.import_remote(&[&stale]).unwrap_err().code, pop_contracts::wire::Code::MissingDependencies);
         assert_eq!(doc.state().unwrap(), before, "old history cannot restore discarded state");
     }
     assert_eq!(title(&doc), "Saved");
@@ -693,7 +694,9 @@ fn a_moved_or_linked_document_refuses_writes() {
     std::fs::hard_link(&path, dir.path().join("Link.pop")).unwrap();
     assert!(matches!(store.check(false), Err(Error::Moved)));
     store.close().unwrap();
-    assert!(matches!(Lease::acquire(&path), Err(Error::Rejected(e)) if e.code == pop_core::Code::InvalidRequest));
+    assert!(
+        matches!(Lease::acquire(&path), Err(Error::Rejected(e)) if e.code == pop_contracts::wire::Code::InvalidRequest)
+    );
 }
 
 // Failure: the platform SQLite stops a connection for good once its file is renamed, and
@@ -802,7 +805,10 @@ fn a_copy_preserves_visible_state_and_theme_with_independent_identity_and_histor
     left.import_remote(&[&right.checkpoint().unwrap()]).unwrap();
     let accepted = support::value(&left);
     assert_eq!(accepted["values"].as_array().unwrap().len(), limit + 1);
-    assert_eq!(pop_core::validate(schema, &accepted.to_string()).unwrap_err().code, pop_core::Code::TooLarge);
+    assert_eq!(
+        pop_core::validate(schema, &accepted.to_string()).unwrap_err().code,
+        pop_contracts::wire::Code::TooLarge
+    );
     let merged_copy = merged_dir.path().join("accepted-copy.pop");
     merged_store.copy_clean(&merged_copy, &left.checkpoint().unwrap(), &[]).unwrap();
     let copied = Store::open(&merged_copy, Mode::Snapshot).unwrap();
@@ -967,7 +973,7 @@ fn saved_accent(path: &Path) -> String {
     accent(&snapshot.document().unwrap())
 }
 /// Applies one palette intent from the window; whether it changed the document.
-fn palette(doc: &mut Document, intent: Value) -> Result<bool, pop_core::Error> {
+fn palette(doc: &mut Document, intent: Value) -> Result<bool, pop_contracts::Error> {
     doc.apply_json(&json!({ "intents": [intent] }).to_string(), pop_core::Origin::Window)
         .map(|a| a.publication.is_some())
 }

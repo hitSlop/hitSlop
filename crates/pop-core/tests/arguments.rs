@@ -101,7 +101,7 @@ fn every_forbidden_argument_kind_is_refused_recursively() {
             // Each is legal as document data; this refusal belongs to the argument subset.
             assert!(pop_core::AppSpec::new(&schema.to_string(), "", "{}").is_ok());
             let error = Arguments::parse(&schema.to_string()).unwrap_err();
-            assert_eq!(error.code, pop_core::Code::InvalidSchema);
+            assert_eq!(error.code, pop_contracts::wire::Code::InvalidSchema);
             assert_eq!(error.pointer(), "/value");
         }
     }

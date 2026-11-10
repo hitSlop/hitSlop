@@ -18,24 +18,23 @@ mod copy;
 mod save;
 use crate::error::sqlite;
 pub use crate::error::{Error, Result, failed, invalid, rejected};
-use crate::file::{self, Artwork, Kind, OpenedApp, rows};
+use crate::file::{Artwork, Kind, OpenedApp, rows};
 use crate::registry::Lease;
-use crate::{Document, lock};
+use crate::{file, lock};
 pub use attachments::Attachment;
 use attachments::delete_unreferenced;
-use pop_core::HistoryVersion;
+use pop_core::{Document, HistoryVersion};
 use rusqlite::{Connection, Transaction, TransactionBehavior};
 use save::{Metadata, Rows, bounds, checked_bounds, checkpoint_row, within};
 pub use save::{Pressure, SaveJob};
 use sha2::{Digest, Sha256};
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Core acceptance failures are definite refusals, including damaged or incomplete
 /// history. Keep their codes distinct from SQLite/I/O failures with unknown outcomes.
-fn load_failure(e: crate::Error) -> Error {
+fn load_failure(e: pop_contracts::Error) -> Error {
     Error::Rejected(e)
 }
 
@@ -103,7 +102,7 @@ pub enum Mode {
 /// Opens the saved document under the descriptor of the app it is stored with. The
 /// history's snapshot and every update after it are imported straight from SQLite's
 /// buffers, without copying them.
-fn load(conn: &Connection, app: &crate::AppSpec) -> Result<(Document, Metadata)> {
+fn load(conn: &Connection, app: &pop_core::AppSpec) -> Result<(Document, Metadata)> {
     let meta = checked_bounds(conn)?;
     let mut saved = conn.prepare_cached(rows::SNAPSHOT).map_err(sqlite("read"))?;
     let mut saved = saved.query([]).map_err(sqlite("read"))?;
@@ -131,7 +130,7 @@ fn load(conn: &Connection, app: &crate::AppSpec) -> Result<(Document, Metadata)>
 
 /// A new file may be published only after its saved state has passed the same acceptance
 /// as opening it. The caller keeps the source read transaction through its copy.
-pub(crate) fn validate_saved(conn: &Connection, app: &crate::AppSpec) -> Result<()> {
+pub(crate) fn validate_saved(conn: &Connection, app: &pop_core::AppSpec) -> Result<()> {
     load(conn, app).map(|_| ())
 }
 
@@ -164,7 +163,10 @@ impl Store {
                 // written, not even its journal mode.
                 let app = file::opened(&conn, path, true)?;
                 if app.kind != Kind::Document {
-                    return Err(rejected(crate::Code::IsTemplate, "A template opens by creating a document from it"));
+                    return Err(rejected(
+                        pop_contracts::wire::Code::IsTemplate,
+                        "A template opens by creating a document from it",
+                    ));
                 }
                 file::configure_writer(&conn)?;
                 (Some(lease), conn, app)
@@ -248,8 +250,8 @@ impl Store {
     /// history and every attachment.
     pub fn set_share(&self, share: &Share) -> Result<()> {
         self.check(true)?;
-        if !(1..=crate::wire::SHARE_ENDPOINT_BYTES).contains(&share.endpoint.len()) {
-            return Err(rejected(crate::Code::InvalidRequest, "Invalid endpoint"));
+        if !(1..=pop_contracts::wire::SHARE_ENDPOINT_BYTES).contains(&share.endpoint.len()) {
+            return Err(rejected(pop_contracts::wire::Code::InvalidRequest, "Invalid endpoint"));
         }
         self.connected(&mut lock(&self.backing).conn, |conn| {
             let tx = file::begin_write(conn, "share")?;

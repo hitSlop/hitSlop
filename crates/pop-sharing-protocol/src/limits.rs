@@ -1,7 +1,4 @@
-//! Existing document acceptance bounds, shared without the document engine.
-pub use pop_contracts::wire::{
-    ASSET_BYTES, ASSET_COUNT, ASSET_FILE_BYTES, ATTACHMENT_BYTES, ATTACHMENT_COUNT, ATTACHMENT_FILE_BYTES,
-};
+//! Cloud protocol bounds and client timing.
 /// Host-owned Firebase ID tokens; these never enter a document or authored page.
 pub const IDENTITY_TOKEN_BYTES: usize = 16 * 1024;
 /// Secondary bound on entries in a live-library snapshot frame.

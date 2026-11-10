@@ -9,8 +9,8 @@ use serde_json::{Value, json};
 pub fn constants() -> Vec<(&'static str, Value)> {
     vec![
         ("DocumentLineage", json!(pop_contracts::lineage::DOCUMENT_LINEAGE)),
-        ("CompactLayoutWidth", json!(crate::page_wire::COMPACT_LAYOUT_WIDTH)),
-        ("NativeResourcePolicy", json!(crate::NATIVE_RESOURCE_POLICY)),
+        ("CompactLayoutWidth", json!(pop_contracts::wire::page::COMPACT_LAYOUT_WIDTH)),
+        ("NativeResourcePolicy", json!(pop_contracts::wire::NATIVE_RESOURCE_POLICY)),
         // The CLI substitutes its loopback origin; all policy directives live here.
         (
             "PreviewResourcePolicy",
@@ -24,7 +24,7 @@ pub fn constants() -> Vec<(&'static str, Value)> {
                 "default-src 'none'; script-src {origin}/__preview__/resize.js; style-src 'unsafe-inline'; img-src 'self'; frame-src 'self'"
             ),
         ),
-        ("PopCategories", json!(crate::app::Category::ALL)),
+        ("PopCategories", json!(pop_contracts::app::Category::ALL)),
         (
             "ManifestText",
             json!({
@@ -55,7 +55,7 @@ pub fn constants() -> Vec<(&'static str, Value)> {
         ),
         ("WidgetViewports", json!(pop_contracts::widgets::widget_viewports())),
         ("PushLimits", json!({"items": PUSH_ITEMS, "bytes": PUSH_BYTES})),
-        ("ResyncPush", json!(PagePush::<crate::Publication>::Resync)),
+        ("ResyncPush", json!(PagePush::<pop_contracts::wire::Publication>::Resync)),
         ("SocketLimits", json!({"request": SOCKET_REQUEST, "attachment": SOCKET_ATTACHMENT})),
         (
             "RowIdRule",

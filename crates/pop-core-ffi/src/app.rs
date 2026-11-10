@@ -1,10 +1,12 @@
 //! Typed app and catalog projections. Only core's format module decodes stored JSON.
-use pop_core::app::{
-    self, AppMetadata, Author, Background, Capability, Category, StandardFrame, ThemeInput, Views, WidgetOptions,
+use pop_contracts::app::{
+    AppMetadata, Author, Background, Capability, Category, StandardFrame, ThemeInput, Views, WidgetOptions,
     WindowDefinition, WindowFrame,
 };
-use pop_core::shape::Silhouette;
-use pop_storage::file::{Kind, ResourceInfo, ResourceRoute, ResourceSpan, ResponsePlan, Summary};
+use pop_contracts::resources::{ResourceInfo, ResourceRoute, ResourceSpan, ResponsePlan};
+use pop_contracts::shape::Silhouette;
+use pop_core::app;
+use pop_storage::file::{Kind, Summary};
 
 #[uniffi::remote(Enum)]
 pub enum Category {
@@ -115,7 +117,7 @@ pub struct ResponsePlan {
 }
 #[uniffi::export]
 pub fn resource_response(info: ResourceInfo, route: ResourceRoute, range: Option<String>) -> ResponsePlan {
-    pop_storage::file::resource_response(&info, route, range.as_deref())
+    pop_contracts::resources::resource_response(&info, route, range.as_deref())
 }
 /// The native view of an accepted app. The original descriptor is opaque to Swift.
 #[derive(uniffi::Record)]
@@ -153,7 +155,7 @@ pub fn parse_category(name: String) -> Option<Category> {
     Category::parse(name).ok()
 }
 
-use pop_core::HostLimits;
+use pop_contracts::wire::HostLimits;
 #[uniffi::remote(Record)]
 pub struct HostLimits {
     pub error_text: u64,
@@ -175,9 +177,9 @@ pub struct HostLimits {
 }
 #[uniffi::export]
 pub fn host_limits() -> HostLimits {
-    pop_core::host_limits()
+    pop_contracts::wire::host_limits()
 }
 #[uniffi::export]
 pub fn app_resource_policy() -> String {
-    pop_core::NATIVE_RESOURCE_POLICY.into()
+    pop_contracts::wire::NATIVE_RESOURCE_POLICY.into()
 }

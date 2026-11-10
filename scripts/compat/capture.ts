@@ -56,6 +56,7 @@ import { exec } from "../../packages/pop/src/cli/process";
 import { createDocument } from "../lib/native";
 import { evaluateStored } from "./commands";
 import { resolveWriter } from "./writers";
+import { buildCompat, cargoOutput } from "../build/core";
 // The producing tools are built as they ship (the `dist` Cargo profile), as the release
 // gate builds them: a candidate's packages then match what was captured.
 process.env.POP_CARGO_PROFILE = "dist";
@@ -101,6 +102,7 @@ if (dirty) throw new Error("Capture a frozen entry from a clean release candidat
 
 // Build the producing tools rather than trusting an existing engine or inventory.
 await run([process.execPath, "scripts/build/build.ts", "--prepare", "native,shell"]);
+await buildCompat();
 const coreBuildID = await run([documentEngine(), "--build-id"]);
 const writerPath = await realpath(suppliedWriter ? resolve(suppliedWriter) : documentEngine());
 assert.equal(
@@ -138,8 +140,8 @@ try {
     "acceptance",
   ])
     await mkdir(join(root, directory), { recursive: true });
-  await run([documentEngine(), "--acceptance-vectors", join(root, "acceptance")]);
-  const limits: Release["limits"] = JSON.parse(await run([documentEngine(), "--limits"]));
+  await run([cargoOutput("pop-compat"), "acceptance-vectors", join(root, "acceptance")]);
+  const limits: Release["limits"] = JSON.parse(await run([cargoOutput("pop-compat"), "limits"]));
   const templates: Record<string, string> = {
     conformance: join(repository, "generated/abi/owner-svelte.pop"),
   };

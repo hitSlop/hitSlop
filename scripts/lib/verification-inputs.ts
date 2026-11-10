@@ -1,6 +1,6 @@
 /** Input ownership shared by local verification and CI scheduling. */
 const rustBuildInputs = [/^Cargo\.(toml|lock)$/, /^\.cargo\//, /^rust-toolchain\.toml$/, /^rustfmt\.toml$/];
-const rustInputs = [/^tools\/pop-bindgen\//, /^crates\//, /^apps\/sharing\/src\//, /^apps\/sharing\/Cargo.toml$/, ...rustBuildInputs];
+const rustInputs = [/^tools\/(pop-bindgen|pop-compat)\//, /^crates\//, /^apps\/sharing\/src\//, /^apps\/sharing\/Cargo.toml$/, ...rustBuildInputs];
 const nativeInputs = [
   ...rustInputs,
   /^apps\/apple\//,
@@ -20,7 +20,7 @@ export const appBuildInputs = [
 ];
 
 export const tierInputs = {
-  compat: [/^tests\/compat\//, /^scripts\/compat\//, /^crates\/pop-core\/src\/app\//, /^crates\/pop-storage\/src\/file\//],
+  compat: [/^tools\/pop-compat\//, /^tests\/compat\//, /^scripts\/compat\//, /^crates\/pop-core\/src\/app\//, /^crates\/pop-storage\/src\/file\//],
   tooling: [
     /^tests\/verification\//,
     /^scripts\/compat\//,
@@ -89,6 +89,7 @@ export const sharedInputs = [
 export const compatibilityInputs = [
   ...sharedInputs,
   ...rustBuildInputs,
+  /^tools\/pop-compat\//,
   /^crates\/[^/]+\/(?!tests\/|README\.md$)/,
   /^apps\/apple\/(?!.*\/Tests\/)/,
   /^apps\/apple\/.*\/Tests\/.*\/CompatCorpusTests\.swift$/,

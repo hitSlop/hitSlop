@@ -3,9 +3,8 @@
 use crate::support;
 use pop_core::Document;
 use serde_json::{Value, json};
-use support::ApplyJson;
 use support::generate::{intent, targets, value};
-use support::{View, app, next, snapshot, type_text};
+use support::{ApplyJson, View, app, next, snapshot, type_text};
 
 /// One page text client: the field it types in, and the text it last saw or sent.
 struct Typist {
@@ -42,7 +41,7 @@ fn run(name: &str, fixture: &str) {
         for step in 0..support::workload("POP_MODEL_STEPS", 150) {
             let before = snapshot(&doc);
             let n = next(&mut rng) as usize;
-            let outcome: Result<Option<String>, pop_core::Error> = match n % 12 {
+            let outcome: Result<Option<String>, pop_contracts::Error> = match n % 12 {
                 0..=4 => {
                     let ops: Vec<_> = (0..1 + next(&mut rng) % 3)
                         .map(|_| intent(&mut rng, &mut serial, &f["schema"], &before["value"]))

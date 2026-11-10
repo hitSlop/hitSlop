@@ -1,5 +1,5 @@
 //! Page transport stays opaque in Swift; only native actions cross as typed values.
-use pop_core::page_wire::{
+use pop_contracts::wire::page::{
     HapticFeedback, HapticImpactStyle, HapticNotification, HostAction, HostDevice, HostEnvironment, HostPlatform,
     HostReply, HostRequest, PageErrorKind, SpeechOutcome, SpeechUnavailable,
 };
@@ -125,7 +125,7 @@ pub struct UnresolvedTextDraft {
 
 #[uniffi::export]
 pub fn decode_close_preparation(json: String) -> Result<Vec<UnresolvedTextDraft>, crate::CoreError> {
-    Ok(pop_core::page_wire::ClosePreparation::decode(&json)?
+    Ok(pop_contracts::wire::page::ClosePreparation::decode(&json)?
         .unresolved_drafts
         .into_iter()
         .map(|draft| UnresolvedTextDraft { field: draft.field_label(), text: draft.text })

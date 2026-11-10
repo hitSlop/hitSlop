@@ -1,14 +1,15 @@
 //! Export recursively from contract roots; dependencies are discovered by ts-rs.
-use pop_core::build::BuildInput;
-use pop_core::{Batch, EngineReply, EngineRequest, OwnerState, Publication, ThemeFile};
+use pop_contracts::wire::build::BuildInput;
+use pop_contracts::wire::engine::{EngineReply, EngineRequest};
+use pop_contracts::wire::{Batch, OwnerState, Publication, ThemeFile};
 use ts_rs::{Config, TS};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let directory = std::path::PathBuf::from(std::env::args_os().nth(1).ok_or("Expected output directory")?);
     let config = Config::new().with_out_dir(&directory).with_large_int("number");
     pop_core::bindings::Node::export_all(&config)?;
-    pop_core::preview::PreviewRequest::export_all(&config)?;
-    pop_core::preview::PreviewEvent::<pop_core::page_wire::PagePush>::export_all(&config)?;
+    pop_contracts::wire::preview::PreviewRequest::export_all(&config)?;
+    pop_contracts::wire::preview::PreviewEvent::<pop_contracts::wire::page::PagePush>::export_all(&config)?;
     pop_sharing_protocol::http::CreateRoom::export_all(&config)?;
     pop_sharing_protocol::http::OpenRoom::export_all(&config)?;
     pop_sharing_protocol::http::RoomInfo::export_all(&config)?;
@@ -33,12 +34,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     OwnerState::export_all(&config)?;
     Publication::export_all(&config)?;
     ThemeFile::export_all(&config)?;
-    pop_core::page_wire::PageRequest::export_all(&config)?;
-    pop_core::page_wire::PageSuccess::export_all(&config)?;
-    pop_core::page_wire::HostLayout::export_all(&config)?;
-    pop_core::page_wire::PagePush::<Publication>::export_all(&config)?;
-    pop_core::page_wire::HostRequest::export_all(&config)?;
-    pop_core::page_wire::ClosePreparation::export_all(&config)?;
+    pop_contracts::wire::page::PageRequest::export_all(&config)?;
+    pop_contracts::wire::page::PageSuccess::export_all(&config)?;
+    pop_contracts::wire::page::HostLayout::export_all(&config)?;
+    pop_contracts::wire::page::PagePush::<Publication>::export_all(&config)?;
+    pop_contracts::wire::page::HostRequest::export_all(&config)?;
+    pop_contracts::wire::page::ClosePreparation::export_all(&config)?;
     let mut constants = String::from("// Generated from pop-core's contracts. Do not edit.\n");
     for (name, value) in pop_core::bindings::constants() {
         constants.push_str(&format!("export const {name} = {} as const;\n", serde_json::to_string(&value)?));

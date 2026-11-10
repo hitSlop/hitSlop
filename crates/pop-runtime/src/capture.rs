@@ -1,18 +1,18 @@
 //! Saved-source artwork rendered in the restricted child, without a page or writer.
 pub mod widgets;
 
-use crate::store::{failed, invalid, rejected};
-pub use pop_contracts::capture::*;
+use pop_contracts::capture::{CaptureFormat, CaptureOutput, ViewCaptureKind, ViewRenderRequest};
+use pop_storage::store::{failed, invalid, rejected};
 
 pub enum CaptureValue {
     Image { bytes: Option<Vec<u8>> },
-    Widgets { capture: widgets::WidgetCapture },
+    Widgets { capture: pop_contracts::widgets::WidgetCapture },
 }
 
 /// A rendering failure is local to its output, not a failure to save the document.
 pub struct CaptureResult {
     pub output: CaptureOutput,
-    pub result: crate::store::Result<CaptureValue>,
+    pub result: pop_storage::store::Result<CaptureValue>,
 }
 
 /// The source must already have crossed the owner's page drain/save/copy boundary.
@@ -21,8 +21,8 @@ pub fn render_batch(
     path: &std::path::Path,
     evaluator: &pop_runner::Evaluator,
     outputs: &[CaptureOutput],
-) -> crate::store::Result<Vec<CaptureResult>> {
-    let store = crate::store::Store::open(path, crate::store::Mode::Snapshot)?;
+) -> pop_storage::store::Result<Vec<CaptureResult>> {
+    let store = pop_storage::store::Store::open(path, pop_storage::store::Mode::Snapshot)?;
     let document = store.document()?;
     let source = RenderSource::new(&store, &document);
     Ok(outputs
@@ -44,7 +44,7 @@ pub fn render_saved(
     path: &std::path::Path,
     evaluator: &pop_runner::Evaluator,
     outputs: &[CaptureOutput],
-) -> crate::store::Result<Vec<CaptureResult>> {
+) -> pop_storage::store::Result<Vec<CaptureResult>> {
     #[cfg(target_os = "ios")]
     if outputs.iter().any(|output| matches!(output, CaptureOutput::Export { .. })) {
         return Err(failed("Export is unavailable on this host"));
@@ -61,10 +61,13 @@ pub struct SavedArtwork {
 
 /// A complete pair from one immutable source; a partial failure returns an error, so the
 /// caller keeps its old artwork.
-pub fn render_artwork(path: &std::path::Path, evaluator: &pop_runner::Evaluator) -> crate::store::Result<SavedArtwork> {
+pub fn render_artwork(
+    path: &std::path::Path,
+    evaluator: &pop_runner::Evaluator,
+) -> pop_storage::store::Result<SavedArtwork> {
     let source_version = {
-        let store = crate::store::Store::open(path, crate::store::Mode::Snapshot)?;
-        store.document()?.reading().map_err(crate::store::Error::Rejected)?.version
+        let store = pop_storage::store::Store::open(path, pop_storage::store::Mode::Snapshot)?;
+        store.document()?.reading().map_err(pop_storage::store::Error::Rejected)?.version
     };
     let mut artwork = SavedArtwork { source_version, preview: None, icon: None };
     for capture in render_batch(path, evaluator, &[CaptureOutput::Preview, CaptureOutput::Icon])? {
@@ -86,11 +89,11 @@ pub fn render_artwork(path: &std::path::Path, evaluator: &pop_runner::Evaluator)
 pub fn render_views(
     path: &std::path::Path,
     evaluator: &pop_runner::Evaluator,
-    store_roles: &[crate::file::Artwork],
-) -> crate::store::Result<Vec<(crate::file::Artwork, Option<Vec<u8>>)>> {
-    use crate::file::Artwork;
+    store_roles: &[pop_storage::file::Artwork],
+) -> pop_storage::store::Result<Vec<(pop_storage::file::Artwork, Option<Vec<u8>>)>> {
+    use pop_storage::file::Artwork;
     let outputs = {
-        let store = crate::store::Store::open(path, crate::store::Mode::Snapshot)?;
+        let store = pop_storage::store::Store::open(path, pop_storage::store::Mode::Snapshot)?;
         let views = store.app().app.views();
         let mut outputs = vec![CaptureOutput::Preview];
         if views.icon {
@@ -131,14 +134,17 @@ pub fn export_saved(
     output: &std::path::Path,
     evaluator: &pop_runner::Evaluator,
     deadline: std::time::Instant,
-) -> crate::store::Result<()> {
-    let output = crate::file::new_output(output)?;
+) -> pop_storage::store::Result<()> {
+    let output = pop_storage::file::new_output(output)?;
     // Before rendering: no file, folder or link (even a dangling one) is ever replaced.
     if std::fs::symlink_metadata(&output).is_ok() {
-        return Err(rejected(crate::Code::Exists, "A file already exists there"));
+        return Err(rejected(pop_contracts::wire::Code::Exists, "A file already exists there"));
     }
-    if crate::file::kind(path)? == crate::file::Kind::Template {
-        return Err(rejected(crate::Code::IsTemplate, "This is a template; create a document from it first"));
+    if pop_storage::file::kind(path)? == pop_storage::file::Kind::Template {
+        return Err(rejected(
+            pop_contracts::wire::Code::IsTemplate,
+            "This is a template; create a document from it first",
+        ));
     }
     // `render_source` refuses an app without an Export view and checks the PNG or PDF.
     let rendered = render_batch(path, evaluator, &[CaptureOutput::Export { format }])?;
@@ -155,16 +161,16 @@ pub fn publish_export(
     bytes: &[u8],
     output: &std::path::Path,
     is_active: impl FnOnce() -> bool,
-) -> crate::store::Result<()> {
-    crate::file::publish_output(bytes, output, is_active)
+) -> pop_storage::store::Result<()> {
+    pop_storage::file::publish_output(bytes, output, is_active)
 }
 
 /// Inputs are prepared lazily after role admission, once for the entire batch. Even
 /// a preparation failure is shared; unsupported/absent roles keep their own outcome.
 pub(crate) struct RenderSource<'a> {
-    pub store: &'a crate::store::Store,
-    pub document: &'a crate::Document,
-    input: std::cell::OnceCell<crate::store::Result<RenderInput>>,
+    pub store: &'a pop_storage::store::Store,
+    pub document: &'a pop_core::Document,
+    input: std::cell::OnceCell<pop_storage::store::Result<RenderInput>>,
 }
 pub(crate) struct RenderInput {
     pub attachments: std::collections::BTreeMap<String, String>,
@@ -172,13 +178,13 @@ pub(crate) struct RenderInput {
     pub theme: std::collections::BTreeMap<String, String>,
 }
 impl<'a> RenderSource<'a> {
-    pub fn new(store: &'a crate::store::Store, document: &'a crate::Document) -> Self {
+    pub fn new(store: &'a pop_storage::store::Store, document: &'a pop_core::Document) -> Self {
         Self { store, document, input: std::cell::OnceCell::new() }
     }
-    pub fn input(&self) -> crate::store::Result<&RenderInput> {
+    pub fn input(&self) -> pop_storage::store::Result<&RenderInput> {
         self.input
             .get_or_init(|| {
-                let reading = self.document.reading().map_err(crate::store::Error::Rejected)?;
+                let reading = self.document.reading().map_err(pop_storage::store::Error::Rejected)?;
                 Ok(RenderInput {
                     attachments: attachment_inventory(self.store, self.document)?,
                     snapshot: reading.value,
@@ -195,7 +201,7 @@ fn render_source(
     source: &RenderSource<'_>,
     evaluator: &pop_runner::Evaluator,
     output: CaptureOutput,
-) -> crate::store::Result<Option<Vec<u8>>> {
+) -> pop_storage::store::Result<Option<Vec<u8>>> {
     let store = source.store;
     let (kind, format) = match output {
         CaptureOutput::Icon => (ViewCaptureKind::Icon, CaptureFormat::Png),
@@ -236,12 +242,12 @@ fn render_source(
             batch,
             images,
             match format {
-                CaptureFormat::Png => pop_runner::JobKind::Capture,
-                CaptureFormat::Pdf => pop_runner::JobKind::Pdf,
+                CaptureFormat::Png => pop_contracts::evaluator::JobKind::Capture,
+                CaptureFormat::Pdf => pop_contracts::evaluator::JobKind::Pdf,
             },
         )
         .map_err(invalid)?;
-    let reply: pop_runner::RenderReply =
+    let reply: pop_contracts::evaluator::RenderReply =
         serde_json::from_str(&result).map_err(|e| invalid(format!("Invalid capture reply: {e}")))?;
     let mut images = reply.into_images().map_err(invalid)?;
     if images.len() != 1 {
@@ -252,14 +258,14 @@ fn render_source(
         .map_err(|_| invalid("Invalid capture output encoding"))?;
     match format {
         CaptureFormat::Png => {
-            crate::images::check(
+            pop_storage::images::check(
                 &bytes,
-                if icon { crate::images::Purpose::Icon } else { crate::images::Purpose::Preview },
+                if icon { pop_storage::images::Purpose::Icon } else { pop_storage::images::Purpose::Preview },
             )
-            .map_err(crate::store::Error::Rejected)?;
+            .map_err(pop_storage::store::Error::Rejected)?;
         }
         CaptureFormat::Pdf => {
-            if bytes.len() > pop_runner::PDF_BYTES
+            if bytes.len() > pop_contracts::evaluator::PDF_BYTES
                 || !bytes.starts_with(b"%PDF-")
                 || !bytes.ends_with(b"%%EOF") && !bytes.ends_with(b"%%EOF\n")
             {
@@ -272,9 +278,9 @@ fn render_source(
 
 /// Listing metadata never reads blobs; one damaged unused image cannot poison a batch.
 fn attachment_inventory(
-    store: &crate::store::Store,
-    document: &crate::Document,
-) -> crate::store::Result<std::collections::BTreeMap<String, String>> {
+    store: &pop_storage::store::Store,
+    document: &pop_core::Document,
+) -> pop_storage::store::Result<std::collections::BTreeMap<String, String>> {
     let attachments = store.attachments()?;
     let ids: Vec<_> = attachments.iter().map(|item| item.id.clone()).collect();
     let referenced = document.attachment_references(&ids);
@@ -291,18 +297,18 @@ fn attachment_inventory(
 impl RenderSource<'_> {
     pub fn images(
         &self,
-        batch: &pop_runner::Batch,
+        batch: &pop_contracts::evaluator::Batch,
         output: CaptureOutput,
-    ) -> crate::store::Result<std::collections::BTreeMap<String, String>> {
+    ) -> pop_storage::store::Result<std::collections::BTreeMap<String, String>> {
         let inventory = &self.input()?.attachments;
         let mut referenced = std::collections::BTreeSet::new();
         for frame in &batch.frames {
             for markup in [&frame.html, &frame.css] {
                 for suffix in markup.split("pop-attachment:").skip(1) {
-                    let Some(id) = suffix.get(..crate::wire::ATTACHMENT_ID_LENGTH) else {
+                    let Some(id) = suffix.get(..pop_contracts::wire::ATTACHMENT_ID_LENGTH) else {
                         continue;
                     };
-                    if crate::wire::valid_attachment_id(id)
+                    if pop_contracts::wire::valid_attachment_id(id)
                         && !suffix.as_bytes().get(id.len()).is_some_and(u8::is_ascii_hexdigit)
                     {
                         referenced.insert(id.to_owned());
@@ -318,15 +324,18 @@ impl RenderSource<'_> {
         for id in &referenced {
             if !inventory.contains_key(id) {
                 return Err(rejected(
-                    crate::Code::InvalidRequest,
+                    pop_contracts::wire::Code::InvalidRequest,
                     format!("{output:?} markup references attachment {id} outside its image inventory"),
                 ));
             }
             size +=
                 sizes.get(id).ok_or_else(|| failed(format!("{output:?} attachment {id} is no longer available")))?;
         }
-        if size > pop_runner::IMAGE_BYTES as u64 {
-            return Err(rejected(crate::Code::TooLarge, format!("{output:?} images exceed the 24 MiB resource limit")));
+        if size > pop_contracts::evaluator::IMAGE_BYTES as u64 {
+            return Err(rejected(
+                pop_contracts::wire::Code::TooLarge,
+                format!("{output:?} images exceed the 24 MiB resource limit"),
+            ));
         }
         referenced
             .into_iter()

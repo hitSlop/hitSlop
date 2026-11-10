@@ -1,19 +1,22 @@
 //! The app's assets: their paths, how `pack` stores them and how a page reads them back.
 
 use crate::error::{Result, failed, invalid, sqlite};
-use crate::wire::ASSET_PATH_BYTES;
+use pop_contracts::wire::ASSET_PATH_BYTES;
 use rusqlite::{Connection, MAIN_DB, OptionalExtension};
 use std::borrow::Cow;
 use std::io::Read;
 
 /// The asset budget, as packing reads a stage and as every open finds it stored.
 pub(super) fn assets_within(count: usize, largest: usize, total: usize) -> Result<()> {
-    if count > crate::ASSET_COUNT || largest > crate::ASSET_FILE_BYTES || total > crate::ASSET_BYTES {
+    if count > pop_contracts::wire::ASSET_COUNT
+        || largest > pop_contracts::wire::ASSET_FILE_BYTES
+        || total > pop_contracts::wire::ASSET_BYTES
+    {
         return Err(invalid(format!(
             "The app exceeds {} assets, {} MiB per asset or {} MiB",
-            crate::ASSET_COUNT,
-            crate::ASSET_FILE_BYTES >> 20,
-            crate::ASSET_BYTES >> 20
+            pop_contracts::wire::ASSET_COUNT,
+            pop_contracts::wire::ASSET_FILE_BYTES >> 20,
+            pop_contracts::wire::ASSET_BYTES >> 20
         )));
     }
     Ok(())
@@ -29,7 +32,11 @@ pub fn valid_asset_path(path: &str) -> bool {
 /// The content type a served asset carries, by its extension.
 pub fn content_type(path: &str) -> &'static str {
     let extension = path.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
-    if extension == "html" { "text/html; charset=utf-8" } else { crate::media::asset_type(&extension).media_type }
+    if extension == "html" {
+        "text/html; charset=utf-8"
+    } else {
+        pop_contracts::media::asset_type(&extension).media_type
+    }
 }
 /// A program or stylesheet with content, or media named by its SHA-256. `pack` verifies
 /// the address and the app row seals it, so serving never re-hashes app media; skins
@@ -113,7 +120,7 @@ fn decode(encoding: Encoding, size: usize, stored: Vec<u8>) -> Result<Vec<u8>> {
     }
 }
 
-pub use pop_contracts::resources::{ResourceInfo, ResourceRoute, ResourceSpan, ResponsePlan, resource_response};
+use pop_contracts::resources::{ResourceInfo, ResourceRoute};
 
 struct ResourceRow {
     id: i64,
@@ -144,7 +151,7 @@ impl<C: std::borrow::Borrow<Connection>> ResourceReader<C> {
         let row = match route {
             ResourceRoute::App => {
                 if matches!(key, "commands.js" | "widget.js" | "icon.js" | "export.js" | "preview.js")
-                    || crate::media::asset_key(key).is_none()
+                    || pop_contracts::media::asset_key(key).is_none()
                 {
                     return Ok(None);
                 }
@@ -164,7 +171,7 @@ impl<C: std::borrow::Borrow<Connection>> ResourceReader<C> {
                     .map_err(sqlite("read asset"))?
             }
             ResourceRoute::Attachment => {
-                if !crate::wire::valid_attachment_id(key) {
+                if !pop_contracts::wire::valid_attachment_id(key) {
                     return Ok(None);
                 }
                 self.conn
@@ -186,9 +193,9 @@ impl<C: std::borrow::Borrow<Connection>> ResourceReader<C> {
         let Some(row) = row else { return Ok(None) };
         if row.info.size
             > if route == ResourceRoute::App {
-                crate::ASSET_FILE_BYTES as u64
+                pop_contracts::wire::ASSET_FILE_BYTES as u64
             } else {
-                crate::ATTACHMENT_FILE_BYTES as u64
+                pop_contracts::wire::ATTACHMENT_FILE_BYTES as u64
             }
         {
             return Err(invalid("Resource exceeds its byte limit"));
@@ -224,7 +231,7 @@ impl<C: std::borrow::Borrow<Connection>> ResourceReader<C> {
             crate::lock(&self.cache).verified.insert(key.into());
         }
         if route == ResourceRoute::App
-            && crate::media::asset_key(key).is_none_or(|kind| kind.media_type != row.info.media_type)
+            && pop_contracts::media::asset_key(key).is_none_or(|kind| kind.media_type != row.info.media_type)
         {
             return Err(invalid("Invalid resource media type"));
         }

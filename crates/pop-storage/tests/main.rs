@@ -3,4 +3,6 @@ mod file;
 mod images;
 mod media;
 mod store;
-mod support;
+use pop_testkit as support;
+
+mod engine_acceptance;

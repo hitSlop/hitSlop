@@ -1,10 +1,8 @@
 //! Read-only discovery shared by command-line presentations. Descriptor metadata stays
 //! intact; operations describe the actual storage kinds rather than another schema DSL.
-use crate::{
-    Reading, Segment,
-    app::AppMetadata,
-    engine::{DescribeState, DescribedField},
-};
+use pop_contracts::app::AppMetadata;
+use pop_contracts::wire::engine::{DescribeState, DescribedField};
+use pop_contracts::wire::{Reading, Segment};
 use serde_json::Value;
 
 pub fn describe(metadata: AppMetadata, schema: Value, reading: Reading, commands: Value) -> DescribeState {

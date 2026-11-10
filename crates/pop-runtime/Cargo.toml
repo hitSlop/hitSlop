@@ -10,32 +10,30 @@ autotests = false
 workspace = true
 
 [dependencies]
-pop-core = { path = "../pop-core", default-features = false }
+pop-core = { path = "../pop-core" }
 pop-contracts = { path = "../pop-contracts" }
-pop-storage = { path = "../pop-storage", default-features = false }
+pop-storage = { path = "../pop-storage" }
 serde.workspace = true
 serde_json = { workspace = true, features = ["raw_value"] }
 thiserror.workspace = true
-getrandom = "0.2"
-data-encoding = "=2.11.1"
-sha2 = "=0.11.0"
-pop-runner = { path = "../pop-runner", default-features = false }
-libc = "0.2"
-
-[features]
-default = ["desktop"]
-desktop = ["pop-runner/process"]
-mobile-capture = ["pop-runner/capture-in-process"]
-bundled-sqlite = ["pop-storage/bundled-sqlite"]
+data-encoding.workspace = true
+sha2.workspace = true
+libc.workspace = true
 
 [dev-dependencies]
-brotli = "=9.0.0"
-pop-core = { path = "../pop-core", default-features = false, features = ["acceptance"] }
+pop-testkit = { path = "../pop-testkit" }
+brotli.workspace = true
 loro.workspace = true
-rusqlite = { version = "=0.40.2", features = ["hooks"] }
-png = "=0.18.1"
-tempfile = "3"
+rusqlite = { workspace = true, features = ["hooks"] }
+png.workspace = true
+tempfile.workspace = true
 
 [[test]]
 name = "runtime"
 path = "tests/main.rs"
+
+[target.'cfg(target_os = "ios")'.dependencies]
+pop-runner = { path = "../pop-runner", default-features = false, features = ["in-process"] }
+
+[target.'cfg(not(target_os = "ios"))'.dependencies]
+pop-runner = { path = "../pop-runner", default-features = false }

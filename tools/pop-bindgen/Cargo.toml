@@ -13,4 +13,4 @@ pop-core = { path = "../../crates/pop-core", features = ["ts"] }
 pop-contracts = { path = "../../crates/pop-contracts", features = ["ts"] }
 pop-sharing-protocol = { path = "../../crates/pop-sharing-protocol", features = ["ts"] }
 serde_json.workspace = true
-ts-rs = { version = "=12.0.1", features = ["serde-json-impl", "no-serde-warnings"] }
+ts-rs = { workspace = true, features = ["serde-json-impl", "no-serde-warnings"] }

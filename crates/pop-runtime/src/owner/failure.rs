@@ -1,5 +1,6 @@
 //! Failures classified for owner callers and native hosts.
-use crate::{Code, store};
+use pop_contracts::wire::Code;
+use pop_storage::store;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FailureKind {
@@ -33,8 +34,8 @@ impl Failure {
         Self { reason: Some(code), ..Self::new(FailureKind::Rejected, message) }
     }
 }
-impl From<crate::Error> for Failure {
-    fn from(e: crate::Error) -> Self {
+impl From<pop_contracts::Error> for Failure {
+    fn from(e: pop_contracts::Error) -> Self {
         Self {
             kind: FailureKind::Rejected,
             reason: Some(e.code),

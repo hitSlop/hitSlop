@@ -1,23 +1,25 @@
 //! The document file: packing a build, the checks every open runs, creating and copying
 //! documents, the writer lock and discovery, attachments, artwork, assets and recovery.
 use crate::support;
-use pop_core::{Code, Origin};
-use pop_storage::file::{self, Artwork, Kind};
+use pop_contracts::wire::Code;
+use pop_core::Origin;
+use pop_storage::file;
+use pop_storage::file::Artwork;
 use pop_storage::registry::Lease;
 use pop_storage::store::{Error, Mode, Store};
-use rusqlite::{Connection, config::DbConfig};
+use pop_testkit::images::{decoded, png, render_of};
+use pop_testkit::packed::{code, document, raw, renders, stage, template, temporaries};
+
 use std::fs;
 use std::path::{Path, PathBuf};
 use support::ApplyJson;
-use support::{App, isolate_registry, write_app};
-
-const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"}}}"#;
-const INITIAL: &str = r#"{"title":"Initial"}"#;
-const APP: App = App::new(SCHEMA, INITIAL);
 
 #[test]
 fn a_capture_batch_keeps_successful_outputs_when_other_roles_fail() {
-    use pop_runtime::capture::{CaptureFormat, CaptureOutput, CaptureValue, render_batch};
+    use pop_contracts::capture::CaptureFormat;
+    use pop_contracts::capture::CaptureOutput;
+    use pop_runtime::capture::CaptureValue;
+    use pop_runtime::capture::render_batch;
     for has_widget in [false, true] {
         let directory = tempfile::tempdir().unwrap();
         let source = stage(directory.path());
@@ -35,15 +37,13 @@ fn a_capture_batch_keeps_successful_outputs_when_other_roles_fail() {
         let saved = fs::read(&document).unwrap();
         let image = png(512, 512, 6);
         let reply = serde_json::json!({"ok": true, "images": [data_encoding::BASE64.encode(&image)]});
-        let widget_images: Vec<_> = pop_runtime::capture::widgets::widget_viewports()
-            .iter()
-            .map(|v| png(v.width * 2, v.height * 2, 6))
-            .collect();
+        let widget_images: Vec<_> =
+            pop_contracts::widgets::widget_viewports().iter().map(|v| png(v.width * 2, v.height * 2, 6)).collect();
         let widgets = serde_json::json!({"ok": true, "images": widget_images.iter()
             .map(|bytes| data_encoding::BASE64.encode(bytes)).collect::<Vec<_>>()});
         let markup =
             serde_json::json!({"frames":[{"kind":"preview","width":512,"height":512,"html":"","css":""}],"fonts":[]});
-        let widget_markup = serde_json::json!({"frames": pop_runtime::capture::widgets::widget_viewports().iter().map(|v| serde_json::json!({"width":v.width,"height":v.height,"html":"","css":""})).collect::<Vec<_>>(),"fonts":[]});
+        let widget_markup = serde_json::json!({"frames": pop_contracts::widgets::widget_viewports().iter().map(|v| serde_json::json!({"width":v.width,"height":v.height,"html":"","css":""})).collect::<Vec<_>>(),"fonts":[]});
         let evaluator = pop_runner::Evaluator::process(
             "/bin/sh".into(),
             vec!["-c".into(), format!(r#"input=$(/bin/cat); case "$input" in *'"mode":"markup"'*) printf '%s' '{markup}';; *'"mode":"widgetMarkup"'*) printf '%s' '{widget_markup}';; *'"mode":"widget"'*) printf '%s' '{widgets}';; *) printf '%s' '{reply}';; esac"#)],
@@ -98,9 +98,9 @@ fn image_markup_before(ids: &[String], icon_ids: &[String], before: &str) -> pop
     };
     let preview = frame("preview", ids);
     let icon = frame("icon", icon_ids);
-    let widgets = serde_json::json!({"frames":pop_runtime::capture::widgets::widget_viewports().iter().map(|v|serde_json::json!({"width":v.width,"height":v.height,"html":"","css":""})).collect::<Vec<_>>(),"fonts":[]});
+    let widgets = serde_json::json!({"frames":pop_contracts::widgets::widget_viewports().iter().map(|v|serde_json::json!({"width":v.width,"height":v.height,"html":"","css":""})).collect::<Vec<_>>(),"fonts":[]});
     let reply = serde_json::json!({"ok":true,"images":[data_encoding::BASE64.encode(&png(512,512,6))]});
-    let widget_reply = serde_json::json!({"ok":true,"images":pop_runtime::capture::widgets::widget_viewports().iter().map(|v|data_encoding::BASE64.encode(&png(v.width*2,v.height*2,6))).collect::<Vec<_>>()});
+    let widget_reply = serde_json::json!({"ok":true,"images":pop_contracts::widgets::widget_viewports().iter().map(|v|data_encoding::BASE64.encode(&png(v.width*2,v.height*2,6))).collect::<Vec<_>>()});
     // Only the small request prefix selects a reply; drain image bytes without
     // copying or pattern-matching megabytes in the shell.
     let script = format!(
@@ -152,7 +152,9 @@ fn saved_images(path: &Path, count: usize, padded: bool) -> Vec<String> {
 }
 #[test]
 fn capture_damaged_unused_image_never_blocks_outputs() {
-    use pop_runtime::capture::{CaptureFormat, CaptureOutput, render_batch};
+    use pop_contracts::capture::CaptureFormat;
+    use pop_contracts::capture::CaptureOutput;
+    use pop_runtime::capture::render_batch;
     let dir = tempfile::tempdir().unwrap();
     let doc = capture_document(dir.path());
     let ids = saved_images(&doc, 1, false);
@@ -175,7 +177,8 @@ fn capture_damaged_unused_image_never_blocks_outputs() {
 }
 #[test]
 fn capture_used_damage_names_attachment_and_preserves_sibling() {
-    use pop_runtime::capture::{CaptureOutput, render_batch};
+    use pop_contracts::capture::CaptureOutput;
+    use pop_runtime::capture::render_batch;
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
     let ids = saved_images(&doc, 1, false);
@@ -191,15 +194,16 @@ fn capture_used_damage_names_attachment_and_preserves_sibling() {
 }
 #[test]
 fn capture_image_budget_is_per_output() {
-    use pop_runtime::capture::{CaptureOutput, render_batch};
+    use pop_contracts::capture::CaptureOutput;
+    use pop_runtime::capture::render_batch;
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
     let ids = saved_images(&doc, 4, true); // Just over 24 MiB in state, just over 12 MiB per view.
     let store = Store::open(&doc, Mode::Snapshot).unwrap();
     let sizes: Vec<_> = store.attachments().unwrap().iter().map(|image| image.bytes).collect();
     assert_eq!(sizes.len(), 4);
-    assert!(sizes.iter().sum::<u64>() > pop_runner::IMAGE_BYTES as u64);
-    assert!(sizes.iter().sum::<u64>() / 2 < pop_runner::IMAGE_BYTES as u64);
+    assert!(sizes.iter().sum::<u64>() > pop_contracts::evaluator::IMAGE_BYTES as u64);
+    assert!(sizes.iter().sum::<u64>() / 2 < pop_contracts::evaluator::IMAGE_BYTES as u64);
     store.close().unwrap();
     let results =
         render_batch(&doc, &image_markup(&ids[..2], &ids[2..]), &[CaptureOutput::Preview, CaptureOutput::Icon])
@@ -214,7 +218,8 @@ fn capture_image_budget_is_per_output() {
 }
 #[test]
 fn capture_markup_outside_image_inventory_names_the_id() {
-    use pop_runtime::capture::{CaptureOutput, render_batch};
+    use pop_contracts::capture::CaptureOutput;
+    use pop_runtime::capture::render_batch;
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
     let unknown = "a".repeat(64);
@@ -226,7 +231,8 @@ fn capture_markup_outside_image_inventory_names_the_id() {
 
 #[test]
 fn capture_attachment_removed_during_markup_fails_only_its_output() {
-    use pop_runtime::capture::{CaptureOutput, render_batch};
+    use pop_contracts::capture::CaptureOutput;
+    use pop_runtime::capture::render_batch;
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
     let ids = saved_images(&doc, 1, false);
@@ -242,7 +248,8 @@ fn capture_attachment_removed_during_markup_fails_only_its_output() {
 
 /// A closed export to `output`, as a PNG, with a deadline it never reaches.
 fn export(document: &Path, output: &Path, evaluator: &pop_runner::Evaluator) -> Result<(), Error> {
-    use pop_runtime::capture::{CaptureFormat, export_saved};
+    use pop_contracts::capture::CaptureFormat;
+    use pop_runtime::capture::export_saved;
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
     export_saved(document, CaptureFormat::Png, output, evaluator, deadline)
 }
@@ -287,7 +294,8 @@ fn closed_export_refuses_an_existing_output_before_rendering() {
 /// capture passes, and leaves the document's bytes and its writer lock alone.
 #[test]
 fn closed_export_publishes_only_a_checked_image_and_never_writes_the_document() {
-    use pop_runtime::capture::{CaptureFormat, export_saved};
+    use pop_contracts::capture::CaptureFormat;
+    use pop_runtime::capture::export_saved;
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
     let saved = fs::read(&doc).unwrap();
@@ -310,7 +318,8 @@ fn closed_export_publishes_only_a_checked_image_and_never_writes_the_document() 
 /// A result that arrives after its command's deadline is discarded, not published late.
 #[test]
 fn a_closed_export_past_its_deadline_publishes_nothing() {
-    use pop_runtime::capture::{CaptureFormat, export_saved};
+    use pop_contracts::capture::CaptureFormat;
+    use pop_runtime::capture::export_saved;
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
     let (rendered, output) = (dir.path().join("rendered"), dir.path().join("Late.png"));
@@ -432,7 +441,9 @@ fn closed_export_refuses_templates_and_apps_without_an_export_view() {
 
 #[test]
 fn widget_capture_version_changes_when_the_renderer_changes_without_editing_the_document() {
-    use pop_runtime::capture::{CaptureOutput, CaptureValue, render_batch};
+    use pop_contracts::capture::CaptureOutput;
+    use pop_runtime::capture::CaptureValue;
+    use pop_runtime::capture::render_batch;
     use std::os::unix::fs::symlink;
     let render_widgets = |document: &Path, evaluator: &pop_runner::Evaluator| {
         let result = render_batch(document, evaluator, &[CaptureOutput::Widgets]).unwrap().pop().unwrap().result;
@@ -453,12 +464,12 @@ fn widget_capture_version_changes_when_the_renderer_changes_without_editing_the_
     let document = directory.path().join("document.pop");
     file::create_document(&template, &document).unwrap();
     let saved = fs::read(&document).unwrap();
-    let images: Vec<_> = pop_runtime::capture::widgets::widget_viewports()
+    let images: Vec<_> = pop_contracts::widgets::widget_viewports()
         .iter()
         .map(|view| data_encoding::BASE64.encode(&png(view.width * 2, view.height * 2, 6)))
         .collect();
     let reply = serde_json::json!({"ok": true, "images": images});
-    let batch = serde_json::json!({"frames":pop_runtime::capture::widgets::widget_viewports().iter().map(|v| serde_json::json!({"width":v.width,"height":v.height,"html":"","css":""})).collect::<Vec<_>>(),"fonts":[]});
+    let batch = serde_json::json!({"frames":pop_contracts::widgets::widget_viewports().iter().map(|v| serde_json::json!({"width":v.width,"height":v.height,"html":"","css":""})).collect::<Vec<_>>(),"fonts":[]});
     let program = format!(
         r#"input=$(/bin/cat); case "$input" in *'"mode":"widgetMarkup"'*) printf '%s' '{batch}';; *) printf '%s' '{reply}';; esac"#
     );
@@ -488,104 +499,14 @@ fn widget_capture_version_changes_when_the_renderer_changes_without_editing_the_
     assert!(error.to_string().contains("renderer changed during capture"), "{error}");
     assert_eq!(fs::read(&document).unwrap(), saved, "capture must never modify the document");
 }
-/// What a crashed owner leaves behind: its discovery file, with its lock released.
-fn stage(dir: &Path) -> PathBuf {
-    isolate_registry();
-    let stage = dir.join("stage");
-    fs::create_dir_all(stage.join("assets")).unwrap();
-    write_app(&stage, APP);
-    fs::write(stage.join("assets/ui.js"), "export default { mount() { return {}; } };\n".repeat(64)).unwrap();
-    support::add_asset(&stage, "ui.css", "text/css", b"body { color: var(--pop-accent); }");
-    support::add_asset(&stage, &font_key(), "font/woff2", &font());
-    stage
-}
-fn font() -> Vec<u8> {
-    let mut bytes: Vec<u8> = (0..=255u8).cycle().take(4096).collect();
-    bytes[..4].copy_from_slice(b"wOF2");
-    bytes
-}
-fn font_key() -> String {
-    support::media_key(&font(), "woff2")
-}
-fn template(dir: &Path) -> PathBuf {
-    let out = dir.join("Template.pop");
-    support::pack(&stage(dir), &out).unwrap();
-    out
-}
-fn document(dir: &Path) -> PathBuf {
-    let doc = dir.join("Doc.pop");
-    file::create_document(&template(dir), &doc).unwrap();
-    doc
-}
-fn raw(path: &Path) -> Connection {
-    let conn = Connection::open(path).unwrap();
-    conn.set_db_config(DbConfig::SQLITE_DBCONFIG_ENABLE_TRIGGER, false).unwrap();
-    conn
-}
-fn code(error: Error) -> Code {
-    match error {
-        Error::Rejected(e) => e.code,
-        other => panic!("expected a refusal, got {other:?}"),
-    }
-}
-fn temporaries(dir: &Path) -> Vec<String> {
-    fs::read_dir(dir)
-        .unwrap()
-        .filter_map(|e| e.ok())
-        .map(|e| e.file_name().to_string_lossy().into_owned())
-        .filter(|n| n.ends_with(".tmp"))
-        .collect()
-}
-
-fn png(width: u32, height: u32, color_type: u8) -> Vec<u8> {
-    let mut bytes = vec![];
-    let mut encoder = png::Encoder::new(&mut bytes, width, height);
-    encoder.set_color(if color_type == 6 { png::ColorType::Rgba } else { png::ColorType::Rgb });
-    encoder.set_depth(png::BitDepth::Eight);
-    let channels = if color_type == 6 { 4 } else { 3 };
-    encoder.write_header().unwrap().write_image_data(&vec![255; width as usize * height as usize * channels]).unwrap();
-    bytes
-}
-/// Intentionally no pixels: dimensions are refused before decoding a frame.
-fn encoded(width: u32, height: u32, pixels: &[u8]) -> Vec<u8> {
-    let mut bytes = vec![];
-    let mut encoder = png::Encoder::new(&mut bytes, width, height);
-    encoder.set_color(png::ColorType::Rgba);
-    encoder.set_depth(png::BitDepth::Eight);
-    encoder.set_compression(png::Compression::NoCompression);
-    encoder.write_header().unwrap().write_image_data(pixels).unwrap();
-    bytes
-}
-
-fn decoded(png: &[u8]) -> Vec<u8> {
-    let mut decoder = png::Decoder::new(std::io::Cursor::new(png));
-    decoder.set_transformations(png::Transformations::normalize_to_color8());
-    let mut reader = decoder.read_info().unwrap();
-    let mut buffer = vec![0; reader.output_buffer_size().unwrap()];
-    let info = reader.next_frame(&mut buffer).unwrap();
-    let pixels = &buffer[..info.buffer_size()];
-    match info.color_type {
-        png::ColorType::Rgba => pixels.to_vec(),
-        png::ColorType::Rgb => pixels.chunks(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect(),
-        png::ColorType::GrayscaleAlpha => pixels.chunks(2).flat_map(|p| [p[0], p[0], p[0], p[1]]).collect(),
-        png::ColorType::Grayscale => pixels.iter().flat_map(|&g| [g, g, g, 255]).collect(),
-        png::ColorType::Indexed => unreachable!("normalizing expands a palette"),
-    }
-}
-
-/// Packing stores artwork losslessly smaller: every pixel decodes the same, fully
-/// transparent ones keep their colour, and packing stays reproducible.
-fn render_of(shade: u8) -> (Vec<u8>, Vec<u8>) {
-    let pixels: Vec<u8> = (0..512 * 512usize).flat_map(|i| [shade, (i % 251) as u8, 0x77, 255]).collect();
-    (encoded(512, 512, &pixels), pixels)
-}
 
 /// Rendered artwork is stored exactly as supplied artwork is: checked, then optimized, so a
 /// template packed with a render stores the bytes one packed with that render as its
 /// artwork would.
 #[test]
 fn rendered_artwork_is_stored_as_supplied_artwork_is() {
-    use pop_core::engine::{ArtworkSource::*, PackedArtwork};
+    use pop_contracts::wire::engine::ArtworkSource::*;
+    use pop_contracts::wire::engine::PackedArtwork;
     let dir = tempfile::tempdir().unwrap();
     let stage = stage(dir.path());
     let ((raw, pixels), asked) = (render_of(1), std::cell::RefCell::new(vec![]));
@@ -639,18 +560,4 @@ fn an_icon_that_fails_to_render_fails_the_pack() {
     assert!(error.to_string().contains("512"), "{error}");
     assert_eq!(fs::read(&existing).unwrap(), before);
     assert!(temporaries(dir.path()).is_empty());
-}
-
-type RenderedArtwork = Result<Vec<(Artwork, Option<Vec<u8>>)>, Error>;
-/// A stand-in for the capture renderer: it draws each role asked for with `draw` and notes
-/// each batch it was asked for, from the staged template.
-fn renders<'a>(
-    asked: &'a std::cell::RefCell<Vec<Vec<Artwork>>>,
-    draw: impl Fn(Artwork) -> Option<Vec<u8>> + 'a,
-) -> impl Fn(&Path, &[Artwork]) -> RenderedArtwork + 'a {
-    move |template, roles| {
-        assert_eq!(file::open(template, true).unwrap().kind, Kind::Template, "renders the staged template");
-        asked.borrow_mut().push(roles.to_vec());
-        Ok(roles.iter().map(|&name| (name, draw(name))).collect())
-    }
 }

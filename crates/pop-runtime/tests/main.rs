@@ -5,6 +5,4 @@ mod compat;
 mod compat_writers;
 mod owner;
 mod owner_commands;
-mod support;
-
-mod engine_wire;
+use pop_testkit as support;

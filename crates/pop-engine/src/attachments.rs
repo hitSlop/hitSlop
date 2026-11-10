@@ -1,5 +1,6 @@
 //! Read-only inspection of a local attachment before a batch imports it.
-use pop_core::{ATTACHMENT_FILE_BYTES, ATTACHMENT_NAME_BYTES, Code, engine::AttachmentRef};
+use pop_contracts::wire::engine::AttachmentRef;
+use pop_contracts::wire::{ATTACHMENT_FILE_BYTES, ATTACHMENT_NAME_BYTES, Code};
 use pop_storage::store;
 use std::fs::OpenOptions;
 use std::io::Read;
@@ -7,8 +8,9 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 pub(super) fn reference(path: &Path) -> store::Result<AttachmentRef> {
-    let rejected =
-        |code, message: String| store::Error::Rejected(pop_core::Error { code, message, op_index: None, path: vec![] });
+    let rejected = |code, message: String| {
+        store::Error::Rejected(pop_contracts::Error { code, message, op_index: None, path: vec![] })
+    };
     // Never follow a link, and do not wait on a FIFO before checking its file type.
     let file = OpenOptions::new()
         .read(true)

@@ -1,5 +1,6 @@
 use crate::support;
-use pop_core::{AppSpec, Code, Document, Origin};
+use pop_contracts::wire::Code;
+use pop_core::{AppSpec, Document, Origin};
 use serde_json::{Value, json};
 use support::ApplyJson;
 

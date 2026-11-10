@@ -1,8 +1,9 @@
 //! Media names, packing policy and passive attachment signatures. Filenames select
 //! app formats; attachment types depend only on their bytes, never a caller's claim.
-use crate::{Code, Result, err};
+use crate::{Result, err};
+use pop_contracts::wire::Code;
 
-pub use pop_contracts::media::{ASSET_TYPES, AssetType, asset_key, asset_type};
+use pop_contracts::media::ASSET_TYPES;
 
 /// Recognizes passive signatures, not complete valid files. Decoders still validate
 /// the media they consume; skins/artwork additionally require a complete PNG decode.
@@ -162,7 +163,7 @@ fn webm(bytes: &[u8]) -> bool {
     };
     let start = 4 + size;
     // Real headers are small; refuse oversized/unknown-length headers for sniffing.
-    if length > crate::wire::WEBM_HEADER_BYTES || length as usize > bytes.len().saturating_sub(start) {
+    if length > pop_contracts::wire::WEBM_HEADER_BYTES || length as usize > bytes.len().saturating_sub(start) {
         return false;
     }
     let mut header = &bytes[start..start + length as usize];
@@ -205,5 +206,3 @@ pub fn check_asset(media_type: &str, bytes: &[u8]) -> Result<()> {
     };
     if valid { Ok(()) } else { Err(err(Code::InvalidRequest, "App asset bytes do not match their media type")) }
 }
-
-pub use pop_contracts::media::build_registry;

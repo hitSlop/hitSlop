@@ -191,9 +191,10 @@ const tiers: Tier[] = [
       if (!args.length) await prepare("Rust compilation and lints", async () => {
         await quiet(["cargo", "fmt", "--all", "--", "--check"]);
         await quiet(["cargo", "clippy", "--locked", "--workspace", "--all-targets", "--", "-D", "warnings"]);
-        // Compile the mobile host graph independently: workspace feature unification
-        // otherwise hides accidental desktop dependencies and unavailable-service code.
-        await quiet(["cargo", "clippy", "--locked", "-p", "pop-core-ffi", "--no-default-features", "--features", "mobile-capture", "--", "-D", "warnings"]);
+        // iOS policy is selected by the target, so check it with the Apple SDK.
+        // Linux CI cannot compile this graph.
+        if (process.platform === "darwin")
+          await quiet(["cargo", "clippy", "--locked", "-p", "pop-core-ffi", "--target", "aarch64-apple-ios", "--", "-D", "warnings"]);
         await quiet(["cargo", "clippy", "--locked", "-p", "pop-sharing-worker", "--target", "wasm32-unknown-unknown", "--", "-D", "warnings"]);
         // The WASM adapter's lints do not depend on the host: Linux and release runs check
         // them, so macOS runs skip a build.
@@ -213,7 +214,7 @@ const tiers: Tier[] = [
       await sh(["cargo", "nextest", "run", "--locked", ...scope, ...(ci ? ["--profile", "ci"] : []), ...nextestFilters(args), ...args]);
       if (!args.length && process.platform === "linux") {
         await prepare("Linux Rust configurations", async () => {
-          await quiet(["cargo", "clippy", "--locked", "-p", "pop-core", "--no-default-features", "--tests", "--", "-D", "warnings"]);
+          await quiet(["cargo", "clippy", "--locked", "-p", "pop-core", "--tests", "--", "-D", "warnings"]);
           await quiet(["cargo", "nextest", "run", "--locked", "-p", "pop-engine", "--features", "bundled-sqlite", "--no-run"]);
         });
         await sh(["cargo", "nextest", "run", "--locked", "-p", "pop-engine", "--features", "bundled-sqlite", ...(ci ? ["--profile", "ci"] : []), ...nextestFilters([])]);

@@ -1,11 +1,13 @@
 //! Native socket routing and blocking CLI driver.
 use super::*;
-use crate::capture::CaptureFormat;
-use crate::wire::SocketRequest;
-use crate::wire::engine::{
+use crate::{lock, socket};
+use pop_contracts::capture::CaptureFormat;
+use pop_contracts::wire::SocketRequest;
+use pop_contracts::wire::engine::{
     AttachmentBytes, AttachmentInfo, EngineRequest, EngineSuccess, ExportFormat, GetState, ThemeExportState, True,
 };
-use crate::{file, lock, registry, socket, store};
+use pop_contracts::wire::socket::protocol_mismatch;
+use pop_storage::{file, registry, store};
 use serde::Deserialize;
 use std::path::Path;
 use std::sync::{Arc, Mutex, mpsc};
@@ -15,7 +17,7 @@ pub const COMMAND_TIMEOUT: Duration = Duration::from_secs(30);
 pub const CLIENT_TIMEOUT: Duration = Duration::from_secs(35);
 const ADMISSION: Duration = Duration::from_secs(2);
 /// The permanent preflight has no document path and never admits an operation.
-#[cfg(feature = "desktop")]
+#[cfg(not(target_os = "ios"))]
 pub(crate) fn preflight(input: &str) -> Option<String> {
     #[derive(Deserialize)]
     struct Method {
@@ -40,7 +42,7 @@ pub(crate) fn preflight(input: &str) -> Option<String> {
 pub struct ExportRequest {
     pub document_path: String,
     /// None requests a clean document copy after the live page drains.
-    pub format: Option<crate::engine::ExportFormat>,
+    pub format: Option<pop_contracts::wire::engine::ExportFormat>,
     pub output: String,
 }
 /// A native renderer completes this once, while its command is still active. It checks
@@ -104,13 +106,9 @@ fn call_inner(owner: &Owner, request: owner::Request, deadline: Instant, admissi
         Err(Failure::new(FailureKind::Failed, "Owner disconnected or timed out; outcome may be unknown"))
     })
 }
-/// A request as it arrives: its protocol first, then its envelope.
-fn parse(input: &str) -> Result<SocketRequest> {
-    SocketRequest::decode(input).map_err(Failure::from)
-}
 /// Serves one request that arrived on `owner`'s socket.
 pub fn serve(owner: &Owner, input: &str, exporter: Option<&Arc<dyn ExportHandler>>, deadline: Instant) -> String {
-    match parse(input) {
+    match SocketRequest::decode(input).map_err(Failure::from) {
         Ok(request) if Path::new(request.request.document_path().expect("document request")) == owner.path() => {
             dispatch(owner, request.request, exporter, deadline)
         }
@@ -134,7 +132,7 @@ fn dispatch(
             EngineRequest::Call { command, args, .. } => {
                 let Reply::Command { ids, result_json, .. } = call(
                     owner,
-                    Request::Command { name: command, args_json: args.to_string(), origin: crate::Origin::Agent },
+                    Request::Command { name: command, args_json: args.to_string(), origin: pop_core::Origin::Agent },
                     deadline,
                 )?
                 else {
@@ -161,7 +159,12 @@ fn dispatch(
                 let schema = serde_json::from_str(app.document_json()).map_err(|e| invalid(e.to_string()))?;
                 EngineSuccess::Describe {
                     ok: True,
-                    state: crate::describe::describe(app.metadata().clone(), schema, reading, app.command_metadata()),
+                    state: pop_core::describe::describe(
+                        app.metadata().clone(),
+                        schema,
+                        reading,
+                        app.command_metadata(),
+                    ),
                 }
             }
             EngineRequest::Get { .. } => {
@@ -197,7 +200,7 @@ fn dispatch(
                     };
                 }
                 let Reply::Applied { ids, .. } =
-                    call(owner, Request::Apply { batch, origin: crate::Origin::Agent }, deadline)?
+                    call(owner, Request::Apply { batch, origin: pop_core::Origin::Agent }, deadline)?
                 else {
                     return Err(unexpected());
                 };

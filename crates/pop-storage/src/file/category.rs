@@ -1,4 +1,4 @@
-use crate::app::Category;
+use pop_contracts::app::Category;
 const CATEGORY_COLUMNS: [(Category, &str); 14] = [
     (Category::Popular, "popular"),
     (Category::Productivity, "productivity"),
