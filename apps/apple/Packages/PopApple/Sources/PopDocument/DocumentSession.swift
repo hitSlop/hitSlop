@@ -136,12 +136,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   let owner: DocumentOwner
   public var documentID: String? { owner.documentID }
   public private(set) var sharing: DocumentSharing?
-  private final class SharedSession {
-    weak var value: DocumentSession?
-    init(_ value: DocumentSession) { self.value = value }
-  }
-  private static var sharingSessions: [String: SharedSession] = [:]
-  static func sharedSession(document: String) -> DocumentSession? { sharingSessions[document]?.value }
   private var server: NativeSocketServer?
   /// The attached page's token (see `makeWebView`).
   private(set) var view = UUID().uuidString
@@ -179,10 +173,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     observeOwner()
     configureFileSaver()
     makeWebView()
-    if let document = documentID {
-      sharing = DocumentSharing(owner: owner)
-      Self.sharingSessions[document] = SharedSession(self)
-    }
+    if documentID != nil { sharing = DocumentSharing(owner: owner) }
   }
   private func configureFileSaver() {
     fileSaver.window = { [weak self] in self?.liveWebView?.window }

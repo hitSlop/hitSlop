@@ -23,24 +23,11 @@ final class PhoneEditorTests: XCTestCase {
     }
   }
 
-  func testSharedRecentUsesEmbeddedTitleWithoutRenamingItsCanonicalFile() throws {
-    let folder = try outputFolder().appendingPathComponent("SharedDocuments", isDirectory: true)
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    let file = folder.appendingPathComponent(UUID().uuidString.lowercased() + ".pop")
-    _ = try PopFile.importCopy(from: input("host-probe"), to: file)
-    let expected = try PopSummary(url: file).metadata.title
-    XCTAssertEqual(PhoneRecent.localTitle(file), expected)
-    XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
-    XCTAssertEqual(PhoneRecent.localTitle(file), expected)
-  }
-
-  func testLocalRecentPreservesFilenameAndSharedUnreadableFileHasFriendlyFallback() throws {
+  func testLocalRecentPreservesFilename() throws {
     let folder = try outputFolder()
     XCTAssertEqual(PhoneRecent.localTitle(folder.appendingPathComponent("My notes-a1b2c3d4.pop")), "My notes")
     let uuid = UUID().uuidString.lowercased()
     XCTAssertEqual(PhoneRecent.localTitle(folder.appendingPathComponent(uuid + ".pop")), uuid)
-    let shared = folder.appendingPathComponent("SharedDocuments", isDirectory: true)
-    XCTAssertEqual(PhoneRecent.localTitle(shared.appendingPathComponent(uuid + ".pop")), "Shared pop")
   }
 
   /// Leaving returns to the library at once and saves behind it: the page's last typing is

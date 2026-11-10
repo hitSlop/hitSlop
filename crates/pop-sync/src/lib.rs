@@ -3,14 +3,6 @@ pub mod budget;
 pub mod maintenance;
 use pop_sharing_protocol::limits;
 
-/// Connection lifecycle independent of sockets, document semantics and credentials.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum State {
-    Connecting,
-    Live,
-    Backoff,
-    Stopped,
-}
 /// An observed connection outcome. A live session resets the reconnect delay.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Event {
@@ -29,7 +21,7 @@ pub enum Action {
 /// Retry policy has no runtime, timers or global state.
 #[derive(Debug)]
 pub struct Supervisor {
-    state: State,
+    stopped: bool,
     delay_ms: u64,
 }
 impl Default for Supervisor {
@@ -39,33 +31,25 @@ impl Default for Supervisor {
 }
 impl Supervisor {
     pub fn new() -> Self {
-        Self { state: State::Connecting, delay_ms: limits::BACKOFF_MIN_MS }
-    }
-    pub fn state(&self) -> State {
-        self.state
+        Self { stopped: false, delay_ms: limits::BACKOFF_MIN_MS }
     }
     pub fn step(&mut self, event: Event) -> Action {
-        if self.state == State::Stopped {
+        if self.stopped {
             return Action::Stop;
         }
         match event {
-            Event::Connect => {
-                self.state = State::Connecting;
-                Action::Continue
-            }
+            Event::Connect => Action::Continue,
             Event::Live => {
-                self.state = State::Live;
                 self.delay_ms = limits::BACKOFF_MIN_MS;
                 Action::Continue
             }
             Event::Retry => {
-                self.state = State::Backoff;
                 let milliseconds = self.delay_ms;
                 self.delay_ms = self.delay_ms.saturating_mul(2).min(limits::BACKOFF_MAX_MS);
                 Action::RetryAfter { milliseconds }
             }
             Event::Stop => {
-                self.state = State::Stopped;
+                self.stopped = true;
                 Action::Stop
             }
         }

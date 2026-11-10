@@ -21,7 +21,7 @@ pub(crate) fn evaluate_job(input: Job<'_>, interrupted: impl FnMut() -> bool + '
             if !input.bundle.is_empty() || !input.request.is_empty() {
                 return Err("Raster jobs cannot carry JavaScript or an authored request".into());
             }
-            #[cfg(all(feature = "capture", not(target_arch = "wasm32")))]
+            #[cfg(feature = "capture")]
             {
                 let raster = input.raster.ok_or("Raster job requires frames and images")?;
                 raster.batch.validate()?;
@@ -30,19 +30,19 @@ pub(crate) fn evaluate_job(input: Job<'_>, interrupted: impl FnMut() -> bool + '
                 }
                 return pop_renderer::raster(raster, input.mode);
             }
-            #[cfg(not(all(feature = "capture", not(target_arch = "wasm32"))))]
+            #[cfg(not(feature = "capture"))]
             return Err("Native capture rendering is unavailable".into());
         }
         _ if input.raster.is_some() => return Err("JavaScript jobs cannot carry raster images".into()),
         JobKind::Markup | JobKind::WidgetMarkup => {
-            #[cfg(all(feature = "capture", not(target_arch = "wasm32")))]
+            #[cfg(feature = "capture")]
             return crate::capture::evaluate_markup(
                 &input.bundle,
                 &input.request,
                 if matches!(input.mode, JobKind::WidgetMarkup) { "__popWidget" } else { "__popCapture" },
                 interrupted,
             );
-            #[cfg(not(all(feature = "capture", not(target_arch = "wasm32"))))]
+            #[cfg(not(feature = "capture"))]
             return Err("Native capture rendering is unavailable".into());
         }
         JobKind::Command => "__popRun",

@@ -126,8 +126,6 @@ fn retained_bytes(request: &Request) -> usize {
         | Request::Theme
         | Request::ExportTheme => 0,
         Request::Unshare => 0,
-        #[cfg(not(target_arch = "wasm32"))]
-        Request::MergeSnapshot { bytes } => bytes.capacity(),
         Request::PutAttachment { bytes } => bytes.capacity(),
         Request::Apply { batch, .. } => {
             let mut writer = SizeWriter(0);

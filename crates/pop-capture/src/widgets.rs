@@ -28,14 +28,8 @@ pub fn saved_version(path: &std::path::Path, evaluator: &pop_runner::Evaluator) 
     Ok(version)
 }
 
-/// The caller acquires a saved source through the owner before calling this function.
+/// The caller acquires a saved source through the owner before rendering it.
 /// Only immutable state and the private program leave the core, into a restricted child.
-pub fn render_saved(path: &std::path::Path, evaluator: &pop_runner::Evaluator) -> crate::store::Result<WidgetCapture> {
-    use crate::store::{Mode, Store};
-    let store = Store::open(path, Mode::Snapshot)?;
-    render_source(&crate::capture::RenderSource::new(&store, &store.document()?), evaluator)
-}
-
 pub(crate) fn render_source(
     source: &crate::capture::RenderSource<'_>,
     evaluator: &pop_runner::Evaluator,

@@ -171,7 +171,6 @@ fn stage(owner: &Owner) -> Result<Seed> {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Phase {
-    Preparing,
     Offline,
     Syncing,
     Synced,
@@ -251,13 +250,6 @@ impl Client {
     pub fn flush(&self) -> Result<()> {
         retry_busy(&self.owner, || Request::Flush)?;
         Ok(())
-    }
-    pub fn confirmed(&self) -> Result<bool> {
-        self.flush()?;
-        let Reply::State { reading, .. } = request(&self.owner, Request::State)? else {
-            return Err("Owner state unavailable".into());
-        };
-        Ok(self.journal.transaction()?.current()?.is_some_and(|receipt| receipt.owner_version == reading.version))
     }
     /// Internal owner of catalog snapshots; independent from the document UI listener.
     pub fn observe(&self, observer: Arc<dyn Fn() + Send + Sync>) {

@@ -129,7 +129,7 @@ impl Evaluator {
         no_broken_pipe_signal(&stdin).map_err(|e| format!("Cannot protect command input pipe: {e}"))?;
         running.writer = Some(
             std::thread::Builder::new()
-                .name("dotpop.clickmand.input".into())
+                .name("pop.command.input".into())
                 .spawn(move || {
                     #[cfg(not(target_os = "macos"))]
                     block_broken_pipe_signal()?;
@@ -140,7 +140,7 @@ impl Evaluator {
         let (sender, receiver) = std::sync::mpsc::channel();
         running.reader = Some(
             std::thread::Builder::new()
-                .name("dotpop.clickmand.output".into())
+                .name("pop.command.output".into())
                 .spawn(move || {
                     let mut output = Vec::new();
                     let result = stdout.take(output_limit as u64 + 1).read_to_end(&mut output);

@@ -18,8 +18,6 @@ pop-contracts = { path = "../pop-contracts" }
 pop-core = { path = "../pop-core", default-features = false }
 serde.workspace = true
 serde_json.workspace = true
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 pop-storage = { path = "../pop-storage" }
 pop-runner = { path = "../pop-runner", default-features = false }
 sha2 = "=0.11.0"

@@ -13,7 +13,6 @@ fn failure(message: String) -> SharingError {
 }
 #[uniffi::remote(Enum)]
 pub enum Phase {
-    Preparing,
     Offline,
     Syncing,
     Synced,

@@ -56,7 +56,6 @@ private struct AppSettingsView: View {
     return coordinator
   }()
   private var libraryChanges: AnyCancellable?
-  private var libraryWindows: AnyCancellable?
   private var recentMenu: NSMenu?
   private var recentMenuRefresh: Task<Void, Never>?
   private var exportMenuItem: NSMenuItem?
@@ -81,14 +80,8 @@ private struct AppSettingsView: View {
       try await self?.coordinator.closeAccountDocuments(paths)
     }
     DocumentSharing.installLibraryServices()
-    PopLibrary.shared.start()
-    libraryWindows = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification).sink {
-      [weak self] _ in
-      PopLibrary.shared.editorOpen = self?.coordinator.hasOpenDocuments ?? false
-    }
     libraryChanges = PopLibrary.shared.$entries.sink { [weak self] entries in
       guard let self else { return }
-      PopLibrary.shared.editorOpen = self.coordinator.hasOpenDocuments
       for entry in entries where entry.deleted {
         for controller in self.coordinator.documentControllers
         where controller.session.file.url.path == entry.path && !controller.isHiddenForClose {
@@ -123,7 +116,6 @@ private struct AppSettingsView: View {
   }
   func applicationDidBecomeActive(_ notification: Notification) {
     NotificationCenter.default.post(name: .popSharingForeground, object: nil)
-    PopLibrary.shared.editorOpen = coordinator.hasOpenDocuments
     PopLibrary.shared.activated(true)
   }
   func applicationDidResignActive(_ notification: Notification) {

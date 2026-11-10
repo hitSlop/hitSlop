@@ -75,7 +75,6 @@ public struct LibrarySyncAttention {
   @Published public private(set) var lastError: String?
   @Published public private(set) var pending = 0
   @Published public private(set) var foregroundAt = Date()
-  public var editorOpen = false
   public var visibleEntries: [LibraryEntry] { entries.filter { !$0.deleted } }
   public var attention: LibrarySyncAttention? {
     lastError == nil && issues.isEmpty ? nil : LibrarySyncAttention(explanation: syncExplanation, report: syncReport)
@@ -294,17 +293,11 @@ public struct LibrarySyncAttention {
     await work.value
     if current == generation { syncTask = nil }
   }
-  public func fetchInBackground() async throws {
-    await syncNow()
-    if let lastError { throw PopFailure(lastError) }
-  }
-  public func saveToCloud() async { await syncNow() }
   public func activated(_ active: Bool) {
     accountActive = active
     native?.setAccountActive(active: active)
     if active {
       foregroundAt = Date()
-      start()
       Task {
         await syncNow()
       }

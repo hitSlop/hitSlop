@@ -51,10 +51,10 @@ mod tests {
             let titles = library.entries().unwrap().into_iter().map(|entry| entry.title).collect::<Vec<_>>();
             observed.lock().unwrap().push(titles);
         }));
-        let entry = library.create(&template, "First").unwrap();
-        library.rename(&entry.id, "Renamed").unwrap();
+        library.create(&template, "First").unwrap();
+        library.create(&template, "Second").unwrap();
         assert!(!locked.load(Ordering::Acquire), "callbacks must run outside index and projection locks");
-        assert_eq!(snapshots.lock().unwrap().last().unwrap(), &["Renamed"]);
+        assert_eq!(snapshots.lock().unwrap().last().unwrap().len(), 2);
         let before = snapshots.lock().unwrap().len();
         library.entries().unwrap();
         library.reconcile().unwrap();

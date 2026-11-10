@@ -42,10 +42,6 @@ pub fn theme_request(change: ThemeChange) -> Request {
 pub enum Request {
     /// The document as it reads (`Document::reading`), and its publication sequence.
     State,
-    #[cfg(not(target_arch = "wasm32"))]
-    MergeSnapshot {
-        bytes: Vec<u8>,
-    },
     Apply {
         batch: crate::Batch,
         origin: Origin,

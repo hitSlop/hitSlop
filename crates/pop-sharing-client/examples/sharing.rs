@@ -48,7 +48,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let access = pop_sharing_client::join_member(link.trim(), token.trim())?;
         pop_sharing_client::resolve(&access.document, token.trim())?
             .ok_or("Shared document is unavailable")?
-            .install(&path, &root.join("relay-state"))?;
+            .install_if_current(&path, &root.join("relay-state"), || Ok(()))?;
     } else {
         file::create_document(template, &path)?;
     }

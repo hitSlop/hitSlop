@@ -39,8 +39,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     EngineReply::export_all(&config)?;
     BuildInput::export_all(&config)?;
     pop_contracts::evaluator::Job::export_all(&config)?;
-    pop_core::widgets::WidgetRenderRequest::export_all(&config)?;
-    pop_core::capture::ViewRenderRequest::export_all(&config)?;
+    pop_contracts::widgets::WidgetRenderRequest::export_all(&config)?;
+    pop_contracts::capture::ViewRenderRequest::export_all(&config)?;
     Batch::export_all(&config)?;
     OwnerState::export_all(&config)?;
     Publication::export_all(&config)?;

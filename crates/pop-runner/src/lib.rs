@@ -7,43 +7,40 @@ pub use pop_contracts::evaluator::{
 };
 #[cfg(feature = "evaluation")]
 mod evaluation;
-#[cfg(all(not(target_arch = "wasm32"), feature = "capture-in-process"))]
+#[cfg(feature = "capture-in-process")]
 mod in_process;
-#[cfg(all(not(target_arch = "wasm32"), feature = "process"))]
+#[cfg(feature = "process")]
 mod native;
 #[cfg(feature = "evaluation")]
 mod realm;
-#[cfg(all(not(target_arch = "wasm32"), any(not(feature = "process"), not(feature = "capture-in-process"))))]
-mod unavailable;
 #[cfg(feature = "evaluation")]
 pub use evaluation::evaluate;
-#[cfg(all(feature = "child", not(target_arch = "wasm32")))]
+#[cfg(feature = "child")]
 mod child;
-#[cfg(all(feature = "child", not(target_arch = "wasm32")))]
+#[cfg(feature = "child")]
 mod sandbox;
-#[cfg(all(feature = "child", not(target_arch = "wasm32")))]
+#[cfg(feature = "child")]
 pub use child::child;
-#[cfg(all(feature = "capture", not(target_arch = "wasm32")))]
+#[cfg(feature = "capture")]
 mod capture;
 
 /// Explicit host execution policy. Enabling another Cargo feature never changes a
 /// configured evaluator's isolation or gives a capture-only host authored commands.
-#[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Debug)]
 pub struct Evaluator {
     provider: Provider,
 }
-#[cfg(not(target_arch = "wasm32"))]
 #[derive(Clone, Debug)]
 enum Provider {
     #[cfg(feature = "process")]
     Process(native::Evaluator),
     #[cfg(feature = "capture-in-process")]
     InProcessCapture(in_process::Evaluator),
-    #[cfg(any(not(feature = "process"), not(feature = "capture-in-process")))]
-    Unavailable(unavailable::Evaluator),
 }
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg_attr(
+    not(any(feature = "process", feature = "capture-in-process")),
+    allow(unused_variables, reason = "a build without a provider cannot construct an Evaluator, so these never run")
+)]
 impl Evaluator {
     /// Start a fresh restricted child process for each command or capture job.
     pub fn process(executable: std::path::PathBuf, arguments: Vec<String>) -> Result<Self, String> {
@@ -53,8 +50,8 @@ impl Evaluator {
         }
         #[cfg(not(feature = "process"))]
         {
-            unavailable::Evaluator::new(executable, arguments, "process")
-                .map(|provider| Self { provider: Provider::Unavailable(provider) })
+            let _ = (executable, arguments);
+            Err("The process provider is unavailable in this build".into())
         }
     }
     /// Run capture on the caller's background thread, without process isolation.
@@ -67,53 +64,45 @@ impl Evaluator {
         }
         #[cfg(not(feature = "capture-in-process"))]
         {
-            unavailable::Evaluator::new(executable, vec![], "in-process capture")
-                .map(|provider| Self { provider: Provider::Unavailable(provider) })
+            let _ = executable;
+            Err("The in-process capture provider is unavailable in this build".into())
         }
     }
     /// Whether this host explicitly grants authored command execution.
     pub fn supports_commands(&self) -> bool {
-        match &self.provider {
+        match self.provider {
             #[cfg(feature = "process")]
             Provider::Process(_) => true,
             #[cfg(feature = "capture-in-process")]
             Provider::InProcessCapture(_) => false,
-            #[cfg(any(not(feature = "process"), not(feature = "capture-in-process")))]
-            Provider::Unavailable(_) => false,
         }
     }
 
     /// Host binary used for renderer and font freshness checks.
     pub fn executable_path(&self) -> &std::path::Path {
-        match &self.provider {
+        match self.provider {
             #[cfg(feature = "process")]
-            Provider::Process(provider) => provider.executable_path(),
+            Provider::Process(ref provider) => provider.executable_path(),
             #[cfg(feature = "capture-in-process")]
-            Provider::InProcessCapture(provider) => provider.executable_path(),
-            #[cfg(any(not(feature = "process"), not(feature = "capture-in-process")))]
-            Provider::Unavailable(provider) => provider.executable_path(),
+            Provider::InProcessCapture(ref provider) => provider.executable_path(),
         }
     }
     /// Evaluate a command using the explicitly configured execution policy.
     pub fn run(&self, runtime_abi: u64, bundle: &str, request: &str) -> Result<String, String> {
-        match &self.provider {
+        match self.provider {
             #[cfg(feature = "process")]
-            Provider::Process(provider) => provider.run(runtime_abi, bundle, request),
+            Provider::Process(ref provider) => provider.run(runtime_abi, bundle, request),
             #[cfg(feature = "capture-in-process")]
-            Provider::InProcessCapture(provider) => provider.run(runtime_abi, bundle, request),
-            #[cfg(any(not(feature = "process"), not(feature = "capture-in-process")))]
-            Provider::Unavailable(provider) => provider.run(runtime_abi, bundle, request),
+            Provider::InProcessCapture(ref provider) => provider.run(runtime_abi, bundle, request),
         }
     }
     /// Collect capture markup using the configured provider.
     pub fn markup(&self, runtime_abi: u64, bundle: &str, request: &str, widget: bool) -> Result<Batch, String> {
-        match &self.provider {
+        match self.provider {
             #[cfg(feature = "process")]
-            Provider::Process(provider) => provider.markup(runtime_abi, bundle, request, widget),
+            Provider::Process(ref provider) => provider.markup(runtime_abi, bundle, request, widget),
             #[cfg(feature = "capture-in-process")]
-            Provider::InProcessCapture(provider) => provider.markup(runtime_abi, bundle, request, widget),
-            #[cfg(any(not(feature = "process"), not(feature = "capture-in-process")))]
-            Provider::Unavailable(provider) => provider.markup(runtime_abi, bundle, request, widget),
+            Provider::InProcessCapture(ref provider) => provider.markup(runtime_abi, bundle, request, widget),
         }
     }
     /// Rasterize markup using the configured provider's supported output kinds.
@@ -124,13 +113,11 @@ impl Evaluator {
         images: std::collections::BTreeMap<String, String>,
         mode: JobKind,
     ) -> Result<String, String> {
-        match &self.provider {
+        match self.provider {
             #[cfg(feature = "process")]
-            Provider::Process(provider) => provider.raster(runtime_abi, batch, images, mode),
+            Provider::Process(ref provider) => provider.raster(runtime_abi, batch, images, mode),
             #[cfg(feature = "capture-in-process")]
-            Provider::InProcessCapture(provider) => provider.raster(runtime_abi, batch, images, mode),
-            #[cfg(any(not(feature = "process"), not(feature = "capture-in-process")))]
-            Provider::Unavailable(provider) => provider.raster(runtime_abi, batch, images, mode),
+            Provider::InProcessCapture(ref provider) => provider.raster(runtime_abi, batch, images, mode),
         }
     }
 }

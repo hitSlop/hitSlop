@@ -3,7 +3,7 @@ pub mod evaluator;
 pub mod identity;
 pub mod lineage;
 pub mod resources;
-pub use identity::{AppRevisionId, StateContractId};
+pub use identity::AppRevisionId;
 
 pub mod app;
 pub mod capture;

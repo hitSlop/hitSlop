@@ -133,10 +133,6 @@ impl AppSpec {
     pub fn new(descriptor: &str, slug: &str, theme: &str) -> Result<Self> {
         Ok(Self::of(self::descriptor(descriptor)?, slug, theme::validate_defaults(theme)?))
     }
-    /// An app that declares no colors.
-    pub fn data(descriptor: &str) -> Result<Self> {
-        Self::new(descriptor, "", "{}")
-    }
     pub(crate) fn of(schema: Node, slug: &str, tokens: Vec<(String, String)>) -> Self {
         Self { schema, theme: theme::Theme::new(slug, tokens) }
     }
@@ -669,7 +665,7 @@ mod tests {
             "entries":{"kind":"record","value":object},
             "rows":{"kind":"list","item":object}
         }});
-        let app = AppSpec::data(&schema.to_string()).unwrap();
+        let app = AppSpec::new(&schema.to_string(), "", "{}").unwrap();
         let mut doc = Document::create(&app, "{}").unwrap();
         let baseline = doc.lists.len();
         for _ in 0..4 {

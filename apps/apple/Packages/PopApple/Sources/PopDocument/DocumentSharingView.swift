@@ -73,9 +73,6 @@ public struct LiveCollaborationSection: View {
       } else if wantsLink && (!account.signedIn || signingIn) {
         caption("Sign in with Apple to start a live link. People you invite don't need an account.")
         signInButton
-      } else if model.status?.phase == .preparing {
-        caption("Couldn't finish starting.")
-        if model.error == nil { Button("Try Again") { start() }.disabled(model.busy) }
       } else if live {
         caption(
           joined
@@ -150,7 +147,7 @@ public struct LiveCollaborationSection: View {
             if account.signedIn { start() }
           } else if failedAction == .stop {
             model.stop()
-          } else if (failedAction == .start && !live) || model.status?.phase == .preparing {
+          } else if failedAction == .start && !live {
             start()
           } else {
             model.retry()

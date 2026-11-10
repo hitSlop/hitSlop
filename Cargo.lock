@@ -2657,7 +2657,6 @@ dependencies = [
  "pop-sharing-protocol",
  "serde",
  "serde_json",
- "sha2 0.11.0",
  "svgtypes",
  "ts-rs",
 ]

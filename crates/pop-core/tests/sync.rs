@@ -6,7 +6,7 @@ use loro::{ExportMode, LoroDoc, VersionVector};
 use pop_contracts::hex;
 use pop_core::Document;
 use pop_core::Origin;
-use pop_core::sync::{Ack, Frame, Permission, Record, Session, Span, Status, Version};
+use pop_core::sync::{Ack, Base, BaseRead, Frame, Permission, Record, Session, Span, Status, Version};
 use serde_json::{Value, json};
 use std::collections::VecDeque;
 use support::generate::intent;
@@ -204,6 +204,14 @@ impl Replica {
         self.up.extend(step.send);
     }
 }
+fn base_of(session: &Session, doc: &Document) -> Option<Base> {
+    match session.maintenance_base(doc).unwrap() {
+        BaseRead::Pending => None,
+        BaseRead::Ready(base) => Some(base),
+        BaseRead::TooLarge => panic!("base is too large"),
+    }
+}
+
 fn version(doc: &Document) -> VersionVector {
     let loro = LoroDoc::new();
     loro.import(&doc.checkpoint().unwrap()).unwrap();
@@ -286,7 +294,7 @@ fn replicas_converge_through_the_relay_despite_faults() {
                     }
                 }
                 96 => {
-                    if let Some(base) = r.session.base(&r.doc).unwrap() {
+                    if let Some(base) = base_of(&r.session, &r.doc) {
                         relay.compact(base);
                     }
                 }
@@ -501,7 +509,7 @@ fn quota_waits_for_compaction() {
         session.status()
     );
     assert_eq!(support::value(&doc)["done"], true);
-    relay.compact(session.base(&doc).unwrap().unwrap());
+    relay.compact(base_of(&session, &doc).unwrap());
     let (replies, _) = relay.reply(&session.connect(&doc));
     for reply in replies {
         for push in session.receive(&mut doc, &reply.encode()).send {
@@ -578,19 +586,19 @@ fn base_is_updates_and_excludes_unsent_edits() {
     let original = Document::create(&app(SCHEMA), r#"{"title":"Seed","done":false}"#).unwrap();
     let seed = original.checkpoint().unwrap();
     let (mut doc, mut session) = admitted(&seed, &version(&original));
-    assert!(session.base(&doc).unwrap().is_none(), "not caught up");
+    assert!(base_of(&session, &doc).is_none(), "not caught up");
     session.receive(&mut doc, &Frame::CaughtUp.encode());
     let frontier = version(&doc);
-    let base = session.base(&doc).unwrap().unwrap();
+    let base = base_of(&session, &doc).unwrap();
     let meta = LoroDoc::decode_import_blob_meta(&base.bytes, false).unwrap();
     assert_eq!(meta.mode, loro::EncodedBlobMode::Updates);
     assert_eq!(meta.partial_end_vv, frontier);
     doc.apply_json(r#"{"intents":[{"type":"set","path":["done"],"value":true}]}"#, Origin::Page).unwrap();
-    assert!(session.base(&doc).unwrap().is_none(), "local edits unpushed");
+    assert!(base_of(&session, &doc).is_none(), "local edits unpushed");
     let Frame::Push { id, .. } = Frame::decode(&session.push(&doc).unwrap()).unwrap() else { panic!() };
-    assert!(session.base(&doc).unwrap().is_none(), "push in flight");
+    assert!(base_of(&session, &doc).is_none(), "push in flight");
     session.receive(&mut doc, &Frame::Ack { id, status: Ack::Quota }.encode());
-    assert_eq!(session.base(&doc).unwrap().unwrap().frontier, frontier);
+    assert_eq!(base_of(&session, &doc).unwrap().frontier, frontier);
     assert_eq!(
         LoroDoc::decode_import_blob_meta(&doc.base(&frontier).unwrap(), false).unwrap().partial_end_vv,
         frontier
@@ -679,14 +687,14 @@ fn compacted_backfill_merges_with_unsent_local_edits_and_later_records() {
 fn read_only_offline_and_terminally_paused_sessions_cannot_compact() {
     let mut doc = Document::create(&app(SCHEMA), r#"{"title":"Seed","done":false}"#).unwrap();
     let mut session = Session::new(APP);
-    assert!(session.base(&doc).unwrap().is_none());
+    assert!(base_of(&session, &doc).is_none());
     session.connect(&doc);
     let vv = version(&doc).iter().map(|(&p, &n)| (p, n as u32)).collect();
     session.receive(&mut doc, &Frame::Welcome { permission: Permission::Read, version: vv }.encode());
     session.receive(&mut doc, &Frame::CaughtUp.encode());
-    assert!(session.base(&doc).unwrap().is_none());
+    assert!(base_of(&session, &doc).is_none());
     session.pause(pop_core::sync::PauseKind::Refused, "refused".into());
-    assert!(session.base(&doc).unwrap().is_none());
+    assert!(base_of(&session, &doc).is_none());
 }
 
 // Hosts route on the phase and the pause, never on the status's debug text.

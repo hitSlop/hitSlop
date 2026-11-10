@@ -273,7 +273,7 @@ fn initial_download_hydrates_without_records_and_failed_download_never_publishes
         key,
         seed: resolution::PrivateSeed { path: seed.path.clone() },
     };
-    let interrupted = resolved.install(&destination, &state);
+    let interrupted = resolved.install_if_current(&destination, &state, || Ok(()));
     assert!(interrupted.is_err(), "a missing blob must refuse initial publication");
     assert!(!destination.exists(), "a failed initial download must not publish a partial document");
     assert!(
@@ -287,7 +287,7 @@ fn initial_download_hydrates_without_records_and_failed_download_never_publishes
     refuse.store(false, Ordering::Relaxed);
     assert!(resolved.install_if_current(&destination, &state, || Err("account detached".into())).is_err());
     assert!(!destination.exists(), "an account changed during hydration must fence publication");
-    resolved.install(&destination, &state).unwrap();
+    resolved.install_if_current(&destination, &state, || Ok(())).unwrap();
     stop.store(true, Ordering::Relaxed);
     server.join().unwrap();
     let downloaded = Store::open(&destination, Mode::Snapshot).unwrap();

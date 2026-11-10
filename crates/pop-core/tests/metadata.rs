@@ -49,7 +49,7 @@ fn every_live_origin_records_its_message_and_timestamp_after_reopen() {
 
 #[test]
 fn merged_text_and_post_rollback_edits_keep_live_metadata() {
-    let app = AppSpec::data(r#"{"kind":"object","properties":{"title":{"kind":"text"}}}"#).unwrap();
+    let app = AppSpec::new(r#"{"kind":"object","properties":{"title":{"kind":"text"}}}"#, "", "{}").unwrap();
     let mut doc = Document::create(&app, r#"{"title":"Hello"}"#).unwrap();
     doc.apply_batch(batch(json!({"intents":[{"type":"set","path":["title"],"value":"Hello A"}]})), Origin::Page)
         .unwrap();

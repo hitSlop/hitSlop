@@ -121,29 +121,32 @@ impl Request {
 /// command path reads, or the failure.
 #[derive(uniffi::Enum)]
 pub enum OwnerReply {
-    Command { sequence: u64, ids: Vec<String>, result_json: String },
     Unit,
     State { json: String },
     ThemeFile { json: String },
     Applied { sequence: u64, ids: Vec<String> },
     Theme { state: ThemeState, sequence: u64 },
     Bytes { bytes: Option<Vec<u8>> },
-    Attachments { items: Vec<Attachment> },
-    Attachment { item: Attachment },
     Failed { failure: Failure },
 }
 impl From<core::Reply> for OwnerReply {
     fn from(value: core::Reply) -> Self {
         match value {
-            core::Reply::Command { sequence, ids, result_json } => Self::Command { sequence, ids, result_json },
             core::Reply::Unit => Self::Unit,
             core::Reply::State { reading, .. } => Self::State { json: reading.to_json() },
             core::Reply::ThemeFile { json } => Self::ThemeFile { json },
             core::Reply::Applied { sequence, ids, .. } => Self::Applied { sequence, ids },
             core::Reply::Theme { state, sequence } => Self::Theme { state: state.into(), sequence },
             core::Reply::Bytes { bytes } => Self::Bytes { bytes },
-            core::Reply::Attachments { items } => Self::Attachments { items },
-            core::Reply::Attachment { item } => Self::Attachment { item },
+            // No native request produces the command or attachment replies.
+            other => Self::Failed {
+                failure: Failure {
+                    kind: FailureKind::Failed,
+                    message: format!("Unexpected owner reply: {other:?}"),
+                    reason: None,
+                    op_index: None,
+                },
+            },
         }
     }
 }

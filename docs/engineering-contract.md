@@ -174,16 +174,12 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
 and field identifiers, never SQL query text. An inert schema extension therefore never
 changes an unchanged app's digest.
 
-Rust distinguishes `AppRevisionId` (those exact digest bytes) from `StateContractId`
-(the interpreted descriptor, slug and unordered theme defaults). Descriptions, window
-presentation and command metadata do not change the state contract. Descriptor option
-presence remains significant; parsed number spelling and floating zero signs do not.
-These are internal identities; existing wire `appDigest` fields retain their encoding.
+Rust's `AppRevisionId` is exactly those digest bytes. It is an internal identity; existing
+wire `appDigest` fields retain their encoding.
 
-Matching state contracts mean two apps read the same saved state. They do not authorize replacing
-an embedded app: a future updater must accept a complete revision, check its runtime
-requirements and publish the replacement atomically under the writer lock. App updating
-and schema evolution remain deferred.
+A future updater must accept a complete revision, check its runtime requirements and
+publish the replacement atomically under the writer lock. App updating and schema
+evolution remain deferred.
 
 ### Document acceptance and publication
 

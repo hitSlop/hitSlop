@@ -7,7 +7,7 @@ use serde_json::{Value, json};
 /// some, conformance cases.
 /// An app of this descriptor (JSON) that declares no colors.
 pub fn app(schema: impl AsRef<str>) -> AppSpec {
-    AppSpec::data(schema.as_ref()).unwrap()
+    AppSpec::new(schema.as_ref(), "", "{}").unwrap()
 }
 pub fn fixture(name: &str) -> Value {
     serde_json::from_str(match name {

@@ -4,7 +4,6 @@ pub mod app;
 pub mod arguments;
 #[cfg(feature = "ts")]
 pub mod bindings;
-pub mod capture;
 mod check;
 pub mod describe;
 mod descriptor;
@@ -19,7 +18,6 @@ pub mod shape;
 pub mod sync;
 mod text;
 pub mod theme;
-pub mod widgets;
 mod wire;
 
 pub use descriptor::validate;
@@ -93,7 +91,3 @@ fn integer(value: &Value) -> Option<i64> {
     let n = value.as_f64()?;
     (n.is_finite() && n.fract() == 0.0 && n.abs() <= MAX_SAFE as f64).then_some(n as i64)
 }
-
-/// Identifies the core build (a hash of its sources and the lockfile), so a release can
-/// prove the app and the engine embed the same core.
-pub const BUILD_ID: &str = env!("POP_CORE_BUILD_ID");

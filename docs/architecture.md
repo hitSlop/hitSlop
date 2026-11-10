@@ -142,7 +142,7 @@ uses runtime. The engine and FFI compose these crates; WASM SDK uses pure core, 
 browser feature adds runtime and storage. Loro remains pinned; there is one owner/edit path
 and no persistent JSON mirror or second document engine.
 
-`BUILD_ID` in core identifies the semantic fingerprint. Runtime's foundation fingerprint
+Runtime's foundation fingerprint
 covers core, storage, capture, runner, renderer, contracts, sharing protocol and fonts;
 engine and FFI report that runtime foundation ID.
 
@@ -170,9 +170,9 @@ functions. Process and in-process capture providers coexist explicitly; iPhone c
 calls, SDK command calls and browser command workers are deferred until a concrete
 invocation surface is implemented. In-process iPhone capture remains supported.
 
-Separate Rust `StateContractId` and exact `AppRevisionId` identities prepare future explicit
-bundle updates. Documents continue pinning an immutable accepted app; background
-updates, mutable partial bundles and schema migration are outside this work.
+The exact `AppRevisionId` identity prepares future explicit bundle updates. Documents
+continue pinning an immutable accepted app; background updates, mutable partial bundles
+and schema migration are outside this work.
 
 ### Owner admission and callbacks
 

@@ -432,17 +432,6 @@ impl Actor {
                 return Ok(None);
             }
             Request::State => Reply::State { reading: self.core.reading()?, sequence: self.core.sequence() },
-            #[cfg(not(target_arch = "wasm32"))]
-            Request::MergeSnapshot { bytes } => {
-                self.mutation()?;
-                if !self.store.is_shared() {
-                    return Err(Failure::rejected(Code::InvalidRequest, "Snapshot sync requires retained history"));
-                }
-                if let Some(result) = self.edited(|core| core.import_remote(&[&bytes]))? {
-                    self.accepted(result.sequence, result.publication, result.theme_changed);
-                }
-                Reply::Unit
-            }
             Request::Apply { batch, origin } => {
                 self.mutation()?;
                 let result = self.edited(|core| core.apply_batch(batch, origin))?;

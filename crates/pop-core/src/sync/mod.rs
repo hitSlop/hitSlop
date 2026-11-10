@@ -315,15 +315,6 @@ impl Session {
     /// Normal compaction requires all local operations to be acknowledged. After Quota,
     /// compact only the confirmed relay frontier, excluding the rejected local push.
     /// A base over `BASE_BYTES` is the `Outgrown` pause.
-    pub fn base(&self, doc: &Document) -> Result<Option<Base>, Pause> {
-        match self.maintenance_base(doc)? {
-            BaseRead::Pending => Ok(None),
-            BaseRead::Ready(base) => Ok(Some(base)),
-            BaseRead::TooLarge => {
-                Err(Pause { kind: PauseKind::Outgrown, reason: "This document has outgrown sharing".into() })
-            }
-        }
-    }
     pub fn maintenance_base(&self, doc: &Document) -> Result<BaseRead, Pause> {
         let waiting = matches!(self.status, Status::Paused { kind: PauseKind::RoomFull, .. });
         if !self.write

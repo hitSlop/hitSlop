@@ -1,13 +1,11 @@
 //! Typed app interpretation. Storage checks resources separately before publishing an
 //! opened app. A summary uses only the scalar metadata checker, never this decoder.
 pub(crate) mod format;
-mod identity;
 
 use crate::arguments::Arguments;
 use crate::build::BuildDeclaration;
 use crate::{AppSpec, Result};
 
-pub use pop_contracts::StateContractId;
 pub use pop_contracts::app::*;
 
 #[derive(Clone, Debug)]
@@ -29,7 +27,6 @@ pub struct AppDefinition {
     commands: Vec<CommandDefinition>,
     capabilities: Vec<Capability>,
     spec: AppSpec,
-    state_contract_id: std::sync::OnceLock<StateContractId>,
 }
 
 impl AppDefinition {
@@ -68,12 +65,6 @@ impl AppDefinition {
     pub fn capabilities(&self) -> &[Capability] {
         &self.capabilities
     }
-    /// Identity of the interpreted schema, slug, and unordered theme defaults.
-    /// Presentation, commands, descriptions, and embedded resources are not part of it.
-    pub fn state_contract_id(&self) -> StateContractId {
-        *self.state_contract_id.get_or_init(|| identity::state_contract_id(self))
-    }
-
     pub fn spec(&self) -> &AppSpec {
         &self.spec
     }

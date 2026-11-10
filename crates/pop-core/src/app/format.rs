@@ -331,17 +331,7 @@ fn checked(metadata_value: AppMetadata, stored: Definition) -> Result<AppDefinit
     let mut capabilities: Vec<_> = stored.capabilities.iter().filter_map(|name| stored_capability(name)).collect();
     capabilities.sort();
     capabilities.dedup();
-    Ok(AppDefinition {
-        metadata: metadata_value,
-        stored,
-        window,
-        theme,
-        views,
-        commands,
-        capabilities,
-        spec,
-        state_contract_id: Default::default(),
-    })
+    Ok(AppDefinition { metadata: metadata_value, stored, window, theme, views, commands, capabilities, spec })
 }
 
 /// The stored metadata's shape: bounded, with the one or two different categories its

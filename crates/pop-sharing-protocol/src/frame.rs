@@ -29,8 +29,6 @@ pub const ERROR_PROTOCOL: u8 = 1;
 pub const ERROR_APP: u8 = 2;
 /// Permanent refusal: ended or unknown room.
 pub const ERROR_ENDED: u8 = 3;
-/// Permanent refusal: identity or membership is not authorized.
-pub const ERROR_UNAUTHORIZED: u8 = 4;
 /// Permanent refusal: malformed frame or client message sequence.
 pub const ERROR_MALFORMED: u8 = 5;
 

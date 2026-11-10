@@ -22,12 +22,6 @@ fn finite(values: &[f64]) -> Result<()> {
     if values.iter().all(|v| v.is_finite() && (v * SHAPE_VIEW_BOX).is_finite()) { Ok(()) } else { Err(invalid()) }
 }
 
-/// Checks a manifest `shape` given as JSON text (`None` for the default rounded corners),
-/// as authoring validates it.
-pub fn validate(shape: Option<&str>, width: f64, height: f64) -> Result<()> {
-    let shape: Option<Value> = shape.map(serde_json::from_str).transpose().map_err(|_| invalid())?;
-    silhouette(shape.as_ref(), width, height).map(|_| ())
-}
 /// The silhouette for a manifest `shape` (or `None` for the default rounded corners) on a
 /// window of `width` × `height` points.
 pub fn silhouette(shape: Option<&Value>, width: f64, height: f64) -> Result<Silhouette> {

@@ -9,12 +9,12 @@ mod paths;
 #[path = "../tests/support/mod.rs"]
 mod test_support;
 
-/// These tables. A newer index is refused, and nothing in it is changed.
+/// These tables. Any other version is refused, and nothing in it is changed.
 const INDEX_VERSION: u32 = 2;
 /// The device index, beside the managed `documents` and per-account `accounts` folders.
 const INDEX: &str = "index.sqlite";
 use pop_runtime::owner::{Failure, FailureKind, Owner, Request};
-use pop_sharing_client::{Client, ClientStatus, local};
+use pop_sharing_client::{Client, local};
 pub use pop_sharing_protocol::document::{AccessState, DocumentRole};
 use pop_sharing_protocol::{document::DocumentMetadata, hex};
 use pop_storage::{
@@ -36,7 +36,6 @@ pub enum Issue {
     Busy,
     RequiresUpdate,
     AppMismatch,
-    TooLarge,
     AccountChanged,
     Failed,
 }
@@ -129,8 +128,8 @@ impl Library {
                 message: "This local index requires a newer pop; existing files are retained".into(),
             });
         }
-        if version == 1 {
-            db.execute_batch("BEGIN; ALTER TABLE documents RENAME COLUMN catalog_seen TO listed; UPDATE documents SET revision=0; DROP TABLE IF EXISTS catalog_writes; DROP TABLE IF EXISTS catalog_clock; DROP TABLE IF EXISTS catalog_tombstones; PRAGMA user_version=2; COMMIT;")?;
+        if version != 0 && version != INDEX_VERSION {
+            return Err(failed("This local index was made by an older version of pop and can't be opened"));
         }
         db.execute_batch(
             "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
@@ -488,9 +487,6 @@ impl Library {
     pub fn connection(&self, id: &str) -> Option<Arc<Client>> {
         self.inner.lock().unwrap().clients.get(id).cloned()
     }
-    pub fn status(&self, id: &str) -> Option<ClientStatus> {
-        self.connection(id).map(|client| client.status())
-    }
     pub fn enable_sync(&self, id: &str, token: &str) -> Result<Entry> {
         let _change = self.changing();
         let generation = self.operation()?;
@@ -819,34 +815,6 @@ impl Library {
             Ok(())
         })?;
         self.adopt(&path, title)
-    }
-    pub fn rename(&self, id: &str, title: &str) -> Result<()> {
-        let _change = self.changing();
-        self.check()?;
-        let (entry, token) = {
-            let inner = self.inner.lock().unwrap();
-            (self.row(&inner, id)?, inner.token.clone())
-        };
-        if entry.role == Some(DocumentRole::Editor) {
-            return Err(failed("Only the owner can rename a cloud document"));
-        }
-        if entry.role == Some(DocumentRole::Owner) {
-            pop_sharing_client::update_document(
-                id,
-                title,
-                &entry.template,
-                token.as_deref().ok_or_else(|| failed("Sign in first"))?,
-            )
-            .map_err(failed)?;
-        }
-        let _projection = self.projections.lock().unwrap();
-        let inner = self.inner.lock().unwrap();
-        inner.db.execute(
-            "UPDATE documents SET title=?3 WHERE account=?1 AND id=?2",
-            params![if entry.account_bound { &self.account } else { "" }, id, title.trim()],
-        )?;
-        drop(inner);
-        Ok(())
     }
     pub fn publish_artwork(
         &self,

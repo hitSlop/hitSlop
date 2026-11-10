@@ -13,11 +13,8 @@ impl ResolvedRoom {
         &self.info.document
     }
     /// Installs only a missing file; existing local state is never replaced. The relay
-    /// already holds the seed, so the new replica starts confirmed.
-    pub fn install(&self, destination: &Path, state_directory: &Path) -> Result<()> {
-        self.install_if_current(destination, state_directory, || Ok(()))
-    }
-    /// Check the caller's account-operation fence after network IO, before publishing.
+    /// already holds the seed, so the new replica starts confirmed. Check the caller's
+    /// account-operation fence after network IO, before publishing.
     pub fn install_if_current(
         &self,
         destination: &Path,

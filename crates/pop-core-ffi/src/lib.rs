@@ -7,7 +7,7 @@ use pop_core::Origin;
 use pop_core::shape::{Length, Segment, Silhouette};
 use pop_runtime::owner::Failure;
 use pop_storage::file::{self, Artwork, Kind, TemplateSource};
-use pop_storage::store::{self, Attachment, Mode};
+use pop_storage::store::{self, Mode};
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -104,13 +104,6 @@ pub enum Mode {
     Document,
     /// Reads the saved state without the lock and writes nothing.
     Snapshot,
-}
-/// A stored attachment: its identity (SHA-256, hex) and size in bytes.
-#[uniffi::remote(Record)]
-pub struct Attachment {
-    pub media_type: String,
-    pub id: String,
-    pub bytes: u64,
 }
 
 #[uniffi::remote(Enum)]

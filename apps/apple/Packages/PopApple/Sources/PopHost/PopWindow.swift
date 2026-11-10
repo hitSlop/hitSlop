@@ -404,7 +404,7 @@ public final class PopDocumentWindowController: NSWindowController, NSWindowDele
       if refreshedLibraryArtwork {
         Task {
           await PopLibrary.shared.refresh()
-          await PopLibrary.shared.saveToCloud()
+          await PopLibrary.shared.syncNow()
         }
       }
       telemetry.send(.breadcrumb(operation, .completed))

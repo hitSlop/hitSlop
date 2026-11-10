@@ -430,7 +430,15 @@ fn closed_export_refuses_templates_and_apps_without_an_export_view() {
 
 #[test]
 fn widget_capture_version_changes_when_the_renderer_changes_without_editing_the_document() {
+    use pop_capture::capture::{CaptureOutput, CaptureValue, render_batch};
     use std::os::unix::fs::symlink;
+    let render_widgets = |document: &Path, evaluator: &pop_runner::Evaluator| {
+        let result = render_batch(document, evaluator, &[CaptureOutput::Widgets]).unwrap().pop().unwrap().result;
+        result.map(|value| match value {
+            CaptureValue::Widgets { capture } => capture,
+            CaptureValue::Image { .. } => unreachable!("a widgets output renders widgets"),
+        })
+    };
     let directory = tempfile::tempdir().unwrap();
     let source = stage(directory.path());
     support::edit_input(&source, |input| {
@@ -455,13 +463,13 @@ fn widget_capture_version_changes_when_the_renderer_changes_without_editing_the_
     let executable = directory.path().join("evaluator");
     symlink("/bin/sh", &executable).unwrap();
     let evaluator = pop_runner::Evaluator::process(executable.clone(), vec!["-c".into(), program.clone()]).unwrap();
-    let first = pop_capture::widgets::render_saved(&document, &evaluator).unwrap();
-    let repeated = pop_capture::widgets::render_saved(&document, &evaluator).unwrap();
+    let first = render_widgets(&document, &evaluator).unwrap();
+    let repeated = render_widgets(&document, &evaluator).unwrap();
     assert_eq!(first.source_version, repeated.source_version);
     let replacement = directory.path().join("replacement");
     symlink("/bin/bash", &replacement).unwrap();
     fs::rename(&replacement, &executable).unwrap();
-    let upgraded = pop_capture::widgets::render_saved(&document, &evaluator).unwrap();
+    let upgraded = render_widgets(&document, &evaluator).unwrap();
     assert_ne!(first.source_version, upgraded.source_version, "new renderer must invalidate unchanged widget state");
     assert_eq!(pop_capture::widgets::saved_version(&document, &evaluator).unwrap(), upgraded.source_version);
     // Replacing a helper at the same path with identical bytes does not need a
@@ -474,8 +482,7 @@ fn widget_capture_version_changes_when_the_renderer_changes_without_editing_the_
         vec!["-c".into(), format!("/bin/ln -sf /bin/sh '{}'; {program}", executable.display())],
     )
     .unwrap();
-    let error =
-        pop_capture::widgets::render_saved(&document, &evaluator).err().expect("replacement must refuse capture");
+    let error = render_widgets(&document, &evaluator).err().expect("replacement must refuse capture");
     assert!(error.to_string().contains("renderer changed during capture"), "{error}");
     assert_eq!(fs::read(&document).unwrap(), saved, "capture must never modify the document");
 }

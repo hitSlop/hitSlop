@@ -176,13 +176,11 @@ struct PhoneRootView: View {
     .appHaptic(.impact(flexibility: .soft, intensity: 0.5), trigger: model.readyFeedback)
     .task {
       library.activated(scenePhase == .active)
-      library.start()
       await model.loadTemplates()
       launchReady = true
     }
     // The document is on screen from the tap: a tile zooms into it while it opens behind.
     .onChange(of: model.presented) { _, url in
-      library.editorOpen = url != nil
       if let url {
         if path.contains(where: { !$0.isDocument }) {
           // SwiftUI keeps a pushed screen by its place in the stack: a document put in place of a

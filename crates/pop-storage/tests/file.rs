@@ -426,7 +426,6 @@ fn app_revision_identity_excludes_saved_state_and_tracks_embedded_app_changes() 
     let store = Store::open(&path, Mode::Document).unwrap();
     let original = store.app_revision_id().unwrap();
     assert_eq!(original.as_bytes(), &store.app_digest().unwrap(), "the existing digest encoding stays unchanged");
-    let contract = store.app().app.state_contract_id();
     let mut state = store.document().unwrap();
     state.apply_json(
         r##"{"intents":[{"type":"set","path":["title"],"value":"State only"},{"type":"setTheme","values":{"accent":"#abcdef"}}]}"##,
@@ -450,7 +449,6 @@ fn app_revision_identity_excludes_saved_state_and_tracks_embedded_app_changes() 
         raw(&changed).execute_batch(change).unwrap();
         let updated = Store::open(&changed, Mode::Snapshot).unwrap();
         assert_ne!(updated.app_revision_id().unwrap(), original, "{change}");
-        assert_eq!(updated.app().app.state_contract_id(), contract, "{change}");
         updated.close().unwrap();
     }
 }

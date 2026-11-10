@@ -197,6 +197,7 @@ impl Inspection<'_> {
     }
 }
 impl Transaction<'_> {
+    #[cfg(test)]
     pub fn current(&self) -> Result<Option<Receipt>> {
         self.journal.read("json")
     }

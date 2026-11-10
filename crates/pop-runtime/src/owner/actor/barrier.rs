@@ -86,7 +86,7 @@ fn closes(request: &Request) -> bool {
 /// Saved-state fences cover all earlier queued writes, including command evaluation.
 pub(super) fn fence(request: &Request) -> bool {
     #[cfg(not(target_arch = "wasm32"))]
-    if matches!(request, Request::MergeSnapshot { .. } | Request::SetArtwork { .. } | Request::Handoff { .. }) {
+    if matches!(request, Request::SetArtwork { .. } | Request::Handoff { .. }) {
         return true;
     }
     matches!(
@@ -103,7 +103,7 @@ pub(super) fn fence(request: &Request) -> bool {
 /// Requests that change the document.
 pub(super) fn edits(request: &Request) -> bool {
     #[cfg(not(target_arch = "wasm32"))]
-    if matches!(request, Request::MergeSnapshot { .. } | Request::SetArtwork { .. }) {
+    if matches!(request, Request::SetArtwork { .. }) {
         return true;
     }
     matches!(

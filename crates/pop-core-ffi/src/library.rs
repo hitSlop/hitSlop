@@ -25,7 +25,6 @@ pub enum Issue {
     Busy,
     RequiresUpdate,
     AppMismatch,
-    TooLarge,
     AccountChanged,
     Failed,
 }
@@ -105,9 +104,6 @@ impl NativeLibrary {
     pub fn connection(&self, id: String) -> Option<Arc<crate::sharing::NativeSharing>> {
         self.0.connection(&id).map(|client| Arc::new(crate::sharing::NativeSharing(client)))
     }
-    pub fn status(&self, id: String) -> Option<pop_sharing_client::ClientStatus> {
-        self.0.status(&id)
-    }
     pub fn access(&self, id: String, token: String) -> Result<core::AccessState, LibraryError> {
         Ok(self.0.access(&id, &token)?)
     }
@@ -131,9 +127,6 @@ impl NativeLibrary {
     }
     pub fn local_copy(&self, id: String, title: String) -> Result<core::Entry, LibraryError> {
         Ok(self.0.local_copy(&id, &title)?)
-    }
-    pub fn rename(&self, id: String, title: String) -> Result<(), LibraryError> {
-        Ok(self.0.rename(&id, &title)?)
     }
     pub fn publish_artwork(
         &self,

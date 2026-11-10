@@ -7,14 +7,11 @@ use pop_storage::{
 use sha2::{Digest, Sha256};
 use std::{path::Path, sync::mpsc, time::Duration};
 
-pub const MAX_FILE_BYTES: u64 = 16 << 20;
 type Result<T> = std::result::Result<T, String>;
 #[derive(Debug)]
 pub struct Info {
     pub id: String,
     pub version: String,
-    pub fingerprint: String,
-    pub app_digest: [u8; 32],
     pub artwork_digest: String,
 }
 pub fn request(owner: &Owner, request: Request) -> Result<Reply> {
@@ -39,13 +36,9 @@ pub fn request_typed(owner: &Owner, request: Request) -> std::result::Result<Rep
 pub fn inspect(path: &Path) -> Result<Info> {
     let store = Store::open(path, Mode::Snapshot).map_err(|e| e.to_string())?;
     let reading = store.document().map_err(|e| e.to_string())?.reading().map_err(|e| e.to_string())?;
-    let attachment_ids: Vec<_> = store.attachments().map_err(|e| e.to_string())?.into_iter().map(|a| a.id).collect();
-    let state = serde_json::json!({"value": reading.value, "theme": reading.theme, "attachments": attachment_ids});
     Ok(Info {
         id: store.app().document_uuid.clone().ok_or("Not a document")?,
         version: reading.version,
-        fingerprint: crate::hex(&Sha256::digest(serde_json::to_string(&state).map_err(|error| error.to_string())?)),
-        app_digest: store.app_digest().map_err(|e| e.to_string())?,
         artwork_digest: artwork_digest(&store)?,
     })
 }

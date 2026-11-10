@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 use std::time::Instant;
 
 fn main() {
-    let app = AppSpec::data(r#"{"kind":"object","properties":{"rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"text"},"done":{"kind":"boolean"}}}}}}"#).unwrap();
+    let app = AppSpec::new(r#"{"kind":"object","properties":{"rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"text"},"done":{"kind":"boolean"}}}}}}"#, "", "{}").unwrap();
     let mut results = vec![];
     for count in [1000, 5000] {
         let rows: Vec<Value> =

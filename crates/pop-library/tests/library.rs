@@ -14,47 +14,6 @@ fn fixture() -> (tempfile::TempDir, PathBuf) {
     support::fixture()
 }
 
-#[test]
-fn firestore_index_migration_preserves_files_inbox_and_pending_enable() {
-    let (dir, template) = fixture();
-    let root = dir.path().join("library");
-    let library = Library::open(&root, "account-a").unwrap();
-    let created = library.create(&template, "Keep this file").unwrap();
-    library.apply(LibraryUpdate::Upsert(catalog(&created.id, 42, "Cloud title"))).unwrap();
-    drop(library);
-    let db = rusqlite::Connection::open(root.join("index.sqlite")).unwrap();
-    db.execute_batch(
-        "ALTER TABLE documents RENAME COLUMN listed TO catalog_seen;
-        CREATE TABLE catalog_writes(account TEXT,id TEXT,revision INTEGER,payload TEXT);
-        CREATE TABLE catalog_clock(account TEXT,revision INTEGER);
-        CREATE TABLE catalog_tombstones(account TEXT,id TEXT,payload TEXT);
-        UPDATE documents SET pending_enable=1,opened=0 WHERE account='account-a';
-        PRAGMA user_version=1;",
-    )
-    .unwrap();
-    drop(db);
-    let migrated = Library::open(&root, "account-a").unwrap();
-    let entry = migrated.entries().unwrap().into_iter().find(|entry| entry.id == created.id).unwrap();
-    assert_eq!(entry.revision, 0);
-    assert!(entry.inbox);
-    assert!(Path::new(&entry.path).is_file());
-    let db = rusqlite::Connection::open(root.join("index.sqlite")).unwrap();
-    assert_eq!(
-        db.query_row("SELECT pending_enable FROM documents WHERE account='account-a'", [], |r| r.get::<_, i64>(0))
-            .unwrap(),
-        1
-    );
-    assert_eq!(
-        db.query_row(
-            "SELECT count(*) FROM sqlite_master WHERE name IN ('catalog_writes','catalog_clock','catalog_tombstones')",
-            [],
-            |r| r.get::<_, i64>(0)
-        )
-        .unwrap(),
-        0
-    );
-}
-
 fn catalog(id: &str, revision: u64, title: &str) -> AccountEntry {
     AccountEntry {
         document: id.into(),
