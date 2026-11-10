@@ -129,9 +129,10 @@ impl CloudDocument {
             };
             let invited = || -> Result<bool> {
                 Ok(self.phase()? == Some(RoomPhase::Live)
-                    && self
-                        .text("capability")?
-                        .is_some_and(|cap| input.capability.len() == 64 && hash(&cap) == hash(&input.capability)))
+                    && self.text("capability")?.is_some_and(|cap| {
+                        pop_contracts::wire::valid_attachment_id(&input.capability)
+                            && hash(&cap) == hash(&input.capability)
+                    }))
             };
             if !invited()? {
                 return Response::error("Invitation revoked", 403);

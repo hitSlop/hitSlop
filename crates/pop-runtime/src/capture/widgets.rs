@@ -55,14 +55,14 @@ pub(crate) fn render_source(
         viewports: widget_viewports(),
         attachments: &input.attachments,
     };
-    let batch = evaluator.markup(store.app().runtime_abi, program, &crate::encode(&request), true).map_err(invalid)?;
+    let batch = evaluator
+        .markup(store.app().runtime_abi, program, &crate::encode(&request), true)
+        .map_err(super::runner_failure)?;
     let images = source.images(&batch, super::CaptureOutput::Widgets)?;
     let result = evaluator
         .raster(store.app().runtime_abi, batch, images, pop_contracts::evaluator::JobKind::Widget)
-        .map_err(invalid)?;
-    let reply: pop_contracts::evaluator::RenderReply =
-        serde_json::from_str(&result).map_err(|e| invalid(format!("Invalid capture reply: {e}")))?;
-    let images = reply.into_images().map_err(invalid)?;
+        .map_err(super::runner_failure)?;
+    let images = result;
     if images.len() != request.viewports.len() {
         return Err(invalid("Widget renderer returned an incomplete batch"));
     }
@@ -70,8 +70,7 @@ pub(crate) fn render_source(
         .into_iter()
         .zip(request.viewports)
         .map(|(image, viewport)| {
-            let png =
-                data_encoding::BASE64.decode(image.as_bytes()).map_err(|_| invalid("Invalid widget PNG encoding"))?;
+            let png = image;
             // The sandbox's output is untrusted. The cache independently validates PNGs too.
             let checked = pop_storage::images::check(&png, pop_storage::images::Purpose::Preview)
                 .map_err(pop_storage::store::Error::Rejected)?;

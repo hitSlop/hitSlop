@@ -59,7 +59,7 @@ impl RoomKey {
         &self.identity
     }
     pub(crate) fn identity(document: &str, token: &str) -> Result<Self> {
-        if !pop_sharing_protocol::valid_document_id(document)
+        if !pop_contracts::identity::valid_document_id(document)
             || token.is_empty()
             || token.len() > pop_sharing_protocol::limits::IDENTITY_TOKEN_BYTES
         {
@@ -71,9 +71,9 @@ impl RoomKey {
 pub(crate) fn room_info(key: &RoomKey, token: Option<&str>) -> std::result::Result<RoomInfo, transport::HttpFailure> {
     let bytes = transport::http_typed(key, "GET", "", Some(token.unwrap_or(key.bearer())), &[], &[])?;
     let info: RoomInfo = serde_json::from_slice(&bytes).map_err(fail)?;
-    if !pop_sharing_protocol::valid_document_id(&info.document)
+    if !pop_contracts::identity::valid_document_id(&info.document)
         || info.document != key.room
-        || info.seed_hash.as_deref().is_some_and(|hash| !pop_sharing_protocol::resources::hash_id(hash))
+        || info.seed_hash.as_deref().is_some_and(|hash| !pop_contracts::wire::valid_attachment_id(hash))
         || info.seed_size.is_some_and(|size| size as usize > pop_sharing_protocol::SEED_BYTES)
     {
         return Err("Invalid cloud document metadata".into());
@@ -259,7 +259,7 @@ impl Drop for Client {
 }
 /// Parse an invitation without using its capability as an ongoing connection identity.
 pub fn invitation_document(link: &str) -> Result<String> {
-    Ok(Invitation::parse(link)?.room)
+    Ok(Invitation::parse(link).map_err(fail)?.room)
 }
 pub fn local_document(path: &Path) -> Result<Option<String>> {
     Ok(Store::open(path, Mode::Snapshot).map_err(fail)?.app().document_uuid.clone())

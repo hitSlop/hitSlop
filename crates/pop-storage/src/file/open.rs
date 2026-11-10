@@ -2,7 +2,7 @@
 use super::assets::read_asset;
 use super::check::{contents, layout, markers, one};
 use super::{Artwork, Kind, assets, reader, resolve, rows};
-use crate::error::{Error, Result, failed, invalid, sqlite};
+use crate::error::{Error, Result, invalid, sqlite};
 use pop_contracts::app::{AppMetadata, Author, WindowFrame};
 use pop_contracts::wire::MANIFEST_BYTES;
 use pop_core::app::AppDefinition;
@@ -111,7 +111,9 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
         if key == "ui.css" {
             style = true;
         }
-        if key == "ui.js" {
+        if pop_contracts::media::program(&key)
+            .is_some_and(|program| program.role == pop_contracts::media::ProgramRole::Ui)
+        {
             ui = true;
         }
         if let WindowFrame::Skin { skin: skin_key } = &app.window().frame
@@ -129,25 +131,18 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
             .map_err(Error::Rejected)?;
             skin = Some(bytes);
         }
-        if key == "widget.js" {
-            let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing widget program"))?;
-            widget = Some(std::sync::Arc::new(String::from_utf8(bytes).map_err(invalid)?));
-        }
-        if key == "preview.js" {
-            let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing preview program"))?;
-            preview = Some(std::sync::Arc::new(String::from_utf8(bytes).map_err(invalid)?));
-        }
-        if key == "export.js" {
-            let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing export program"))?;
-            export = Some(std::sync::Arc::new(String::from_utf8(bytes).map_err(invalid)?));
-        }
-        if key == "icon.js" {
-            let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing icon program"))?;
-            icon = Some(std::sync::Arc::new(String::from_utf8(bytes).map_err(invalid)?));
-        }
-        if key == "commands.js" {
-            let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing command program"))?;
-            commands = Some(std::sync::Arc::new(String::from_utf8(bytes).map_err(invalid)?));
+        for program in pop_contracts::media::PROGRAMS.iter().filter(|program| !program.public && program.key == key) {
+            use pop_contracts::media::ProgramRole;
+            let (target, missing) = match program.role {
+                ProgramRole::Widget => (&mut widget, "Missing widget program"),
+                ProgramRole::Preview => (&mut preview, "Missing preview program"),
+                ProgramRole::Export => (&mut export, "Missing export program"),
+                ProgramRole::Icon => (&mut icon, "Missing icon program"),
+                ProgramRole::Commands => (&mut commands, "Missing command program"),
+                ProgramRole::Ui => continue,
+            };
+            let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid(missing))?;
+            *target = Some(std::sync::Arc::new(String::from_utf8(bytes).map_err(invalid)?));
         }
     }
     if !ui {
@@ -208,8 +203,8 @@ pub fn export_artwork(path: &Path, name: Artwork, output: &Path) -> Result<bool>
         .write(true)
         .create_new(true)
         .open(output)
-        .map_err(|e| failed(format!("Create artwork output: {e}")))?;
-    file.write_all(&png).map_err(|e| failed(format!("Write artwork output: {e}")))?;
+        .map_err(|e| crate::error::caused(format!("Create artwork output: {e}"), e))?;
+    file.write_all(&png).map_err(|e| crate::error::caused(format!("Write artwork output: {e}"), e))?;
     Ok(true)
 }
 
@@ -227,7 +222,7 @@ pub fn inspect(path: &Path) -> Result<pop_contracts::wire::engine::InspectInfo> 
     let opened = opened(&conn, path, true)?;
     let (updates, update_bytes, checkpoint_bytes) = rows::state_sizes(&conn)?;
     let (attachments, _, attachment_bytes) = rows::attachment_sizes(&conn)?;
-    let size = |value: i64| u64::try_from(value).map_err(|_| invalid("Negative stored size"));
+    let size = |value: i64| u64::try_from(value).map_err(|error| invalid(format!("Negative stored size: {error}")));
     let list = |sql: &str| -> Result<Vec<NamedSize>> {
         let mut statement = conn.prepare(sql).map_err(sqlite("inspect"))?;
         let rows = statement

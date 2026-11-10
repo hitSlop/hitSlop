@@ -535,7 +535,7 @@ fn a_preview_that_cannot_be_rendered_publishes_nothing() {
     let before = fs::read(&existing).unwrap();
     let asked = std::cell::RefCell::new(vec![]);
     let failing =
-        |_: &Path, _: &[Artwork]| -> RenderedArtwork { Err(Error::Failed("Capture rendering failed".into())) };
+        |_: &Path, _: &[Artwork]| -> RenderedArtwork { Err(pop_storage::store::failed("Capture rendering failed")) };
     let blank = renders(&asked, |_| None);
     for render in [&failing as file::RenderArtwork, &blank] {
         assert!(support::pack_rendering(&stage, &existing, Some(render)).is_err());

@@ -97,7 +97,7 @@ pub(super) fn encode<'a>(key: &str, bytes: &'a [u8]) -> Result<(Encoding, Cow<'a
             ..Default::default()
         };
         let mut compressed = Vec::new();
-        brotli::BrotliCompress(&mut &bytes[..], &mut compressed, &params).map_err(failed)?;
+        brotli::BrotliCompress(&mut &bytes[..], &mut compressed, &params).map_err(crate::error::from_error)?;
         if compressed.len() < bytes.len() {
             return Ok((Encoding::Brotli, Cow::Owned(compressed)));
         }
@@ -111,11 +111,11 @@ fn decode(encoding: Encoding, size: usize, stored: Vec<u8>) -> Result<Vec<u8>> {
         Encoding::Brotli => {
             let mut bytes = Vec::with_capacity(size);
             let read = brotli::Decompressor::new(stored.as_slice(), 4096).take(size as u64 + 1).read_to_end(&mut bytes);
-            if read.is_ok() && bytes.len() == size {
-                Ok(bytes)
-            } else {
-                Err(failed("An app asset is damaged; keep the file for recovery"))
+            read.map_err(|error| crate::error::caused("An app asset is damaged; keep the file for recovery", error))?;
+            if bytes.len() != size {
+                return Err(failed("An app asset is damaged; keep the file for recovery"));
             }
+            Ok(bytes)
         }
     }
 }
@@ -150,7 +150,7 @@ impl<C: std::borrow::Borrow<Connection>> ResourceReader<C> {
     fn row(&self, route: ResourceRoute, key: &str) -> Result<Option<ResourceRow>> {
         let row = match route {
             ResourceRoute::App => {
-                if matches!(key, "commands.js" | "widget.js" | "icon.js" | "export.js" | "preview.js")
+                if pop_contracts::media::program(key).is_some_and(|program| !program.public)
                     || pop_contracts::media::asset_key(key).is_none()
                 {
                     return Ok(None);
@@ -208,12 +208,13 @@ impl<C: std::borrow::Borrow<Connection>> ResourceReader<C> {
                 .borrow()
                 .blob_open(MAIN_DB, "attachments", "bytes", row.id, true)
                 .map_err(sqlite("verify attachment"))?;
-            let media = crate::media::attachment_type_stream(&mut blob, row.info.size as usize).map_err(failed)?;
-            blob.seek(SeekFrom::Start(0)).map_err(failed)?;
+            let media = crate::media::attachment_type_stream(&mut blob, row.info.size as usize)
+                .map_err(crate::error::from_error)?;
+            blob.seek(SeekFrom::Start(0)).map_err(crate::error::from_error)?;
             let mut hash = Sha256::new();
             let mut chunk = vec![0; ATTACHMENT_VERIFY_CHUNK];
             loop {
-                let count = blob.read(&mut chunk).map_err(failed)?;
+                let count = blob.read(&mut chunk).map_err(crate::error::from_error)?;
                 if count == 0 {
                     break;
                 }
@@ -239,21 +240,32 @@ impl<C: std::borrow::Borrow<Connection>> ResourceReader<C> {
     }
     fn decoded<T>(&self, key: &str, read: impl FnOnce(&[u8]) -> T) -> Result<T> {
         const CACHE_BYTES: usize = 32 << 20;
+        let cached = {
+            let mut cache = crate::lock(&self.cache);
+            cache.decoded.iter().position(|(name, _)| name == key).map(|index| {
+                let entry = cache.decoded.remove(index).expect("cached entry");
+                cache.bytes -= entry.1.len();
+                entry
+            })
+        };
+        let entry = match cached {
+            Some(entry) => entry,
+            None => {
+                let bytes = read_asset(self.conn.borrow(), key)?.ok_or_else(|| invalid("Missing resource"))?;
+                check_resource(key, &bytes, false)?;
+                (key.into(), bytes)
+            }
+        };
+        let result = read(&entry.1);
         let mut cache = crate::lock(&self.cache);
-        let entry = if let Some(index) = cache.decoded.iter().position(|(name, _)| name == key) {
-            cache.decoded.remove(index).expect("cached entry")
-        } else {
-            let bytes = read_asset(self.conn.borrow(), key)?.ok_or_else(|| invalid("Missing resource"))?;
-            check_resource(key, &bytes, false)?;
-            while cache.bytes + bytes.len() > CACHE_BYTES {
+        if !cache.decoded.iter().any(|(name, _)| name == key) && entry.1.len() <= CACHE_BYTES {
+            while cache.bytes + entry.1.len() > CACHE_BYTES {
                 let Some((_, old)) = cache.decoded.pop_front() else { break };
                 cache.bytes -= old.len();
             }
-            cache.bytes += bytes.len();
-            (key.into(), bytes)
-        };
-        let result = read(&entry.1);
-        cache.decoded.push_back(entry);
+            cache.bytes += entry.1.len();
+            cache.decoded.push_back(entry);
+        }
         Ok(result)
     }
     pub fn info(&self, route: ResourceRoute, key: &str) -> Result<Option<ResourceInfo>> {

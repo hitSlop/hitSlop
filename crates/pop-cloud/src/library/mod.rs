@@ -113,7 +113,7 @@ impl Library {
         }
     }
     fn valid(id: &str) -> Result<()> {
-        if pop_sharing_protocol::valid_document_id(id) { Ok(()) } else { Err(failed("Invalid document identity")) }
+        if pop_contracts::identity::valid_document_id(id) { Ok(()) } else { Err(failed("Invalid document identity")) }
     }
     fn operation(&self) -> Result<u64> {
         self.cloud()?;

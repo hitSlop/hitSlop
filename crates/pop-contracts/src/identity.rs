@@ -11,3 +11,11 @@ impl AppRevisionId {
         &self.0
     }
 }
+
+/// Canonical lowercase document UUID, identical across all replicas.
+pub fn valid_document_id(id: &str) -> bool {
+    id.len() == 36
+        && id.bytes().enumerate().all(|(i, b)| {
+            if [8, 13, 18, 23].contains(&i) { b == b'-' } else { b.is_ascii_digit() || (b'a'..=b'f').contains(&b) }
+        })
+}

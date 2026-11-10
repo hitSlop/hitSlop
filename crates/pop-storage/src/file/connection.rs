@@ -14,7 +14,9 @@ use std::time::Duration;
 pub fn resolve(path: &Path) -> Result<PathBuf> {
     let name = path.file_name().ok_or_else(|| failed("Invalid document path"))?;
     let folder = path.parent().filter(|p| !p.as_os_str().is_empty()).unwrap_or(Path::new("."));
-    Ok(fs::canonicalize(folder).map_err(|e| failed(format!("Cannot resolve the document's folder: {e}")))?.join(name))
+    Ok(fs::canonicalize(folder)
+        .map_err(|e| crate::error::caused(format!("Cannot resolve the document's folder: {e}"), e))?
+        .join(name))
 }
 /// An existing regular document leaf, resolving only its parent folders so linked
 /// parents remain valid and a linked leaf is refused before SQLite opens it.

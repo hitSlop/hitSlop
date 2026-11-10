@@ -67,6 +67,10 @@ pub const SHAPE_ARC_MIN_CHORD: f64 = 1e-100;
 pub const SHAPE_ARC_TOLERANCE: f64 = 0.1;
 pub const SHAPE_VIEW_BOX_MIN: f64 = 1.0;
 pub const COMMAND_NAME_BYTES: usize = 80;
+/// Maximum author URL length in Unicode scalars.
+pub const AUTHOR_URL_CHARACTERS: usize = 2048;
+/// Maximum command path length in Unicode scalars.
+pub const FILE_PATH_CHARACTERS: usize = 4096;
 pub const COMMANDS: usize = 64;
 /// Stored format-1 window bounds; authoring may use a narrower range.
 pub const OPEN_WINDOW_MIN_WIDTH: u32 = 240;
@@ -152,9 +156,6 @@ pub fn host_limits() -> HostLimits {
         engine_protocol: ENGINE_PROTOCOL,
     }
 }
-/// Attachments share the origin for canvas use, but are never script sources.
-pub const NATIVE_RESOURCE_POLICY: &str = "default-src 'none'; script-src pop://app/__shell__/ pop://app/assets/ 'wasm-unsafe-eval'; connect-src pop: https: blob:; media-src pop: https: blob:; frame-src https:; style-src pop://app/__shell__/ pop://app/assets/ 'unsafe-inline'; img-src pop: data: https: blob:; font-src pop://app/assets/ data:";
-
 /// A released bound's direction: maximums may rise, minimums may fall, exact values stay.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LimitKind {
@@ -199,6 +200,8 @@ pub const RETIRED_LIMITS: &[&str] = &[];
 /// are not stored-data acceptance limits. Format/ABI markers are recorded separately.
 #[cfg(test)]
 const NOT_PERSISTED: &[&str] = &[
+    "AUTHOR_URL_CHARACTERS",
+    "FILE_PATH_CHARACTERS",
     "WINDOW_MIN_WIDTH",
     "WINDOW_MIN_HEIGHT",
     "WINDOW_MAX",
@@ -218,7 +221,6 @@ const NOT_PERSISTED: &[&str] = &[
     "SPEECH_LOCALE_BYTES",
     "SPEECH_TEXT_BYTES",
     "SPEECH_LOCALE_PATTERN",
-    "NATIVE_RESOURCE_POLICY",
     "NOT_PERSISTED",
     "RETIRED_LIMITS",
 ];

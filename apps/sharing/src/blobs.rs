@@ -44,7 +44,7 @@ impl CloudDocument {
             return Response::from_json(&self.blobs()?);
         }
         let id = match hash {
-            Some(id) if resources::hash_id(id) => id,
+            Some(id) if pop_contracts::wire::valid_attachment_id(id) => id,
             _ => return Response::error("Not found", 404),
         };
         let key = object_key(room, &format!("blobs/{id}"));

@@ -183,12 +183,8 @@ impl From<pop_contracts::shape::FillRule> for StoredFillRule {
 /// name a capability a later build added, which this host does not implement and so never
 /// grants. That lets a later build add a capability without a new package format; one that
 /// needs new app-facing API raises `runtimeABI` instead. Authoring refuses unknown values.
-fn capability_name(capability: Capability) -> &'static str {
-    match capability {
-        Capability::Camera => "camera",
-        Capability::Microphone => "microphone",
-        Capability::Speech => "speech",
-    }
+fn capability_name(capability: Capability) -> String {
+    pop_contracts::enum_name(capability)
 }
 fn stored_capability(name: &str) -> Option<Capability> {
     Capability::ALL.iter().copied().find(|&capability| capability_name(capability) == name)
@@ -278,7 +274,7 @@ pub(super) fn from_declaration(input: &BuildDeclaration, skin: Option<&str>) -> 
             let mut declared = input.capabilities.clone();
             declared.sort();
             declared.dedup();
-            declared.into_iter().map(|c| capability_name(c).into()).collect()
+            declared.into_iter().map(capability_name).collect()
         },
     };
     checked(input.metadata.clone(), definition)
@@ -309,7 +305,10 @@ fn checked(metadata_value: AppMetadata, stored: Definition) -> Result<AppDefinit
             if !crate::wire::engine::valid_command_name(name) {
                 return Err(err(
                     Code::InvalidRequest,
-                    "Command names start with a lowercase letter and contain at most 80 letters or digits",
+                    format!(
+                        "Command names start with a lowercase letter and contain at most {} letters or digits",
+                        crate::wire::COMMAND_NAME_BYTES
+                    ),
                 )
                 .at("name"));
             }
@@ -384,7 +383,8 @@ pub(super) fn authoring(metadata: &AppMetadata, window: &WindowInput, commands: 
         }
     }
     for (index, command) in commands.iter().enumerate() {
-        text(&command.description, 1, 500).map_err(|e| e.at("description").at(index).at("commands"))?;
+        text(&command.description, 1, crate::wire::DESCRIPTOR_DESCRIPTION as usize)
+            .map_err(|e| e.at("description").at(index).at("commands"))?;
     }
     Ok(())
 }
@@ -406,7 +406,7 @@ pub(super) fn authoring_metadata(value: &AppMetadata) -> Result<()> {
         return Err(err(Code::InvalidRequest, "Author name must contain non-whitespace text").at("name").at("author"));
     }
     if let Some(url) = &value.author.url {
-        let valid = url.chars().count() <= 2048
+        let valid = url.chars().count() <= crate::wire::AUTHOR_URL_CHARACTERS
             && fluent_uri::Uri::parse(url.as_str()).is_ok_and(|uri| {
                 matches!(uri.scheme().as_str(), "http" | "https")
                     && uri.authority().is_some_and(|a| !a.host().is_empty())
@@ -414,7 +414,10 @@ pub(super) fn authoring_metadata(value: &AppMetadata) -> Result<()> {
         if !valid {
             return Err(err(
                 Code::InvalidRequest,
-                "Author URL must be an http or https URI with a host, at most 2048 characters",
+                format!(
+                    "Author URL must be an http or https URI with a host, at most {} characters",
+                    crate::wire::AUTHOR_URL_CHARACTERS
+                ),
             )
             .at("url")
             .at("author"));
@@ -481,18 +484,4 @@ fn text(value: &str, min: usize, max: usize) -> Result<()> {
 
 fn bound(bytes: usize, max: usize, field: &str) -> Result<()> {
     if bytes > max { Err(err(Code::TooLarge, format!("{field} exceeds its byte limit")).at(field)) } else { Ok(()) }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    /// A capability reads back from the spelling packing stores, and `ALL` lists every one.
-    #[test]
-    fn every_capability_has_one_stored_spelling() {
-        for &capability in Capability::ALL {
-            let name = capability_name(capability);
-            assert_eq!(stored_capability(name), Some(capability));
-            assert_eq!(serde_json::to_value(capability).unwrap(), name, "the authored and stored spellings agree");
-        }
-    }
 }

@@ -1,7 +1,8 @@
 //! Saved-source artwork rendered in the restricted child, without a page or writer.
 pub mod widgets;
 
-use pop_contracts::capture::{CaptureFormat, CaptureOutput, ViewCaptureKind, ViewRenderRequest};
+use pop_contracts::capture::{CaptureOutput, ViewCaptureKind, ViewRenderRequest};
+use pop_contracts::wire::engine::ExportFormat;
 use pop_storage::store::{failed, invalid, rejected};
 
 pub enum CaptureValue {
@@ -100,8 +101,8 @@ pub fn render_views(
             outputs.push(CaptureOutput::Icon);
         }
         if views.export {
-            outputs.push(CaptureOutput::Export { format: CaptureFormat::Png });
-            outputs.push(CaptureOutput::Export { format: CaptureFormat::Pdf });
+            outputs.push(CaptureOutput::Export { format: ExportFormat::Png });
+            outputs.push(CaptureOutput::Export { format: ExportFormat::Pdf });
         }
         if views.widget.is_some() {
             outputs.push(CaptureOutput::Widgets);
@@ -116,7 +117,13 @@ pub fn render_views(
             CaptureOutput::Export { .. } => ("Export.svelte", None),
             CaptureOutput::Widgets => ("Widget.svelte", None),
         };
-        let value = capture.result.map_err(|error| invalid(format!("{file} could not render: {error}")))?;
+        let value = capture.result.map_err(|error| match error {
+            pop_storage::store::Error::Rejected(mut error) => {
+                error.message = format!("{file} could not render: {}", error.message);
+                pop_storage::store::Error::Rejected(error)
+            }
+            other => pop_storage::store::caused(format!("{file} could not render: {other}"), other),
+        })?;
         if let Some(role) = role.filter(|role| store_roles.contains(role)) {
             let CaptureValue::Image { bytes } = value else { unreachable!("artwork renders images") };
             artwork.push((role, bytes));
@@ -130,16 +137,12 @@ pub fn render_views(
 /// while it rendered. A template is refused, and a result after `deadline` is discarded.
 pub fn export_saved(
     path: &std::path::Path,
-    format: CaptureFormat,
+    format: ExportFormat,
     output: &std::path::Path,
     evaluator: &pop_runner::Evaluator,
     deadline: std::time::Instant,
 ) -> pop_storage::store::Result<()> {
     let output = pop_storage::file::new_output(output)?;
-    // Before rendering: no file, folder or link (even a dangling one) is ever replaced.
-    if std::fs::symlink_metadata(&output).is_ok() {
-        return Err(rejected(pop_contracts::wire::Code::Exists, "A file already exists there"));
-    }
     if pop_storage::file::kind(path)? == pop_storage::file::Kind::Template {
         return Err(rejected(
             pop_contracts::wire::Code::IsTemplate,
@@ -204,8 +207,8 @@ fn render_source(
 ) -> pop_storage::store::Result<Option<Vec<u8>>> {
     let store = source.store;
     let (kind, format) = match output {
-        CaptureOutput::Icon => (ViewCaptureKind::Icon, CaptureFormat::Png),
-        CaptureOutput::Preview => (ViewCaptureKind::Preview, CaptureFormat::Png),
+        CaptureOutput::Icon => (ViewCaptureKind::Icon, ExportFormat::Png),
+        CaptureOutput::Preview => (ViewCaptureKind::Preview, ExportFormat::Png),
         CaptureOutput::Export { format } => (ViewCaptureKind::Export, format),
         CaptureOutput::Widgets => return Err(invalid("Widgets require a widget batch")),
     };
@@ -229,12 +232,13 @@ fn render_source(
         kind,
         format,
         attachments: &input.attachments,
-        width: if icon { 512 } else { store.app().app.window().width },
-        height: if icon { 512 } else { store.app().app.window().height },
+        width: if icon { pop_contracts::wire::ICON_SIDE } else { store.app().app.window().width },
+        height: if icon { pop_contracts::wire::ICON_SIDE } else { store.app().app.window().height },
         snapshot: &input.snapshot,
         theme: &input.theme,
     };
-    let batch = evaluator.markup(store.app().runtime_abi, program, &crate::encode(&request), false).map_err(invalid)?;
+    let batch =
+        evaluator.markup(store.app().runtime_abi, program, &crate::encode(&request), false).map_err(runner_failure)?;
     let images = source.images(&batch, output)?;
     let result = evaluator
         .raster(
@@ -242,29 +246,25 @@ fn render_source(
             batch,
             images,
             match format {
-                CaptureFormat::Png => pop_contracts::evaluator::JobKind::Capture,
-                CaptureFormat::Pdf => pop_contracts::evaluator::JobKind::Pdf,
+                ExportFormat::Png => pop_contracts::evaluator::JobKind::Capture,
+                ExportFormat::Pdf => pop_contracts::evaluator::JobKind::Pdf,
             },
         )
-        .map_err(invalid)?;
-    let reply: pop_contracts::evaluator::RenderReply =
-        serde_json::from_str(&result).map_err(|e| invalid(format!("Invalid capture reply: {e}")))?;
-    let mut images = reply.into_images().map_err(invalid)?;
+        .map_err(runner_failure)?;
+    let mut images = result;
     if images.len() != 1 {
-        return Err(invalid("Capture renderer returned an invalid batch"));
+        return Err(rejected(pop_contracts::wire::Code::EngineError, "Capture renderer returned an invalid batch"));
     }
-    let bytes = data_encoding::BASE64
-        .decode(images.pop().unwrap().as_bytes())
-        .map_err(|_| invalid("Invalid capture output encoding"))?;
+    let bytes = images.pop().expect("one rendered image");
     match format {
-        CaptureFormat::Png => {
+        ExportFormat::Png => {
             pop_storage::images::check(
                 &bytes,
                 if icon { pop_storage::images::Purpose::Icon } else { pop_storage::images::Purpose::Preview },
             )
             .map_err(pop_storage::store::Error::Rejected)?;
         }
-        CaptureFormat::Pdf => {
+        ExportFormat::Pdf => {
             if bytes.len() > pop_contracts::evaluator::PDF_BYTES
                 || !bytes.starts_with(b"%PDF-")
                 || !bytes.ends_with(b"%%EOF") && !bytes.ends_with(b"%%EOF\n")
@@ -299,7 +299,7 @@ impl RenderSource<'_> {
         &self,
         batch: &pop_contracts::evaluator::Batch,
         output: CaptureOutput,
-    ) -> pop_storage::store::Result<std::collections::BTreeMap<String, String>> {
+    ) -> pop_storage::store::Result<std::collections::BTreeMap<String, Vec<u8>>> {
         let inventory = &self.input()?.attachments;
         let mut referenced = std::collections::BTreeSet::new();
         for frame in &batch.frames {
@@ -340,13 +340,20 @@ impl RenderSource<'_> {
         referenced
             .into_iter()
             .map(|id| {
-                let bytes = self
-                    .store
-                    .attachment(&id)
-                    .map_err(|error| failed(format!("{output:?} attachment {id}: {error}")))?;
-                let url = format!("data:{};base64,{}", inventory[&id], data_encoding::BASE64.encode(&bytes));
-                Ok((id, url))
+                let bytes = self.store.attachment(&id).map_err(|error| {
+                    pop_storage::store::caused(format!("{output:?} attachment {id}: {error}"), error)
+                })?;
+                Ok((id, bytes))
             })
             .collect()
     }
+}
+
+fn runner_failure(error: pop_runner::Error) -> pop_storage::store::Error {
+    let code = if matches!(error, pop_runner::Error::Program(_)) {
+        pop_contracts::wire::Code::InvalidRequest
+    } else {
+        pop_contracts::wire::Code::EngineError
+    };
+    rejected(code, error)
 }

@@ -24,10 +24,11 @@ pub struct Failure {
     pub message: String,
     pub reason: Option<Code>,
     pub op_index: Option<u32>,
+    pub path: Vec<String>,
 }
 impl Failure {
     pub(crate) fn new(kind: FailureKind, message: impl Into<String>) -> Self {
-        Self { kind, message: message.into(), reason: None, op_index: None }
+        Self { kind, message: message.into(), reason: None, op_index: None, path: vec![] }
     }
     /// A refusal under a core error code: nothing changed.
     pub(crate) fn rejected(code: Code, message: impl Into<String>) -> Self {
@@ -40,7 +41,8 @@ impl From<pop_contracts::Error> for Failure {
             kind: FailureKind::Rejected,
             reason: Some(e.code),
             message: e.message,
-            op_index: e.op_index.map(|n| n as u32),
+            op_index: e.op_index.and_then(|n| n.try_into().ok()),
+            path: e.path,
         }
     }
 }
@@ -53,7 +55,7 @@ impl From<store::Error> for Failure {
             store::Error::Full => FailureKind::Full,
             store::Error::Moved => FailureKind::Moved,
             store::Error::Closed => FailureKind::Closed,
-            store::Error::Failed(_) => FailureKind::Failed,
+            store::Error::Failed { .. } => FailureKind::Failed,
         };
         Self::new(kind, e.to_string())
     }

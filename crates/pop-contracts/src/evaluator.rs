@@ -34,11 +34,11 @@ pub struct Job<'a> {
 }
 
 impl<'a> Job<'a> {
-    pub fn decode(input: &'a [u8]) -> Result<Self, String> {
+    pub fn decode(input: &'a [u8]) -> Result<Self, crate::Error> {
         if input.len() > INPUT {
-            return Err("Evaluator input is too large".into());
+            return Err(invalid("Evaluator input is too large"));
         }
-        serde_json::from_slice(input).map_err(|e| e.to_string())
+        serde_json::from_slice(input).map_err(invalid)
     }
 }
 
@@ -78,50 +78,17 @@ impl JobKind {
 }
 
 /// A shape-checked renderer outcome. Consumers still validate the encoded media.
-#[derive(Debug)]
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(untagged, deny_unknown_fields)]
 pub enum RenderReply {
-    Images(Vec<String>),
-    Failure(String),
+    Images { ok: crate::wire::engine::True, images: Vec<String> },
+    Failure { ok: crate::wire::engine::False, error: String },
 }
 impl RenderReply {
-    pub fn into_images(self) -> Result<Vec<String>, String> {
+    pub fn into_images(self) -> Result<Vec<String>, crate::Error> {
         match self {
-            Self::Images(images) => Ok(images),
-            Self::Failure(error) => Err(error),
-        }
-    }
-}
-impl Serialize for RenderReply {
-    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        use serde::ser::SerializeStruct;
-        let mut output = serializer.serialize_struct("RenderReply", 2)?;
-        match self {
-            Self::Images(images) => {
-                output.serialize_field("ok", &true)?;
-                output.serialize_field("images", images)?;
-            }
-            Self::Failure(error) => {
-                output.serialize_field("ok", &false)?;
-                output.serialize_field("error", error)?;
-            }
-        }
-        output.end()
-    }
-}
-impl<'de> Deserialize<'de> for RenderReply {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        #[derive(Deserialize)]
-        #[serde(deny_unknown_fields)]
-        struct Wire {
-            ok: bool,
-            images: Option<Vec<String>>,
-            error: Option<String>,
-        }
-        let wire = Wire::deserialize(deserializer)?;
-        match (wire.ok, wire.images, wire.error) {
-            (true, Some(images), None) => Ok(Self::Images(images)),
-            (false, None, Some(error)) => Ok(Self::Failure(error)),
-            _ => Err(serde::de::Error::custom("Invalid capture reply")),
+            Self::Images { images, .. } => Ok(images),
+            Self::Failure { error, .. } => Err(invalid(error)),
         }
     }
 }
@@ -150,24 +117,24 @@ pub struct Batch {
     pub fonts: Vec<Font>,
 }
 impl Batch {
-    pub fn decode(json: &str) -> Result<Self, String> {
+    pub fn decode(json: &str) -> Result<Self, crate::Error> {
         if json.len() > MARKUP_BYTES {
-            return Err("Capture markup exceeds 16 MiB".into());
+            return Err(invalid("Capture markup exceeds 16 MiB"));
         }
-        let batch: Self = serde_json::from_str(json).map_err(|e| format!("Invalid capture markup: {e}"))?;
+        let batch: Self = serde_json::from_str(json).map_err(|e| invalid(format!("Invalid capture markup: {e}")))?;
         batch.validate()?;
         Ok(batch)
     }
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> Result<(), crate::Error> {
         if self.fonts.len() > 64 {
-            return Err("Capture uses more than 64 font faces".into());
+            return Err(invalid("Capture uses more than 64 font faces"));
         }
         for font in &self.fonts {
             if font.family.is_empty()
                 || font.family.len() > 256
                 || font.weight.is_some_and(|w| !w.is_finite() || !(1.0..=1000.0).contains(&w))
             {
-                return Err("Invalid packaged font metadata".into());
+                return Err(invalid("Invalid packaged font metadata"));
             }
         }
         Ok(())
@@ -196,7 +163,7 @@ pub const WATCHDOG_MS: u64 = 3000;
 pub const EXECUTION_MS: u64 = 2000;
 pub use crate::wire::RUNTIME_ABI;
 /// The bounded envelope the command drivers send to the evaluator.
-pub fn command_input(runtime_abi: u64, bundle: &str, request: &str) -> Result<String, String> {
+pub fn command_input(runtime_abi: u64, bundle: &str, request: &str) -> Result<String, crate::Error> {
     let input = serde_json::to_string(&Job {
         runtime_abi,
         bundle: Cow::Borrowed(bundle),
@@ -204,9 +171,13 @@ pub fn command_input(runtime_abi: u64, bundle: &str, request: &str) -> Result<St
         mode: JobKind::Command,
         raster: None,
     })
-    .map_err(|e| e.to_string())?;
+    .map_err(invalid)?;
     if input.len() > INPUT {
-        return Err("Command input is too large".into());
+        return Err(invalid("Command input is too large"));
     }
     Ok(input)
+}
+
+fn invalid(message: impl ToString) -> crate::Error {
+    crate::Error::new(crate::wire::Code::InvalidRequest, message)
 }

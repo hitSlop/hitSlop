@@ -10,13 +10,5 @@ pub const TRUSTED_ORIGIN: &str = "https://share.dotpop.click";
 pub const SOCKET_PROTOCOL: &str = "pop.sync.v2";
 pub const SEED_BYTES: usize = 16 << 20;
 pub const CONTROL_BYTES: usize = 1 << 20;
-/// Canonical lowercase document UUID, identical across all replicas.
-pub fn valid_document_id(id: &str) -> bool {
-    id.len() == 36
-        && id.bytes().enumerate().all(|(i, b)| {
-            if [8, 13, 18, 23].contains(&i) { b == b'-' } else { b.is_ascii_digit() || (b'a'..=b'f').contains(&b) }
-        })
-}
-
 #[cfg(test)]
 mod tests;

@@ -2,8 +2,7 @@
 //! QuickJS has its ordinary heap/stack limits and cooperative deadline. Native raster
 //! work has no process watchdog or crash isolation; this is not a sandbox substitute.
 use super::*;
-use pop_contracts::evaluator::{INPUT, Job, RasterRequest};
-use std::borrow::Cow;
+
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
@@ -14,53 +13,44 @@ pub struct Evaluator {
 }
 impl Evaluator {
     /// The containing binary supplies the renderer/font fingerprint; it is never spawned.
-    pub fn new(executable: PathBuf) -> Result<Self, String> {
+    pub fn new(executable: PathBuf) -> Result<Self, Error> {
         if !executable.is_absolute() {
-            return Err("In-process capture requires an absolute host binary path".into());
+            return Err(Error::Spawn("In-process capture requires an absolute host binary path".into()));
         }
         Ok(Self { executable })
     }
     pub fn executable_path(&self) -> &Path {
         &self.executable
     }
-    pub fn run(&self, _runtime_abi: u64, _bundle: &str, _request: &str) -> Result<String, String> {
-        Err("Authored commands are unavailable in the in-process capture driver".into())
+    pub fn run(&self, _runtime_abi: u64, _bundle: &str, _request: &str) -> Result<String, Error> {
+        Err(Error::Sandbox("Authored commands are unavailable in the in-process capture driver".into()))
     }
-    pub fn markup(&self, runtime_abi: u64, bundle: &str, request: &str, widget: bool) -> Result<Batch, String> {
-        let mode = if widget { JobKind::WidgetMarkup } else { JobKind::Markup };
-        let output = self.evaluate(Job {
-            runtime_abi,
-            bundle: Cow::Borrowed(bundle),
-            request: Cow::Borrowed(request),
-            mode,
-            raster: None,
-        })?;
-        Batch::decode(&output)
+    pub fn markup(&self, runtime_abi: u64, bundle: &str, request: &str, widget: bool) -> Result<Batch, Error> {
+        if bundle.len().saturating_add(request.len()) > pop_contracts::evaluator::INPUT {
+            return Err(Error::Output("Capture input is too large".into()));
+        }
+        let deadline = Instant::now() + Duration::from_millis(pop_contracts::evaluator::EXECUTION_MS);
+        evaluation::prelude(runtime_abi)?;
+        crate::capture::evaluate_markup(
+            bundle,
+            request,
+            if widget { "__popWidget" } else { "__popCapture" },
+            move || Instant::now() >= deadline,
+        )
     }
+
     pub fn raster(
         &self,
         runtime_abi: u64,
         batch: Batch,
-        images: BTreeMap<String, String>,
+        images: BTreeMap<String, Vec<u8>>,
         mode: JobKind,
-    ) -> Result<String, String> {
+    ) -> Result<Vec<Vec<u8>>, Error> {
+        evaluation::prelude(runtime_abi)?;
         if !matches!(mode, JobKind::Widget | JobKind::Capture) {
-            return Err("In-process capture supports PNG artwork and widget images only".into());
+            return Err(Error::Output("In-process capture supports PNG artwork and widget images only".into()));
         }
-        self.evaluate(Job {
-            runtime_abi,
-            bundle: Cow::Borrowed(""),
-            request: Cow::Borrowed(""),
-            mode,
-            raster: Some(RasterRequest { batch, images }),
-        })
-    }
-    fn evaluate(&self, job: Job<'_>) -> Result<String, String> {
-        let deadline = Instant::now() + Duration::from_millis(job.mode.limits().watchdog_ms);
-        let input = serde_json::to_vec(&job).map_err(|e| e.to_string())?;
-        if input.len() > INPUT {
-            return Err("Capture input is too large".into());
-        }
-        evaluation::evaluate(&input, move || Instant::now() >= deadline)
+        batch.validate().map_err(program_error)?;
+        crate::render::raster(batch, images, mode)
     }
 }

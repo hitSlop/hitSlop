@@ -1,7 +1,7 @@
 #if os(macOS)
   import Foundation
 
-  /// Native save-panel policy. Document acceptance and relocation remain in the core.
+  /// Native save-panel policy. Document acceptance and verified copying remain in the core.
   public enum PopSaveLocation {
     private static let key = "click.dotpop.lastLocalDocumentFolder"
 

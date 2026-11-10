@@ -8,7 +8,7 @@ impl Store {
     pub fn import_copy(source: &Path, dest: &Path) -> Result<()> {
         file::document_destination(dest)?;
         if let Some(folder) = dest.parent().filter(|folder| !folder.as_os_str().is_empty()) {
-            std::fs::create_dir_all(folder).map_err(failed)?;
+            std::fs::create_dir_all(folder).map_err(crate::error::from_error)?;
         }
         let conn = file::reader(source)?;
         let read = conn.unchecked_transaction().map_err(sqlite("read"))?;
@@ -62,10 +62,7 @@ impl Store {
         theme: &std::collections::BTreeMap<String, String>,
     ) -> Result<()> {
         file::document_destination(dest)?;
-        let dest = file::resolve(dest)?;
-        if std::fs::symlink_metadata(&dest).is_ok() {
-            return Err(rejected(pop_contracts::wire::Code::Exists, "A file already exists there"));
-        }
+        let dest = file::new_output(dest)?;
         let staged = file::Staged::beside(&dest)?;
         self.copy_clean_unplaced(staged.path(), state, artwork)?;
         let unusable = |why: String| failed(format!("The copy cannot replace this document: {why}"));

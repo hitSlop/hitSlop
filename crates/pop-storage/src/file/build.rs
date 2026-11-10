@@ -64,13 +64,10 @@ pub fn accept(input: &str, stage: &Path) -> Result<AcceptedBuild> {
     if input.roles.icon.is_some() != app.views().icon {
         return Err(invalid("Icon.svelte and its private icon.js render program must be present together"));
     }
-    if input.roles.widget.as_deref().is_some_and(|key| key != "widget.js")
-        || input.roles.icon.as_deref().is_some_and(|key| key != "icon.js")
-        || input.roles.preview.as_deref().is_some_and(|key| key != "preview.js")
-        || input.roles.export.as_deref().is_some_and(|key| key != "export.js")
-        || input.roles.ui != "ui.js"
+    if pop_contracts::media::PROGRAMS
+        .iter()
+        .any(|program| input.roles.program(program.role).is_some_and(|key| key != program.key))
         || input.roles.style.as_deref().is_some_and(|key| key != "ui.css")
-        || input.roles.commands.as_deref().is_some_and(|key| key != "commands.js")
     {
         return Err(invalid("Build roles must use the fixed UI, stylesheet and command keys"));
     }
@@ -95,12 +92,15 @@ pub fn accept(input: &str, stage: &Path) -> Result<AcceptedBuild> {
         if resource.media_type != kind.media_type {
             return Err(invalid(format!("Resource {} has the wrong media type", resource.key)));
         }
-        if matches!(resource.kind, ResourceKind::Command) != (resource.key == "commands.js") {
+        if matches!(resource.kind, ResourceKind::Command)
+            != pop_contracts::media::program(&resource.key)
+                .is_some_and(|program| program.role == pop_contracts::media::ProgramRole::Commands)
+        {
             return Err(invalid("Only commands.js may be a command resource"));
         }
         let file = regular_file(&root, &resource.path)?;
         let length = file.metadata().map_err(|e| invalid(format!("Resource metadata: {e}")))?.len();
-        let length = usize::try_from(length).map_err(|_| invalid("Resource is too large"))?;
+        let length = usize::try_from(length).map_err(|error| invalid(format!("Resource is too large: {error}")))?;
         total = usize::checked_add(total, length).ok_or_else(|| invalid("Resources exceed their byte limit"))?;
         super::assets::assets_within(input.resources.len(), length, total)?;
         let bytes = read(file, length)?;
@@ -108,13 +108,10 @@ pub fn accept(input: &str, stage: &Path) -> Result<AcceptedBuild> {
         super::assets::check_resource(&resource.key, &bytes, true)?;
         assets.push(BuildAsset { key: resource.key.clone(), media_type: kind.media_type, bytes });
     }
-    if keys.contains("widget.js") != input.roles.widget.is_some()
-        || keys.contains("icon.js") != input.roles.icon.is_some()
-        || keys.contains("preview.js") != input.roles.preview.is_some()
-        || keys.contains("export.js") != input.roles.export.is_some()
-        || !keys.contains("ui.js")
+    if pop_contracts::media::PROGRAMS
+        .iter()
+        .any(|program| keys.contains(program.key) != input.roles.program(program.role).is_some())
         || keys.contains("ui.css") != input.roles.style.is_some()
-        || keys.contains("commands.js") != input.roles.commands.is_some()
     {
         return Err(invalid("Build roles do not match the emitted programs and stylesheet"));
     }
@@ -165,7 +162,7 @@ fn regular_file(root: &File, path: &str) -> Result<File> {
     let mut directory = root.try_clone().map_err(|e| invalid(format!("Build stage: {e}")))?;
     let mut components = path.split('/').peekable();
     while let Some(component) = components.next() {
-        let name = CString::new(component).map_err(|_| invalid("Invalid resource path"))?;
+        let name = CString::new(component).map_err(|error| invalid(format!("Invalid resource path: {error}")))?;
         let flags = libc::O_RDONLY
             | libc::O_CLOEXEC
             | libc::O_NOFOLLOW

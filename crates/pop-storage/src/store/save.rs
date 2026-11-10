@@ -89,7 +89,7 @@ impl SaveJob {
 
 /// The updates since `saved`, when appending them keeps the log within the limits.
 fn append(doc: &Document, saved: &HistoryVersion, meta: Metadata) -> Result<Option<Vec<u8>>> {
-    let bytes = doc.history_updates_since(saved).map_err(failed)?;
+    let bytes = doc.history_updates_since(saved).map_err(crate::error::from_error)?;
     Ok(within(meta.rows + 1, meta.stored() + bytes.len() as i64).then_some(bytes))
 }
 /// A checkpoint that fits: the whole history, or only the current state when the history
@@ -98,7 +98,7 @@ fn append(doc: &Document, saved: &HistoryVersion, meta: Metadata) -> Result<Opti
 /// whole history: another replica's edits can depend on any of it.
 fn checkpoint(doc: &mut Document, shared: bool) -> Result<Option<Vec<u8>>> {
     let fits = |bytes: &[u8]| within(0, checkpoint_row(bytes.len()));
-    let bytes = doc.checkpoint().map_err(failed)?;
+    let bytes = doc.checkpoint().map_err(crate::error::from_error)?;
     if fits(&bytes) || shared {
         return Ok(fits(&bytes).then_some(bytes));
     }
@@ -106,7 +106,7 @@ fn checkpoint(doc: &mut Document, shared: bool) -> Result<Option<Vec<u8>>> {
 }
 /// A checkpoint keeping only the history since `start`, when `accept` takes its bytes.
 fn trimmed(doc: &Document, accept: impl Fn(&[u8]) -> bool) -> Result<Option<Vec<u8>>> {
-    let bytes = doc.current_history_checkpoint().map_err(failed)?;
+    let bytes = doc.current_history_checkpoint().map_err(crate::error::from_error)?;
     Ok(accept(&bytes).then_some(bytes))
 }
 
@@ -174,11 +174,12 @@ impl Store {
         }
         // Only a final unshared close may start an independent history.
         // Ordinary saves and explicit checkpoints retain the live CRDT identities.
-        let bytes = doc.clean_checkpoint().map_err(failed)?;
+        let bytes = doc.clean_checkpoint().map_err(crate::error::from_error)?;
         if bytes.len() as i64 >= stored || !within(0, checkpoint_row(bytes.len())) {
             return Ok(None);
         }
-        let version = Document::open(self.app.app.spec(), &bytes, &[]).map_err(failed)?.history_version();
+        let version =
+            Document::open(self.app.app.spec(), &bytes, &[]).map_err(crate::error::from_error)?.history_version();
         Ok(Some(SaveJob { rows: Rows::Checkpoint(bytes), version }))
     }
 }

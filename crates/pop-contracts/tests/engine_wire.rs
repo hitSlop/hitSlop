@@ -53,7 +53,9 @@ fn only_pack_renders_views() {
         if let Some(flag) = flag {
             request["renderViews"] = flag;
         }
-        let Ok(EngineRequest::Pack { render_views, .. }) = EngineRequest::parse(&request.to_string()) else {
+        let Ok(EngineRequest::File(pop_contracts::wire::engine::FileRequest::Pack { render_views, .. })) =
+            EngineRequest::parse(&request.to_string())
+        else {
             panic!("{request}")
         };
         assert_eq!(render_views, expected, "{request}");

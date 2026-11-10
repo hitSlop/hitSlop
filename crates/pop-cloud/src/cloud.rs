@@ -61,10 +61,13 @@ pub fn sharing_link(access: &AccessState) -> Result<Option<String>> {
         return Ok(None);
     }
     let capability = access.capability.as_deref().ok_or("Only the owner can read the invitation")?;
-    Invitation { room: access.document.clone(), capability: capability.into() }.link().map(Some)
+    Invitation { room: access.document.clone(), capability: capability.into() }
+        .link()
+        .map(Some)
+        .map_err(|error| error.to_string())
 }
 pub fn join_member(link: &str, token: &str) -> Result<AccessState> {
-    let invitation = Invitation::parse(link)?;
+    let invitation = Invitation::parse(link).map_err(|error| error.to_string())?;
     decode(&control(
         "POST",
         &format!("documents/{}/members", invitation.room),

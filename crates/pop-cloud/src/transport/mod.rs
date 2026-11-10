@@ -620,7 +620,7 @@ mod tests {
             (FailureKind::ReadOnly, None, Some(PauseKind::Refused)),
         ] {
             let message = format!("local failure {kind:?} {reason:?}");
-            let failure = Failure { kind, reason, message: message.clone(), op_index: None };
+            let failure = Failure { kind, reason, message: message.clone(), op_index: None, path: vec![] };
             match (HttpFailure::from(failure), expected) {
                 (HttpFailure::Paused(pause), Some(expected)) => {
                     assert_eq!(pause.kind, expected, "{kind:?} {reason:?}");
@@ -649,6 +649,7 @@ mod tests {
             reason: Some(Code::TooLarge),
             message: "attachment capacity".into(),
             op_index: None,
+            path: vec![],
         };
         assert!(matches!(
             owner_failure(attachment, OwnerEffect::Attachment),
@@ -659,6 +660,7 @@ mod tests {
             reason: Some(Code::StaleBase),
             message: "frontier advanced".into(),
             op_index: None,
+            path: vec![],
         };
         assert!(matches!(HttpFailure::from(stale), HttpFailure::Conflict));
     }

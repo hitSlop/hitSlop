@@ -1,5 +1,6 @@
 //! Native process driver for the shared evaluator.
 use super::*;
+use crate::{Error, output_error, program_error};
 use pop_contracts::evaluator::{INPUT, Job, RasterRequest, RenderReply, command_input};
 use std::borrow::Cow;
 use std::io::{Read, Write};
@@ -25,10 +26,10 @@ impl Running {
     fn new(child: Child) -> Self {
         Self { child, writer: None, reader: None, reaped: false }
     }
-    fn stop(&mut self) -> Result<(), String> {
+    fn stop(&mut self) -> Result<(), Error> {
         if !self.reaped {
             let _ = self.child.kill();
-            self.child.wait().map_err(|e| format!("Cannot reap command evaluator: {e}"))?;
+            self.child.wait().map_err(|e| Error::Spawn(format!("Cannot reap command evaluator: {e}")))?;
             self.reaped = true;
         }
         let written = self
@@ -37,8 +38,8 @@ impl Running {
             .map(|writer| {
                 writer
                     .join()
-                    .map_err(|_| "Command input worker panicked".to_owned())?
-                    .map_err(|e| format!("Command input was not fully written: {e}"))
+                    .map_err(|_| Error::Spawn("Command input worker panicked".into()))?
+                    .map_err(|e| Error::Spawn(format!("Command input was not fully written: {e}")))
             })
             .unwrap_or(Ok(()));
         if let Some(reader) = self.reader.take() {
@@ -57,34 +58,53 @@ impl Evaluator {
     pub fn executable_path(&self) -> &std::path::Path {
         &self.executable
     }
-    pub fn new(executable: PathBuf, arguments: Vec<String>) -> Result<Self, String> {
+    pub fn new(executable: PathBuf, arguments: Vec<String>) -> Result<Self, Error> {
         if !executable.is_absolute() {
-            return Err("Evaluator path must be absolute".into());
+            return Err(Error::Spawn("Evaluator path must be absolute".into()));
         }
         Ok(Self { executable, arguments })
     }
-    pub fn run(&self, runtime_abi: u64, bundle: &str, request: &str) -> Result<String, String> {
-        let input = command_input(runtime_abi, bundle, request)?.into_bytes();
+    pub fn run(&self, runtime_abi: u64, bundle: &str, request: &str) -> Result<String, Error> {
+        let input = command_input(runtime_abi, bundle, request).map_err(output_error)?.into_bytes();
         self.run_input(input, JobKind::Command)
     }
-    pub fn markup(&self, runtime_abi: u64, bundle: &str, request: &str, widget: bool) -> Result<Batch, String> {
+    pub fn markup(&self, runtime_abi: u64, bundle: &str, request: &str, widget: bool) -> Result<Batch, Error> {
         let output =
             self.render(runtime_abi, bundle, request, if widget { JobKind::WidgetMarkup } else { JobKind::Markup })?;
         if let Ok(reply) = serde_json::from_str::<RenderReply>(&output) {
-            return Err(reply.into_images().err().unwrap_or_else(|| "Expected capture markup, received images".into()));
+            return Err(program_error(
+                reply
+                    .into_images()
+                    .err()
+                    .map(|e| e.message)
+                    .unwrap_or_else(|| "Expected capture markup, received images".into()),
+            ));
         }
-        Batch::decode(&output)
+        Batch::decode(&output).map_err(output_error)
     }
     pub fn raster(
         &self,
         runtime_abi: u64,
         batch: Batch,
-        images: std::collections::BTreeMap<String, String>,
+        images: std::collections::BTreeMap<String, Vec<u8>>,
         mode: JobKind,
-    ) -> Result<String, String> {
+    ) -> Result<Vec<Vec<u8>>, Error> {
         if !matches!(mode, JobKind::Widget | JobKind::Capture | JobKind::Pdf) {
-            return Err("Invalid raster job kind".into());
+            return Err(Error::Output("Invalid raster job kind".into()));
         }
+        use base64::Engine;
+        let images = images
+            .into_iter()
+            .map(|(id, bytes)| {
+                // Unrecognized bytes travel under the first accepted type: the child's decoder,
+                // not this label, decides whether they are an image and reports the damage.
+                let header = crate::IMAGE_HEADERS
+                    .iter()
+                    .find(|(magic, _)| magic(&bytes))
+                    .map_or(crate::IMAGE_HEADERS[0].1, |(_, header)| *header);
+                (id, format!("{header},{}", base64::engine::general_purpose::STANDARD.encode(bytes)))
+            })
+            .collect();
         let input = serde_json::to_vec(&Job {
             runtime_abi,
             bundle: Cow::Borrowed(""),
@@ -92,13 +112,13 @@ impl Evaluator {
             mode,
             raster: Some(RasterRequest { batch, images }),
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| Error::Spawn(e.to_string()))?;
         if input.len() > INPUT {
-            return Err("Capture input is too large".into());
+            return Err(Error::Output("Capture input is too large".into()));
         }
-        self.run_input(input, mode)
+        decode_images(&self.run_input(input, mode)?)
     }
-    fn render(&self, runtime_abi: u64, bundle: &str, request: &str, mode: JobKind) -> Result<String, String> {
+    fn render(&self, runtime_abi: u64, bundle: &str, request: &str, mode: JobKind) -> Result<String, Error> {
         let input = serde_json::to_vec(&Job {
             runtime_abi,
             bundle: Cow::Borrowed(bundle),
@@ -106,13 +126,13 @@ impl Evaluator {
             mode,
             raster: None,
         })
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| Error::Spawn(e.to_string()))?;
         if input.len() > INPUT {
-            return Err("Capture input is too large".into());
+            return Err(Error::Output("Capture input is too large".into()));
         }
         self.run_input(input, mode)
     }
-    fn run_input(&self, input: Vec<u8>, mode: JobKind) -> Result<String, String> {
+    fn run_input(&self, input: Vec<u8>, mode: JobKind) -> Result<String, Error> {
         let limits = mode.limits();
         let output_limit = limits.output;
         let child = Command::new(&self.executable)
@@ -123,11 +143,11 @@ impl Evaluator {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| Error::Spawn(e.to_string()))?;
         let mut running = Running::new(child);
         let mut stdin = running.child.stdin.take().expect("piped input");
         let stdout = running.child.stdout.take().expect("piped output");
-        no_broken_pipe_signal(&stdin).map_err(|e| format!("Cannot protect command input pipe: {e}"))?;
+        no_broken_pipe_signal(&stdin).map_err(|e| Error::Spawn(format!("Cannot protect command input pipe: {e}")))?;
         running.writer = Some(
             std::thread::Builder::new()
                 .name("pop.command.input".into())
@@ -136,7 +156,7 @@ impl Evaluator {
                     block_broken_pipe_signal()?;
                     stdin.write_all(&input)
                 })
-                .map_err(|e| format!("Cannot start command input worker: {e}"))?,
+                .map_err(|e| Error::Spawn(format!("Cannot start command input worker: {e}")))?,
         );
         let (sender, receiver) = std::sync::mpsc::channel();
         running.reader = Some(
@@ -147,28 +167,28 @@ impl Evaluator {
                     let result = stdout.take(output_limit as u64 + 1).read_to_end(&mut output);
                     let _ = sender.send((result, output));
                 })
-                .map_err(|e| format!("Cannot start command output worker: {e}"))?,
+                .map_err(|e| Error::Spawn(format!("Cannot start command output worker: {e}")))?,
         );
         let deadline = Instant::now() + Duration::from_millis(limits.watchdog_ms);
         let result = loop {
             let remaining = deadline.saturating_duration_since(Instant::now());
             if remaining.is_zero() {
-                break Err(mode.timeout_message().into());
+                break Err(Error::Timeout);
             }
             let interval =
                 if limits.resident_bytes.is_some() { remaining.min(Duration::from_millis(25)) } else { remaining };
             match receiver.recv_timeout(interval) {
                 Ok((result, bytes)) => {
-                    break result.map_err(|e| e.to_string()).and_then(|_| {
+                    break result.map_err(|e| Error::Spawn(e.to_string())).and_then(|_| {
                         if bytes.len() > output_limit {
-                            Err("Command output is too large".into())
+                            Err(Error::Output("Command output is too large".into()))
                         } else {
-                            String::from_utf8(bytes).map_err(|e| e.to_string())
+                            String::from_utf8(bytes).map_err(output_error)
                         }
                     });
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                    break Err("Command runner stopped without a reply".into());
+                    break Err(Error::Spawn("Command runner stopped without a reply".into()));
                 }
                 Err(std::sync::mpsc::RecvTimeoutError::Timeout) =>
                 {
@@ -176,7 +196,7 @@ impl Evaluator {
                     if let Some(limit) = limits.resident_bytes {
                         match resident_bytes(running.child.id()) {
                             Ok(Some(bytes)) if bytes > limit => {
-                                break Err("Capture renderer exceeds 512 MiB resident memory".into());
+                                break Err(Error::Memory);
                             }
                             Err(error) => break Err(error),
                             _ => {}
@@ -191,12 +211,21 @@ impl Evaluator {
         if result.is_ok() {
             written?;
         }
-        result
+        result.and_then(|output| {
+            if output.trim().is_empty() {
+                return Err(Error::Output("Command runner stopped without a reply".into()));
+            }
+            if let Ok(reply) = serde_json::from_str::<crate::FailedReply>(&output) {
+                Err(reply.into())
+            } else {
+                Ok(output)
+            }
+        })
     }
 }
 
 #[cfg(target_os = "macos")]
-fn resident_bytes(pid: u32) -> Result<Option<u64>, String> {
+fn resident_bytes(pid: u32) -> Result<Option<u64>, Error> {
     let mut info = std::mem::MaybeUninit::<libc::proc_taskinfo>::uninit();
     let size = std::mem::size_of::<libc::proc_taskinfo>() as libc::c_int;
     // SAFETY: this buffer has the exact size requested by PROC_PIDTASKINFO and is
@@ -210,7 +239,7 @@ fn resident_bytes(pid: u32) -> Result<Option<u64>, String> {
     if error.raw_os_error() == Some(libc::ESRCH) {
         return Ok(None);
     }
-    Err(format!("Cannot monitor capture renderer memory: {error}"))
+    Err(Error::Spawn(format!("Cannot monitor capture renderer memory: {error}")))
 }
 
 /// The app process keeps SIGPIPE's default action, which ends it when a child exits before
@@ -246,6 +275,18 @@ fn block_broken_pipe_signal() -> std::io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// The child returns images as base64 in its JSON reply line.
+fn decode_images(output: &str) -> Result<Vec<Vec<u8>>, crate::Error> {
+    use base64::Engine;
+    let reply: pop_contracts::evaluator::RenderReply = serde_json::from_str(output).map_err(crate::output_error)?;
+    reply
+        .into_images()
+        .map_err(crate::program_error)?
+        .into_iter()
+        .map(|image| base64::engine::general_purpose::STANDARD.decode(image).map_err(crate::output_error))
+        .collect()
 }
 
 #[cfg(test)]

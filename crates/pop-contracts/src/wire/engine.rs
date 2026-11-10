@@ -57,35 +57,22 @@ pub enum ArtworkTarget {
     Icon,
 }
 
-/// One request on the engine's standard input. Protocol negotiation stays outside it.
+/// One engine input, dispatched by the operation's owner.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "engine.generated.ts"))]
+pub enum EngineRequest {
+    File(FileRequest),
+    Document(DocumentRequest),
+}
+/// File operations handled by the engine.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "method", deny_unknown_fields, rename_all_fields = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields))]
 #[cfg_attr(feature = "ts", ts(export_to = "engine.generated.ts"))]
-pub enum EngineRequest {
+pub enum FileRequest {
     #[serde(rename = "attachments.ref")]
     AttachmentRef { file: String },
-    #[serde(rename = "attachments.list")]
-    AttachmentsList { document_path: String },
-    #[serde(rename = "attachments.read")]
-    AttachmentsRead {
-        document_path: String,
-        #[serde(rename = "attachmentID")]
-        attachment_id: String,
-    },
-    #[serde(rename = "theme.export")]
-    ThemeExport { document_path: String },
-    #[serde(rename = "get")]
-    Get { document_path: String },
-    #[serde(rename = "batch")]
-    Batch {
-        document_path: String,
-        batch: super::Batch,
-        #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
-        attachments: Option<Vec<String>>,
-    },
-    #[serde(rename = "export")]
-    Export { document_path: String, format: ExportFormat, output: String },
     #[serde(rename = "templates")]
     Templates {},
     #[serde(rename = "create")]
@@ -114,6 +101,36 @@ pub enum EngineRequest {
     },
     #[serde(rename = "validateMetadata")]
     ValidateMetadata { metadata: crate::app::AppMetadata },
+    #[serde(rename = "open")]
+    Open { document_path: String },
+}
+/// Commands handled by a document owner.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(tag = "method", deny_unknown_fields, rename_all_fields = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields))]
+#[cfg_attr(feature = "ts", ts(export_to = "engine.generated.ts"))]
+pub enum DocumentRequest {
+    #[serde(rename = "attachments.list")]
+    AttachmentsList { document_path: String },
+    #[serde(rename = "attachments.read")]
+    AttachmentsRead {
+        document_path: String,
+        #[serde(rename = "attachmentID")]
+        attachment_id: String,
+    },
+    #[serde(rename = "theme.export")]
+    ThemeExport { document_path: String },
+    #[serde(rename = "get")]
+    Get { document_path: String },
+    #[serde(rename = "batch")]
+    Batch {
+        document_path: String,
+        batch: super::Batch,
+        #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
+        attachments: Option<Vec<String>>,
+    },
+    #[serde(rename = "export")]
+    Export { document_path: String, format: ExportFormat, output: String },
     #[serde(rename = "describe")]
     Describe { document_path: String },
     #[serde(rename = "call")]
@@ -123,76 +140,8 @@ pub enum EngineRequest {
         #[cfg_attr(feature = "ts", ts(type = "unknown"))]
         args: Value,
     },
-    #[serde(rename = "open")]
-    Open { document_path: String },
 }
-
-/// Which engine dispatcher owns a request: a document's owner (an export renders a closed
-/// document's saved state without one), or the engine's file operations.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Route {
-    Document,
-    File,
-}
-
-/// The document a request names, by reference or mutably; one list for both accessors.
-macro_rules! document_path {
-    ($request:expr) => {
-        match $request {
-            EngineRequest::Get { document_path }
-            | EngineRequest::Batch { document_path, .. }
-            | EngineRequest::ThemeExport { document_path }
-            | EngineRequest::AttachmentsList { document_path }
-            | EngineRequest::AttachmentsRead { document_path, .. }
-            | EngineRequest::Describe { document_path }
-            | EngineRequest::Call { document_path, .. }
-            | EngineRequest::Open { document_path }
-            | EngineRequest::Export { document_path, .. } => Some(document_path),
-            _ => None,
-        }
-    };
-}
-
 impl EngineRequest {
-    pub fn route(&self) -> Route {
-        match self {
-            Self::Get { .. }
-            | Self::Batch { .. }
-            | Self::Export { .. }
-            | Self::ThemeExport { .. }
-            | Self::AttachmentsList { .. }
-            | Self::AttachmentsRead { .. }
-            | Self::Describe { .. }
-            | Self::Call { .. } => Route::Document,
-            Self::AttachmentRef { .. }
-            | Self::Templates { .. }
-            | Self::Create { .. }
-            | Self::Inspect { .. }
-            | Self::ArtworkExport { .. }
-            | Self::Schema { .. }
-            | Self::Pack { .. }
-            | Self::ValidateApp { .. }
-            | Self::ValidateMetadata { .. }
-            | Self::Open { .. } => Route::File,
-        }
-    }
-    pub fn is_document(&self) -> bool {
-        self.route() == Route::Document
-    }
-    pub fn document_path(&self) -> Option<&str> {
-        document_path!(self).map(String::as_str)
-    }
-    pub fn document_path_mut(&mut self) -> Option<&mut String> {
-        document_path!(self)
-    }
-    pub fn socket_limit(&self) -> usize {
-        if matches!(self, Self::Batch { attachments: Some(_), .. }) {
-            super::SOCKET_ATTACHMENT
-        } else {
-            super::SOCKET_REQUEST
-        }
-    }
-
     /// Decode and check one bounded request. A future app must reach its marker
     /// check before any JSON value inside it is interpreted; serde's tagged-enum
     /// buffering cannot retain RawValue, so only that variant needs a raw path.
@@ -215,68 +164,33 @@ impl EngineRequest {
                 struct Envelope { #[serde(rename="method")] _method:String, app:Box<RawValue>, $($field:String,)+
                     $($(#[serde(default, rename=$name)] $flag:bool,)+)? }
                 let value:Envelope=serde_json::from_str(input)?;
-                Self::$variant {app:value.app, $($field:value.$field,)+ $($($flag:value.$flag,)+)?}
+                Self::File(FileRequest::$variant {app:value.app, $($field:value.$field,)+ $($($flag:value.$flag,)+)?})
             }};
         }
         let request = match header.method.as_str() {
             "validateApp" => build_request!(ValidateApp, stage),
             "pack" => build_request!(Pack, stage, file; render_views = "renderViews"),
-            _ => serde_json::from_str(input)?,
+            _ => serde_json::from_str::<DocumentRequest>(input)
+                .map(Self::Document)
+                .or_else(|_| serde_json::from_str::<FileRequest>(input).map(Self::File))?,
         };
         request.check().map_err(serde_json::Error::custom)?;
         Ok(request)
     }
 
-    pub fn method(&self) -> &'static str {
+    pub fn check(&self) -> Result<(), crate::Error> {
         match self {
-            Self::AttachmentRef { .. } => "attachments.ref",
-            Self::AttachmentsList { .. } => "attachments.list",
-            Self::AttachmentsRead { .. } => "attachments.read",
-            Self::ThemeExport { .. } => "theme.export",
-            Self::Get { .. } => "get",
-            Self::Batch { .. } => "batch",
-            Self::Export { .. } => "export",
-            Self::Templates { .. } => "templates",
-            Self::Create { .. } => "create",
-            Self::Inspect { .. } => "inspect",
-            Self::ArtworkExport { .. } => "artwork.export",
-            Self::Schema { .. } => "schema",
-            Self::Pack { .. } => "pack",
-            Self::ValidateApp { .. } => "validateApp",
-            Self::ValidateMetadata { .. } => "validateMetadata",
-            Self::Describe { .. } => "describe",
-            Self::Call { .. } => "call",
-            Self::Open { .. } => "open",
+            Self::File(request) => request.check(),
+            Self::Document(request) => request.check(),
         }
     }
-
-    /// Rules beyond the serde shape. Payload interpretation belongs to the core
-    /// operation that owns it, after protocol and format requirements are checked.
-    pub fn check(&self) -> Result<(), &'static str> {
+}
+impl FileRequest {
+    pub fn check(&self) -> Result<(), crate::Error> {
         match self {
-            Self::Get { document_path }
-            | Self::AttachmentsList { document_path }
-            | Self::ThemeExport { document_path }
-            | Self::Describe { document_path }
-            | Self::Open { document_path } => check_path(document_path)?,
-            Self::AttachmentsRead { document_path, attachment_id } => {
-                check_path(document_path)?;
-                if !super::valid_attachment_id(attachment_id) {
-                    return Err("Invalid attachment ID");
-                }
-            }
-            Self::Batch { document_path, batch, attachments, .. } => {
-                check_path(document_path)?;
-                check_batch(batch, attachments.as_deref())?;
-            }
-            Self::Call { document_path, command, .. } => {
-                check_path(document_path)?;
-                if !valid_command_name(command) {
-                    return Err("Invalid command name");
-                }
-            }
-            Self::Export { document_path, output, .. } | Self::ArtworkExport { file: document_path, output, .. } => {
-                check_path(document_path)?;
+            Self::Open { document_path } => check_path(document_path)?,
+            Self::ArtworkExport { file, output, .. } => {
+                check_path(file)?;
                 check_path(output)?;
             }
             Self::Create { from, output } => {
@@ -294,14 +208,81 @@ impl EngineRequest {
         Ok(())
     }
 }
+impl DocumentRequest {
+    pub fn method(&self) -> &'static str {
+        match self {
+            Self::AttachmentsList { .. } => "attachments.list",
+            Self::AttachmentsRead { .. } => "attachments.read",
+            Self::ThemeExport { .. } => "theme.export",
+            Self::Get { .. } => "get",
+            Self::Batch { .. } => "batch",
+            Self::Export { .. } => "export",
+            Self::Describe { .. } => "describe",
+            Self::Call { .. } => "call",
+        }
+    }
+    pub fn document_path(&self) -> &str {
+        match self {
+            Self::AttachmentsList { document_path, .. }
+            | Self::AttachmentsRead { document_path, .. }
+            | Self::ThemeExport { document_path, .. }
+            | Self::Get { document_path, .. }
+            | Self::Batch { document_path, .. }
+            | Self::Export { document_path, .. }
+            | Self::Describe { document_path, .. }
+            | Self::Call { document_path, .. } => document_path,
+        }
+    }
+    pub fn document_path_mut(&mut self) -> &mut String {
+        match self {
+            Self::AttachmentsList { document_path, .. }
+            | Self::AttachmentsRead { document_path, .. }
+            | Self::ThemeExport { document_path, .. }
+            | Self::Get { document_path, .. }
+            | Self::Batch { document_path, .. }
+            | Self::Export { document_path, .. }
+            | Self::Describe { document_path, .. }
+            | Self::Call { document_path, .. } => document_path,
+        }
+    }
+    pub fn socket_limit(&self) -> usize {
+        if matches!(self, Self::Batch { attachments: Some(_), .. }) {
+            super::SOCKET_ATTACHMENT
+        } else {
+            super::SOCKET_REQUEST
+        }
+    }
+    pub fn parse(input: &str) -> serde_json::Result<Self> {
+        use serde::de::Error;
+        if input.len() > super::SOCKET_ATTACHMENT {
+            return Err(serde_json::Error::custom("Engine request is too large"));
+        }
+        let request: Self = serde_json::from_str(input)?;
+        request.check().map_err(serde_json::Error::custom)?;
+        Ok(request)
+    }
+    pub fn check(&self) -> Result<(), crate::Error> {
+        check_path(self.document_path())?;
+        match self {
+            Self::AttachmentsRead { attachment_id, .. } if !super::valid_attachment_id(attachment_id) => {
+                return Err(invalid("Invalid attachment ID"));
+            }
+            Self::Batch { batch, attachments, .. } => check_batch(batch, attachments.as_deref())?,
+            Self::Call { command, .. } if !valid_command_name(command) => return Err(invalid("Invalid command name")),
+            Self::Export { output, .. } => check_path(output)?,
+            _ => {}
+        }
+        Ok(())
+    }
+}
 
 /// Constraints shared by the socket and engine request boundaries.
-pub fn check_batch(batch: &super::Batch, attachments: Option<&[String]>) -> Result<(), &'static str> {
-    batch.check_size(super::SOCKET_REQUEST).map_err(|_| "Batch exceeds size limit")?;
+pub fn check_batch(batch: &super::Batch, attachments: Option<&[String]>) -> Result<(), crate::Error> {
+    batch.check_size(super::SOCKET_REQUEST).map_err(|e| invalid(format!("Batch exceeds size limit: {e}")))?;
     if let Some(blobs) = attachments {
         let max = super::ATTACHMENT_FILE_BYTES.div_ceil(3) * 4;
         if blobs.is_empty() || blobs.iter().any(|bytes| bytes.chars().count() > max) {
-            return Err("Invalid attachment payload length");
+            return Err(invalid("Invalid attachment payload length"));
         }
     }
     Ok(())
@@ -569,6 +550,14 @@ pub enum EngineReply {
 }
 
 /// Wire paths retain the JSON Schema boundary's Unicode-scalar length limit.
-pub fn check_path(value: &str) -> Result<(), &'static str> {
-    if (1..=4096).contains(&value.chars().count()) { Ok(()) } else { Err("Invalid path length") }
+pub fn check_path(value: &str) -> Result<(), crate::Error> {
+    if (1..=super::FILE_PATH_CHARACTERS).contains(&value.chars().count()) {
+        Ok(())
+    } else {
+        Err(invalid("Invalid path length"))
+    }
+}
+
+fn invalid(message: impl ToString) -> crate::Error {
+    crate::Error::new(crate::wire::Code::InvalidRequest, message)
 }

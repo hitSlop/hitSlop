@@ -15,9 +15,8 @@ mod copy;
 mod open;
 mod pack;
 mod places;
-#[cfg(target_os = "macos")]
-mod relocate;
 pub(crate) mod rows;
+mod stamp;
 
 pub use artwork::Artwork;
 pub(crate) use artwork::{check_artwork, optimize_png, pack_artwork};
@@ -27,9 +26,8 @@ pub(crate) use copy::{Staged, copy};
 pub use copy::{copy_replica, create_document, new_output, publish_output};
 pub use pack::{APP_INPUT_BYTES, RenderArtwork, pack, validate_app};
 pub(crate) use places::document_destination;
-pub use places::template_roots;
-#[cfg(target_os = "macos")]
-pub use relocate::{RelocatedDocument, relocate_document};
+pub use places::{application, template_roots};
+pub use stamp::FileStamp;
 
 /// Refuses a document opened for writing where documents may not live.
 pub fn document_location(path: &std::path::Path) -> crate::store::Result<()> {

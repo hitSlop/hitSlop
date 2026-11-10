@@ -190,25 +190,6 @@ pub fn import_document(source: String, destination: String) -> Result<(), CoreEr
 pub fn delete_document(path: String) -> Result<(), CoreError> {
     Ok(file::delete_document(Path::new(&path))?)
 }
-#[derive(uniffi::Record)]
-pub struct RelocatedDocument {
-    pub path: String,
-    pub cleanup_error: Option<String>,
-}
-/// An explicit local move, preserving document identity and all retained history.
-#[uniffi::export]
-pub fn relocate_document(source: String, folder: String) -> Result<RelocatedDocument, CoreError> {
-    #[cfg(target_os = "macos")]
-    {
-        let moved = file::relocate_document(Path::new(&source), Path::new(&folder))?;
-        Ok(RelocatedDocument { path: moved.path.to_string_lossy().into_owned(), cleanup_error: moved.cleanup_error })
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (source, folder);
-        Err(store::Error::Failed("Moving a cloud document is unavailable on this platform".into()).into())
-    }
-}
 /// A pop's preview or icon artwork.
 #[uniffi::remote(Enum)]
 pub enum Artwork {

@@ -12,7 +12,7 @@ fn run(code: &str) -> Result<Value, String> {
     );
     let request = json!({"name":"probe","args":{},"value":{"count":0},"descriptor":{"kind":"object","properties":{"count":{"kind":"counter"}}},"now":1234,"seed":[1,2,3,4]});
     let evaluator = Evaluator::process(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
-    let output = evaluator.run(1, &bundle, &request.to_string())?;
+    let output = evaluator.run(1, &bundle, &request.to_string()).map_err(|error| error.to_string())?;
     serde_json::from_str(&output).map_err(|e| format!("{e}: {output}"))
 }
 #[test]
@@ -81,7 +81,7 @@ fn runner_bounds_cpu_and_memory() {
             Ok(result) => assert_eq!(result["ok"], false, "{result}"),
             // The parent watchdog is also a valid limit outcome when process startup
             // leaves too little time for the child's interruption reply to arrive.
-            Err(error) => assert_eq!(error, "Command execution timed out", "{code}"),
+            Err(error) => assert!(error.contains("timed out"), "{code}: {error}"),
         }
         assert!(start.elapsed() < std::time::Duration::from_millis(pop_contracts::evaluator::WATCHDOG_MS * 2));
         assert_eq!(evaluate("return 42")["result"], 42, "the host remains usable after a bounded failure");

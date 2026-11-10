@@ -1,18 +1,13 @@
-use pop_contracts::capture::{CaptureFormat, CaptureOutput};
+use pop_contracts::capture::CaptureOutput;
 use pop_contracts::widgets::{WidgetFamily, WidgetLimits, WidgetViewport};
+use pop_contracts::wire::engine::ExportFormat;
 use pop_runtime::capture::CaptureValue;
-
-#[uniffi::remote(Enum)]
-pub enum CaptureFormat {
-    Png,
-    Pdf,
-}
 
 #[uniffi::remote(Enum)]
 pub enum CaptureOutput {
     Preview,
     Icon,
-    Export { format: CaptureFormat },
+    Export { format: ExportFormat },
     Widgets,
 }
 
@@ -48,7 +43,7 @@ impl CaptureRuntime {
     #[uniffi::constructor]
     pub fn new(evaluator_path: String) -> Result<std::sync::Arc<Self>, crate::CoreError> {
         let evaluator = pop_runtime::evaluator(evaluator_path.into());
-        let evaluator = evaluator.map_err(pop_storage::store::Error::Failed)?;
+        let evaluator = evaluator.map_err(pop_storage::store::from_error)?;
         Ok(std::sync::Arc::new(Self { evaluator }))
     }
 

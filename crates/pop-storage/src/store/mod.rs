@@ -17,7 +17,7 @@ mod attachments;
 mod copy;
 mod save;
 use crate::error::sqlite;
-pub use crate::error::{Error, Result, failed, invalid, rejected};
+pub use crate::error::{Error, Result, caused, failed, from_error, invalid, rejected};
 use crate::file::{Artwork, Kind, OpenedApp, rows};
 use crate::registry::Lease;
 use crate::{file, lock};
@@ -181,7 +181,7 @@ impl Store {
             Some(lease) => lease.file(),
             None => crate::registry::identity(path)
                 .map(|(dev, ino, _)| (dev, ino))
-                .map_err(|_| failed("Cannot find the document"))?,
+                .map_err(|error| crate::error::caused("Cannot find the document", error))?,
         };
         Ok(Self {
             path: path.to_owned(),
@@ -303,7 +303,7 @@ impl Store {
                 let mut account = lock(&self.account);
                 // Busy/locked/closed/refused transactions definitely wrote nothing.
                 // Failed/full/moved outcomes may have crossed the commit boundary.
-                account.checkpoint_required |= matches!(e, Error::Failed(_) | Error::Full | Error::Moved);
+                account.checkpoint_required |= matches!(e, Error::Failed { .. } | Error::Full | Error::Moved);
                 if let Some(meta) = meta {
                     account.meta = meta;
                 }
@@ -371,7 +371,7 @@ impl Store {
             && let Err((open, e)) = open.close()
         {
             backing.conn = Some(open);
-            return Err(failed(format!("close; retaining document ownership: {e}")));
+            return Err(crate::error::caused(format!("close; retaining document ownership: {e}"), e));
         }
         self.owned.store(false, Ordering::Release);
         if let Some(lease) = backing.lease.take() {

@@ -108,7 +108,7 @@ impl Journal {
     pub fn inspect(directory: &Path, origin: &str, document: &str) -> Result<Self> {
         if !directory.is_absolute()
             || directory.components().any(|part| matches!(part, std::path::Component::ParentDir))
-            || !pop_sharing_protocol::valid_document_id(document)
+            || !pop_contracts::identity::valid_document_id(document)
         {
             return Err("Invalid relay state location".into());
         }

@@ -10,6 +10,7 @@ pub mod capture;
 pub mod catalog;
 mod error;
 pub mod media;
+pub mod policy;
 pub mod relay;
 pub mod shape;
 pub mod widgets;
@@ -53,4 +54,15 @@ pub fn encode(value: &impl serde::Serialize) -> String {
 /// FNV-1a fingerprint for deterministic identities and acceptance rules.
 pub fn fnv(value: &str) -> u64 {
     value.bytes().fold(0xcbf29ce484222325, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3))
+}
+
+/// The serde spelling of a string-valued contract enum.
+///
+/// # Panics
+/// Panics if the value does not serialize as a JSON string.
+pub fn enum_name(value: impl serde::Serialize) -> String {
+    match serde_json::to_value(value).expect("serializable contract enum") {
+        serde_json::Value::String(name) => name,
+        _ => panic!("contract enum must serialize as a string"),
+    }
 }

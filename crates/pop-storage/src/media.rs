@@ -3,24 +3,24 @@
 use crate::{Result, err};
 use pop_contracts::wire::Code;
 
-use pop_contracts::media::ASSET_TYPES;
+use pop_contracts::media::{ASSET_TYPES, AttachmentMedia};
 
 /// Recognizes passive signatures, not complete valid files. Decoders still validate
 /// the media they consume; skins/artwork additionally require a complete PNG decode.
 pub fn attachment_type(bytes: &[u8]) -> &'static str {
     if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
-        return "image/png";
+        return AttachmentMedia::Png.as_str();
     }
     if bytes.starts_with(b"\xff\xd8\xff") {
-        return "image/jpeg";
+        return AttachmentMedia::Jpeg.as_str();
     }
     if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
-        return "image/gif";
+        return AttachmentMedia::Gif.as_str();
     }
     if bytes.starts_with(b"RIFF") {
         match bytes.get(8..12) {
-            Some(b"WEBP") => return "image/webp",
-            Some(b"WAVE") => return "audio/wav",
+            Some(b"WEBP") => return AttachmentMedia::Webp.as_str(),
+            Some(b"WAVE") => return AttachmentMedia::Wav.as_str(),
             _ => {}
         }
     }
@@ -37,21 +37,21 @@ pub fn attachment_type(bytes: &[u8]) -> &'static str {
                 && head[2] & 0x0c != 0x0c
         })
     {
-        return "audio/mpeg";
+        return AttachmentMedia::Mpeg.as_str();
     }
     if bytes.starts_with(b"OggS") {
-        return "audio/ogg";
+        return AttachmentMedia::Ogg.as_str();
     }
     if bytes.starts_with(b"fLaC") {
-        return "audio/flac";
+        return AttachmentMedia::Flac.as_str();
     }
     if bytes.starts_with(b"%PDF-") {
-        return "application/pdf";
+        return AttachmentMedia::Pdf.as_str();
     }
     if webm(bytes) {
-        return "video/webm";
+        return AttachmentMedia::Webm.as_str();
     }
-    "application/octet-stream"
+    AttachmentMedia::Binary.as_str()
 }
 
 /// Same passive sniffing as `attachment_type`, without buffering a large attachment.
@@ -81,13 +81,17 @@ pub(crate) fn attachment_type_stream<R: std::io::Read + std::io::Seek>(
     {
         return Ok(initial);
     }
-    let rank = |kind| match kind {
-        "image/avif" => 0,
-        "image/heic" => 1,
-        "audio/mp4" => 2,
-        "video/quicktime" => 3,
-        "video/mp4" => 4,
-        _ => 5,
+    let rank = |kind| {
+        [
+            AttachmentMedia::Avif,
+            AttachmentMedia::Heic,
+            AttachmentMedia::M4a,
+            AttachmentMedia::Quicktime,
+            AttachmentMedia::Mp4,
+        ]
+        .iter()
+        .position(|value| value.as_str() == kind)
+        .unwrap_or(usize::MAX)
     };
     let mut probe = [0u8; 20];
     probe[..16].copy_from_slice(&prefix[..16]);
@@ -125,16 +129,16 @@ fn iso_media(bytes: &[u8]) -> Option<&'static str> {
         names.contains(&major) || bytes[16..length].chunks_exact(4).any(|brand| names.contains(&brand))
     };
     Some(if has(&[b"avif", b"avis"]) {
-        "image/avif"
+        AttachmentMedia::Avif.as_str()
     } else if has(&[b"heic", b"heix", b"mif1", b"msf1"]) {
-        "image/heic"
+        AttachmentMedia::Heic.as_str()
     } else if major == b"M4A " {
-        "audio/mp4"
+        AttachmentMedia::M4a.as_str()
     } else if major == b"qt  " {
-        "video/quicktime"
+        AttachmentMedia::Quicktime.as_str()
     } else if has(&[b"isom", b"iso2", b"iso3", b"iso4", b"iso5", b"iso6", b"mp41", b"mp42", b"avc1", b"dash", b"M4V "])
     {
-        "video/mp4"
+        AttachmentMedia::Mp4.as_str()
     } else {
         return None;
     })

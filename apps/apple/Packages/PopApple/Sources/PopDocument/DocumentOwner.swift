@@ -106,7 +106,8 @@ public final class DocumentOwner: Sendable {
         case .saveStatus(let status, let failure, let pressure, let shared):
           let failed =
             status == .failed
-            ? failure ?? OwnerFailure(kind: .saveFailed, message: "Saving failed", reason: nil, opIndex: nil) : nil
+            ? failure ?? OwnerFailure(kind: .saveFailed, message: "Saving failed", reason: nil, opIndex: nil, path: [])
+            : nil
           facts.failure = failed
           let saveStatus: DocumentSaveStatus =
             if let failed { .failed(SaveFailure(failed)) } else if status == .saving { .saving } else { .saved }

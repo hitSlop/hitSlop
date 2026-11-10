@@ -137,3 +137,17 @@ impl BuildInput {
         serde_json::from_str(input).map_err(|e| crate::err(super::Code::InvalidRequest, e))
     }
 }
+
+impl BuildRoles {
+    pub fn program(&self, role: crate::media::ProgramRole) -> Option<&str> {
+        use crate::media::ProgramRole;
+        match role {
+            ProgramRole::Ui => Some(&self.ui),
+            ProgramRole::Commands => self.commands.as_deref(),
+            ProgramRole::Widget => self.widget.as_deref(),
+            ProgramRole::Icon => self.icon.as_deref(),
+            ProgramRole::Export => self.export.as_deref(),
+            ProgramRole::Preview => self.preview.as_deref(),
+        }
+    }
+}

@@ -20,7 +20,7 @@ pub const BUILD_ID: &str = env!("POP_RUNTIME_BUILD_ID");
 
 /// Selects the host's execution policy: iOS captures on the caller's thread;
 /// other hosts launch restricted child processes.
-pub fn evaluator(executable: std::path::PathBuf) -> std::result::Result<pop_runner::Evaluator, String> {
+pub fn evaluator(executable: std::path::PathBuf) -> std::result::Result<pop_runner::Evaluator, pop_runner::Error> {
     #[cfg(target_os = "ios")]
     {
         pop_runner::Evaluator::in_process_capture(executable)

@@ -306,6 +306,7 @@ mod tests {
             message: "Invalid edit".into(),
             reason: Some(Code::InvalidRequest),
             op_index: Some(2),
+            path: vec![],
         };
         assert_eq!(
             failure(rejected.clone(), false, false),

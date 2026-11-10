@@ -96,6 +96,7 @@ impl ExportHandler for NoExport {
             message: "No export".into(),
             reason: None,
             op_index: None,
+            path: vec![],
         }));
     }
 }
@@ -790,7 +791,7 @@ fn exports_reach_a_live_owner_or_render_a_closed_documents_saved_state() {
         let busy = registry::Lease::acquire(&path).unwrap();
         let pdf = b"%PDF-1.7\n%%EOF".to_vec();
         export.as_object_mut().unwrap().remove("protocol");
-        let request = pop_contracts::wire::engine::EngineRequest::parse(&export.to_string()).unwrap();
+        let request = pop_contracts::wire::engine::DocumentRequest::parse(&export.to_string()).unwrap();
         let rendered = command::request_with_evaluator(request, PROTOCOL, Some(support::renderer(":", &pdf)));
         assert_eq!(checked(rendered), json!({"ok":true,"method":"export","output":output}));
         assert_eq!(std::fs::read(&output).unwrap(), pdf);

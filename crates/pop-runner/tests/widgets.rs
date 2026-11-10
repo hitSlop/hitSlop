@@ -6,10 +6,16 @@ use pop_runner::Evaluator;
 use serde_json::{Value, json};
 
 fn render(evaluator: &Evaluator, bundle: &str, mode: JobKind) -> Result<String, String> {
-    match evaluator.markup(1, bundle, "{}", matches!(mode, JobKind::Widget)) {
-        Ok(batch) => evaluator.raster(1, batch, Default::default(), mode),
-        Err(error) => Ok(json!({"ok":false,"error":error}).to_string()),
+    let result = evaluator
+        .markup(1, bundle, "{}", matches!(mode, JobKind::Widget))
+        .and_then(|batch| evaluator.raster(1, batch, Default::default(), mode));
+    Ok(match result {
+        Ok(images) => {
+            json!({"ok":true,"images":images.into_iter().map(|image| STANDARD.encode(image)).collect::<Vec<_>>()})
+        }
+        Err(error) => json!({"ok":false,"error":error.to_string()}),
     }
+    .to_string())
 }
 fn run(batch: Value) -> Value {
     let evaluator = Evaluator::process(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
@@ -170,19 +176,17 @@ fn vector_pdf_keeps_font_text_and_uniformly_bounds_long_pages() {
 #[test]
 fn damaged_saved_image_refuses_capture_instead_of_publishing_a_blank() {
     let evaluator = Evaluator::process(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
-    let url = format!("data:image/png;base64,{}", STANDARD.encode(b"damaged image"));
-    let request = json!({"saved-image":url});
+    let request = std::collections::BTreeMap::from([("saved-image".into(), b"damaged image".to_vec())]);
     let batch = json!({"fonts":[],"frames":[{"kind":"export","width":200,"height":100,
         "html":"<html><body><img src='pop-attachment:saved-image' width='100' height='100'></body></html>",
         "css":"html,body{margin:0;width:200px;height:100px}"}]});
     let bundle = format!("globalThis.__popCapture = () => {};", serde_json::to_string(&batch.to_string()).unwrap());
     for mode in [JobKind::Capture, JobKind::Pdf] {
         let markup = evaluator.markup(1, &bundle, "{}", false).unwrap();
-        let result = evaluator.raster(1, markup, serde_json::from_value(request.clone()).unwrap(), mode);
-        let reply: Value = serde_json::from_str(&result.unwrap()).unwrap();
-        assert_eq!(reply["ok"], false);
-        assert!(reply["error"].as_str().unwrap().contains("Cannot decode image resource saved-image"));
-        assert!(reply.get("images").is_none());
+        let result = evaluator.raster(1, markup, request.clone(), mode);
+        let error = result.unwrap_err();
+        assert!(matches!(error, pop_runner::Error::Program(_)));
+        assert!(error.to_string().contains("Cannot decode image resource saved-image"));
     }
 }
 
@@ -194,24 +198,14 @@ fn repeated_attachment_tokens_share_saved_bytes_and_render_each_occurrence() {
     encoder.set_color(png::ColorType::Rgba);
     encoder.set_depth(png::BitDepth::Eight);
     encoder.write_header().unwrap().write_image_data(&[0x12, 0x34, 0x56, 255]).unwrap();
-    let request = json!({"saved-image":format!("data:image/png;base64,{}", STANDARD.encode(png))});
+    let request = std::collections::BTreeMap::from([("saved-image".into(), png)]);
     let batch = json!({"fonts":[],"frames":[{"kind":"export","width":100,"height":40,
         "html":"<html><body><img src='pop-attachment:saved-image'><img src='pop-attachment:saved-image'></body></html>",
         "css":"html,body{margin:0;padding:0;width:100px;height:40px}body{display:flex}img{width:50px;height:40px}"}]});
     let bundle = format!("globalThis.__popCapture = () => {};", serde_json::to_string(&batch.to_string()).unwrap());
-    let reply: Value = serde_json::from_str(
-        &evaluator
-            .raster(
-                1,
-                evaluator.markup(1, &bundle, "{}", false).unwrap(),
-                serde_json::from_value(request).unwrap(),
-                JobKind::Capture,
-            )
-            .unwrap(),
-    )
-    .unwrap();
-    assert_eq!(reply["ok"], true, "{reply}");
-    let bytes = STANDARD.decode(reply["images"][0].as_str().unwrap()).unwrap();
+    let mut images =
+        evaluator.raster(1, evaluator.markup(1, &bundle, "{}", false).unwrap(), request, JobKind::Capture).unwrap();
+    let bytes = images.remove(0);
     let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes)).read_info().unwrap();
     let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
     let info = decoder.next_frame(&mut pixels).unwrap();
@@ -229,14 +223,19 @@ fn markup_runs_without_image_bytes_and_raster_refuses_javascript() {
     let markup = evaluator.markup(1, bundle, r#"{"attachments":{"photo":"image/png"}}"#, false).unwrap();
     assert_eq!(markup.frames.len(), 1);
     let output = evaluator.raster(1, markup.clone(), Default::default(), JobKind::Capture).unwrap();
-    assert_eq!(serde_json::from_str::<Value>(&output).unwrap()["ok"], true);
+    assert_eq!(output.len(), 1);
     for field in ["bundle", "request"] {
         let mut job =
             json!({"runtimeABI":1,"bundle":"","request":"","mode":"capture","raster":{"batch":markup,"images":{}}});
         job[field] = json!("globalThis.__popCapture = () => {throw Error('executed')}");
         let error = pop_runner::evaluate(&serde_json::to_vec(&job).unwrap(), || false).unwrap_err();
-        assert!(error.contains("cannot carry JavaScript"), "{error}");
+        assert!(error.to_string().contains("cannot carry JavaScript"), "{error}");
     }
     let job = json!({"runtimeABI":1,"bundle":"","request":"","mode":"capture","raster":{"batch":markup,"images":{},"javascript":"throw Error('executed')"}});
-    assert!(pop_runner::evaluate(&serde_json::to_vec(&job).unwrap(), || false).unwrap_err().contains("unknown field"));
+    assert!(
+        pop_runner::evaluate(&serde_json::to_vec(&job).unwrap(), || false)
+            .unwrap_err()
+            .to_string()
+            .contains("unknown field")
+    );
 }

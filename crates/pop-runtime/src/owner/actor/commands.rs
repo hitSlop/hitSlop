@@ -74,13 +74,13 @@ fn rejected(error: impl ToString) -> Failure {
 }
 
 pub(super) fn worker(
-    run: impl Fn(u64, &str, &str) -> std::result::Result<String, String>,
+    run: impl Fn(u64, &str, &str) -> std::result::Result<String, pop_runner::Error>,
     work: mpsc::Receiver<Work>,
     sender: mpsc::Sender<Message>,
 ) {
     for work in work {
         let output = catch_unwind(AssertUnwindSafe(|| run(work.runtime_abi, &work.bundle, &work.input)))
-            .unwrap_or_else(|_| Err("the evaluator panicked".into()));
+            .unwrap_or_else(|_| Err(pop_runner::Error::Spawn("the evaluator panicked".into())));
         let done = work.finish(output);
         if let Err(mpsc::SendError(Message::Evaluated { mut invocation, .. })) = sender.send(done) {
             complete(take(&mut invocation.callback), Err(closed()));
@@ -89,9 +89,12 @@ pub(super) fn worker(
 }
 
 impl Work {
-    pub(super) fn finish(self, output: std::result::Result<String, String>) -> Message {
+    pub(super) fn finish(self, output: std::result::Result<String, pop_runner::Error>) -> Message {
         let result = contained(|| {
-            let output = output.map_err(host_fault)?;
+            let output = output.map_err(|error| match error {
+                pop_runner::Error::Program(message) => rejected(message),
+                other => host_fault(other),
+            })?;
             if output.len() > pop_contracts::evaluator::OUTPUT {
                 return Err(host_fault("Command output is too large"));
             }

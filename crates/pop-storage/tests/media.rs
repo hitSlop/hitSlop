@@ -133,3 +133,38 @@ fn resource_keys_use_one_registry_and_refuse_traversal_aliases_and_noncanonical_
         assert!(asset_key(&key).is_none(), "{key:?}");
     }
 }
+
+#[test]
+fn every_sniffer_type_is_an_allowed_attachment() {
+    use pop_contracts::media::{AttachmentMedia, attachment_media_type};
+    let mut samples: Vec<Vec<u8>> = [
+        b"".as_slice(),
+        b"%PDF-",
+        b"\x89PNG\r\n\x1a\n",
+        b"\xff\xd8\xff",
+        b"RIFFxxxxWEBP",
+        b"GIF87a",
+        b"ID3",
+        b"RIFFxxxxWAVE",
+        b"OggS",
+        b"fLaC",
+        b"\x1a\x45\xdf\xa3\x87\x42\x82\x84webm",
+    ]
+    .iter()
+    .map(|bytes| bytes.to_vec())
+    .collect();
+    for brand in [b"avif", b"heic", b"M4A ", b"isom", b"qt  "] {
+        let mut bytes = 16u32.to_be_bytes().to_vec();
+        bytes.extend_from_slice(b"ftyp");
+        bytes.extend_from_slice(brand);
+        bytes.extend_from_slice(&[0; 4]);
+        samples.push(bytes);
+    }
+    let emitted: std::collections::HashSet<_> = samples.iter().map(|bytes| attachment_type(bytes)).collect();
+    for kind in &emitted {
+        assert!(attachment_media_type(kind), "{kind}");
+    }
+    for kind in AttachmentMedia::ALL {
+        assert!(emitted.contains(kind.as_str()), "unproducible type: {kind:?}");
+    }
+}

@@ -35,6 +35,7 @@ pub(crate) fn request_typed(
         message: e.to_string(),
         reason: None,
         op_index: None,
+        path: vec![],
     })?
 }
 pub fn inspect(path: &Path) -> Result<Info> {

@@ -43,7 +43,7 @@ extension PopRenderer {
         kind: .rejected,
         message:
           "A file already exists at “\(output.lastPathComponent)”. Export cannot replace existing files. Choose a different name or location.",
-        reason: .exists, opIndex: nil),
+        reason: .exists, opIndex: nil, path: []),
       diagnostic: .init(.rejection, reason: .operationRejected))
   }
 

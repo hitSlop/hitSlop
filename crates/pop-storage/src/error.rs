@@ -23,12 +23,16 @@ pub enum Error {
     /// The request breaks a document rule (a theme value, for example); nothing changed.
     #[error("{0}")]
     Rejected(pop_contracts::Error),
-    #[error("{0}")]
-    Failed(String),
+    #[error("{message}")]
+    Failed {
+        message: String,
+        #[source]
+        source: Option<std::sync::Arc<dyn std::error::Error + Send + Sync>>,
+    },
 }
 pub type Result<T> = std::result::Result<T, Error>;
 pub fn failed(message: impl ToString) -> Error {
-    Error::Failed(message.to_string())
+    Error::Failed { message: message.to_string(), source: None }
 }
 /// A refusal under a core error code; nothing changed.
 pub fn rejected(code: pop_contracts::wire::Code, message: impl ToString) -> Error {
@@ -51,6 +55,15 @@ pub(crate) fn sqlite(action: &str) -> impl FnOnce(rusqlite::Error) -> Error + '_
         Some(ErrorCode::NotADatabase) => invalid("This is not a pop document"),
         // Apple's SQLite: the file was renamed, or gained and lost a hard link, while open.
         _ if e.sqlite_error().is_some_and(|e| e.extended_code == rusqlite::ffi::SQLITE_IOERR_VNODE) => Error::Moved,
-        _ => failed(format!("{action}: {e}")),
+        _ => caused(format!("{action}: {e}"), e),
     }
+}
+
+/// Retains the cause while adding storage context.
+pub fn caused(message: impl ToString, source: impl std::error::Error + Send + Sync + 'static) -> Error {
+    Error::Failed { message: message.to_string(), source: Some(std::sync::Arc::new(source)) }
+}
+/// A storage failure retaining the original cause.
+pub fn from_error(source: impl std::error::Error + Send + Sync + 'static) -> Error {
+    caused(source.to_string(), source)
 }

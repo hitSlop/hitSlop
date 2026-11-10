@@ -31,7 +31,7 @@ fn released_engine(entry: &Path, into: &Path) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let release: Value = serde_json::from_slice(&std::fs::read(entry.join("release.json")).unwrap()).unwrap();
     let hash = release["writer"]["sha256"].as_str().expect("missing writer SHA-256");
-    assert!(hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit()), "invalid writer SHA-256");
+    assert!(pop_contracts::wire::valid_attachment_id(hash), "invalid writer SHA-256");
     let cache = std::env::var_os("POP_COMPAT_WRITERS").map(PathBuf::from).unwrap_or_else(|| {
         PathBuf::from(std::env::var_os("HOME").expect("HOME is required for the writer cache"))
             .join(".cache/pop/compat-writers")

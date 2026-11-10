@@ -16,8 +16,8 @@ use support::ApplyJson;
 
 #[test]
 fn a_capture_batch_keeps_successful_outputs_when_other_roles_fail() {
-    use pop_contracts::capture::CaptureFormat;
     use pop_contracts::capture::CaptureOutput;
+    use pop_contracts::wire::engine::ExportFormat;
     use pop_runtime::capture::CaptureValue;
     use pop_runtime::capture::render_batch;
     for has_widget in [false, true] {
@@ -51,7 +51,7 @@ fn a_capture_batch_keeps_successful_outputs_when_other_roles_fail() {
         let outputs = [
             CaptureOutput::Preview,
             CaptureOutput::Widgets,
-            CaptureOutput::Export { format: CaptureFormat::Pdf }, // Child returned the wrong media.
+            CaptureOutput::Export { format: ExportFormat::Pdf }, // Child returned the wrong media.
             CaptureOutput::Icon,
         ];
         let results = render_batch(&document, &evaluator, &outputs).unwrap();
@@ -79,6 +79,19 @@ fn a_capture_batch_keeps_successful_outputs_when_other_roles_fail() {
                 }
                 _ => assert!(result.result.is_err()),
             }
+        }
+        if !has_widget {
+            let stalled = pop_runner::Evaluator::process(
+                "/bin/sh".into(),
+                vec!["-c".into(), "/bin/cat >/dev/null; exec /bin/sleep 30".into()],
+            )
+            .unwrap();
+            let timed_out = render_batch(&document, &stalled, &[CaptureOutput::Preview]).unwrap();
+            assert!(
+                matches!(&timed_out[0].result,
+                Err(Error::Rejected(error)) if error.code == Code::EngineError),
+                "timed-out capture must report engine_error"
+            );
         }
         assert_eq!(fs::read(&document).unwrap(), saved);
     }
@@ -152,8 +165,8 @@ fn saved_images(path: &Path, count: usize, padded: bool) -> Vec<String> {
 }
 #[test]
 fn capture_damaged_unused_image_never_blocks_outputs() {
-    use pop_contracts::capture::CaptureFormat;
     use pop_contracts::capture::CaptureOutput;
+    use pop_contracts::wire::engine::ExportFormat;
     use pop_runtime::capture::render_batch;
     let dir = tempfile::tempdir().unwrap();
     let doc = capture_document(dir.path());
@@ -166,7 +179,7 @@ fn capture_damaged_unused_image_never_blocks_outputs() {
         &[
             CaptureOutput::Preview,
             CaptureOutput::Icon,
-            CaptureOutput::Export { format: CaptureFormat::Png },
+            CaptureOutput::Export { format: ExportFormat::Png },
             CaptureOutput::Widgets,
         ],
     )
@@ -248,10 +261,10 @@ fn capture_attachment_removed_during_markup_fails_only_its_output() {
 
 /// A closed export to `output`, as a PNG, with a deadline it never reaches.
 fn export(document: &Path, output: &Path, evaluator: &pop_runner::Evaluator) -> Result<(), Error> {
-    use pop_contracts::capture::CaptureFormat;
+    use pop_contracts::wire::engine::ExportFormat;
     use pop_runtime::capture::export_saved;
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    export_saved(document, CaptureFormat::Png, output, evaluator, deadline)
+    export_saved(document, ExportFormat::Png, output, evaluator, deadline)
 }
 /// A renderer that leaves `marker` behind, so a test can tell whether it ran.
 fn marking(marker: &Path) -> pop_runner::Evaluator {
@@ -294,7 +307,7 @@ fn closed_export_refuses_an_existing_output_before_rendering() {
 /// capture passes, and leaves the document's bytes and its writer lock alone.
 #[test]
 fn closed_export_publishes_only_a_checked_image_and_never_writes_the_document() {
-    use pop_contracts::capture::CaptureFormat;
+    use pop_contracts::wire::engine::ExportFormat;
     use pop_runtime::capture::export_saved;
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
@@ -306,7 +319,7 @@ fn closed_export_publishes_only_a_checked_image_and_never_writes_the_document() 
     // Bytes that are not the format asked for: no PNG, and a PNG where a PDF was asked.
     let refused = dir.path().join("Refused");
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
-    for (format, bytes) in [(CaptureFormat::Png, b"not a PNG".to_vec()), (CaptureFormat::Pdf, image)] {
+    for (format, bytes) in [(ExportFormat::Png, b"not a PNG".to_vec()), (ExportFormat::Pdf, image)] {
         assert!(export_saved(&doc, format, &refused, &support::renderer(":", &bytes), deadline).is_err());
         assert!(!refused.exists());
     }
@@ -318,12 +331,12 @@ fn closed_export_publishes_only_a_checked_image_and_never_writes_the_document() 
 /// A result that arrives after its command's deadline is discarded, not published late.
 #[test]
 fn a_closed_export_past_its_deadline_publishes_nothing() {
-    use pop_contracts::capture::CaptureFormat;
+    use pop_contracts::wire::engine::ExportFormat;
     use pop_runtime::capture::export_saved;
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
     let (rendered, output) = (dir.path().join("rendered"), dir.path().join("Late.png"));
-    let late = export_saved(&doc, CaptureFormat::Png, &output, &marking(&rendered), std::time::Instant::now());
+    let late = export_saved(&doc, ExportFormat::Png, &output, &marking(&rendered), std::time::Instant::now());
     assert!(late.unwrap_err().to_string().contains("not published"));
     assert!(rendered.exists(), "the renderer answered, too late");
     assert!(!output.exists());

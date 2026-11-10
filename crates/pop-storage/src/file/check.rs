@@ -131,12 +131,8 @@ pub(super) fn layout(conn: &Connection) -> Result<()> {
             return Err(invalid(format!("Unexpected rows in {table}")));
         }
     }
-    // A lowercase hyphenated UUID: 36 ASCII bytes, hyphens at 8, 13, 18 and 23.
     if let Some(uuid) = rows::document_uuid(conn)?
-        && (uuid.len() != 36
-            || !uuid.bytes().enumerate().all(|(index, byte)| {
-                if matches!(index, 8 | 13 | 18 | 23) { byte == b'-' } else { matches!(byte, b'0'..=b'9' | b'a'..=b'f') }
-            }))
+        && !pop_contracts::identity::valid_document_id(&uuid)
     {
         return Err(invalid("Invalid document identity"));
     }

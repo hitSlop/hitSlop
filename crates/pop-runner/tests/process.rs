@@ -4,7 +4,10 @@ use pop_runner::Evaluator;
 use std::time::{Duration, Instant};
 
 fn run(script: &str) -> Result<String, String> {
-    Evaluator::process("/bin/sh".into(), vec!["-c".into(), script.into()]).unwrap().run(1, "", "{}")
+    Evaluator::process("/bin/sh".into(), vec!["-c".into(), script.into()])
+        .unwrap()
+        .run(1, "", "{}")
+        .map_err(|error| error.to_string())
 }
 
 #[test]
@@ -24,38 +27,38 @@ fn unresponsive_and_oversized_children_are_stopped() {
 fn render_jobs_have_their_own_output_and_time_budgets() {
     let evaluator = Evaluator::process(
         "/bin/sh".into(),
-        vec!["-c".into(), "/bin/cat >/dev/null; exec /usr/bin/head -c 8388609 /dev/zero".into()],
+        vec!["-c".into(), r#"/bin/cat >/dev/null; printf '{"ok":true,"images":["'; /usr/bin/head -c 6291456 /dev/zero | /usr/bin/base64 | /usr/bin/tr -d '\n'; printf '"]}'"#.into()],
     )
     .unwrap();
     assert!(
         evaluator
             .raster(1, Batch { frames: vec![], fonts: vec![] }, Default::default(), JobKind::Widget)
             .unwrap_err()
+            .to_string()
             .contains("too large")
     );
     assert_eq!(
-        evaluator
-            .raster(1, Batch { frames: vec![], fonts: vec![] }, Default::default(), JobKind::Capture)
-            .unwrap()
+        evaluator.raster(1, Batch { frames: vec![], fonts: vec![] }, Default::default(), JobKind::Capture).unwrap()[0]
             .len(),
-        8_388_609
+        6_291_456
     );
 
     // Capture and PDF allow the same output size, but only PDF gets a longer watchdog.
     let evaluator = Evaluator::process(
         "/bin/sh".into(),
-        vec!["-c".into(), "/bin/cat >/dev/null; /bin/sleep 4; printf done".into()],
+        vec!["-c".into(), r#"/bin/cat >/dev/null; /bin/sleep 4; printf '{"ok":true,"images":["ZG9uZQ=="]}'"#.into()],
     )
     .unwrap();
     assert!(
         evaluator
             .raster(1, Batch { frames: vec![], fonts: vec![] }, Default::default(), JobKind::Capture)
             .unwrap_err()
+            .to_string()
             .contains("timed out")
     );
     assert_eq!(
         evaluator.raster(1, Batch { frames: vec![], fonts: vec![] }, Default::default(), JobKind::Pdf).unwrap(),
-        "done"
+        vec![b"done".to_vec()]
     );
 }
 
@@ -63,8 +66,11 @@ fn render_jobs_have_their_own_output_and_time_budgets() {
 /// the released markup + image budgets exceed the transport envelope.
 #[test]
 fn raster_input_holds_the_markup_and_image_budgets_together() {
-    let evaluator =
-        Evaluator::process("/bin/sh".into(), vec!["-c".into(), "/bin/cat >/dev/null; printf done".into()]).unwrap();
+    let evaluator = Evaluator::process(
+        "/bin/sh".into(),
+        vec!["-c".into(), r#"/bin/cat >/dev/null; printf '{"ok":true,"images":["ZG9uZQ=="]}'"#.into()],
+    )
+    .unwrap();
     let batch = Batch {
         frames: vec![pop_contracts::evaluator::Frame {
             html: "\"".repeat((pop_contracts::evaluator::MARKUP_BYTES - 256) / 2),
@@ -75,9 +81,6 @@ fn raster_input_holds_the_markup_and_image_budgets_together() {
         }],
         fonts: vec![],
     };
-    let images = std::collections::BTreeMap::from([(
-        "a".repeat(64),
-        format!("data:image/png;base64,{}", "A".repeat(pop_contracts::evaluator::IMAGE_BYTES / 3 * 4)),
-    )]);
-    assert_eq!(evaluator.raster(1, batch, images, JobKind::Capture).unwrap(), "done");
+    let images = std::collections::BTreeMap::from([("a".repeat(64), vec![0; pop_contracts::evaluator::IMAGE_BYTES])]);
+    assert_eq!(evaluator.raster(1, batch, images, JobKind::Capture).unwrap(), vec![b"done".to_vec()]);
 }

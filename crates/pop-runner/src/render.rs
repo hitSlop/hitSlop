@@ -4,37 +4,45 @@ use std::{collections::HashMap, sync::Arc};
 use takumi::prelude::*;
 use takumi::unstable::base::viewport::MediaTarget;
 
-use pop_contracts::evaluator::{Batch, Font, Frame, JobKind, RasterRequest};
+use crate::{Error, output_error, program_error};
+use pop_contracts::evaluator::{Batch, Font, Frame, JobKind};
 
-pub fn raster(request: RasterRequest, mode: JobKind) -> std::result::Result<String, String> {
-    let Batch { frames, fonts } = request.batch;
-    let sources = resource_images(request.images)?;
+pub fn raster(
+    batch: Batch,
+    images: std::collections::BTreeMap<String, Vec<u8>>,
+    mode: JobKind,
+) -> std::result::Result<Vec<Vec<u8>>, Error> {
+    let Batch { frames, fonts } = batch;
+    let sources = resource_images(images)?;
     if matches!(mode, JobKind::Widget) {
         if frames.len() != 3
-            || frames
-                .iter()
-                .any(|f| f.width == 0 || f.height == 0 || f.width > 512 || f.height > 512 || f.kind.is_some())
+            || frames.iter().any(|f| {
+                f.width == 0
+                    || f.height == 0
+                    || f.width > pop_contracts::wire::ICON_SIDE
+                    || f.height > pop_contracts::wire::ICON_SIDE
+                    || f.kind.is_some()
+            })
         {
-            return Err("Widget batch must contain three bounded canvases".into());
+            return Err(Error::Program("Widget batch must contain three bounded canvases".into()));
         }
-        return render(frames, fonts, sources, 2, pop_contracts::evaluator::WIDGET_OUTPUT, false)
-            .map_err(|e| format!("Widget rendering failed: {e}"));
+        return render(frames, fonts, sources, 2, pop_contracts::evaluator::WIDGET_OUTPUT, false);
     }
     let pdf = matches!(mode, JobKind::Pdf);
     if frames.len() != 1 {
-        return Err("Capture requires one canvas".into());
+        return Err(Error::Program("Capture requires one canvas".into()));
     }
     let frame = &frames[0];
     let icon = frame.kind.as_deref() == Some("icon");
     if (pdf && frame.kind.as_deref() != Some("export"))
-        || (icon && (frame.width != 512 || frame.height != 512))
+        || (icon && (frame.width != pop_contracts::wire::ICON_SIDE || frame.height != pop_contracts::wire::ICON_SIDE))
         || !matches!(frame.kind.as_deref(), Some("icon" | "preview" | "export"))
         || frame.width == 0
         || frame.height == 0
         || frame.width > 16384
         || frame.height > 16384
     {
-        return Err("Invalid capture canvas".into());
+        return Err(Error::Program("Invalid capture canvas".into()));
     }
     render(
         frames,
@@ -44,31 +52,23 @@ pub fn raster(request: RasterRequest, mode: JobKind) -> std::result::Result<Stri
         if pdf { pop_contracts::evaluator::PDF_OUTPUT } else { pop_contracts::evaluator::CAPTURE_OUTPUT },
         pdf,
     )
-    .map_err(|e| format!("Capture rendering failed: {e}"))
 }
 
 /// Decode owner-supplied saved image bytes once, inside the restricted child.
 /// Takumi's browser-like missing-image behavior must not silently replace useful
 /// prior artwork when an attachment is damaged.
 fn resource_images(
-    resources: std::collections::BTreeMap<String, String>,
-) -> std::result::Result<HashMap<Arc<str>, ImageSource>, String> {
+    resources: std::collections::BTreeMap<String, Vec<u8>>,
+) -> std::result::Result<HashMap<Arc<str>, ImageSource>, Error> {
     let mut images = HashMap::new();
     let mut total = 0usize;
-    for (id, url) in resources {
-        let (header, bytes) = url.split_once(',').ok_or_else(|| format!("Invalid image resource {id}"))?;
-        if !matches!(
-            header,
-            "data:image/png;base64" | "data:image/jpeg;base64" | "data:image/gif;base64" | "data:image/webp;base64"
-        ) {
-            return Err(format!("Unsupported image resource {id}"));
-        }
-        let bytes = STANDARD.decode(bytes).map_err(|e| format!("Invalid image resource {id}: {e}"))?;
+    for (id, bytes) in resources {
         total += bytes.len();
         if total > pop_contracts::evaluator::IMAGE_BYTES {
-            return Err("Capture images exceed the 24 MiB resource limit".into());
+            return Err(Error::Program("Capture images exceed the 24 MiB resource limit".into()));
         }
-        let source = ImageSource::from_bytes(&bytes).map_err(|e| format!("Cannot decode image resource {id}: {e}"))?;
+        let source = ImageSource::from_bytes(&bytes)
+            .map_err(|e| program_error(format!("Cannot decode image resource {id}: {e}")))?;
         images.insert(Arc::from(format!("pop-attachment:{id}")), source);
     }
     Ok(images)
@@ -81,38 +81,54 @@ fn render(
     scale: u32,
     output_limit: usize,
     pdf: bool,
-) -> std::result::Result<String, Box<dyn std::error::Error>> {
+) -> std::result::Result<Vec<Vec<u8>>, Error> {
     let mut fonts = Fonts::default();
-    fonts.register(
-        FontResource::new(include_bytes!("../fonts/Geist.woff2").as_slice()).generic_family(GenericFamily::SANS_SERIF),
-    )?;
-    fonts.register(
-        FontResource::new(include_bytes!("../fonts/Newsreader.ttf").as_slice()).generic_family(GenericFamily::SERIF),
-    )?;
-    fonts.register(
-        FontResource::new(include_bytes!("../fonts/GeistMono.woff2").as_slice())
-            .generic_family(GenericFamily::MONOSPACE),
-    )?;
+    fonts
+        .register(
+            FontResource::new(include_bytes!("../fonts/Geist.woff2").as_slice())
+                .generic_family(GenericFamily::SANS_SERIF),
+        )
+        .map_err(program_error)?;
+    fonts
+        .register(
+            FontResource::new(include_bytes!("../fonts/Newsreader.ttf").as_slice())
+                .generic_family(GenericFamily::SERIF),
+        )
+        .map_err(program_error)?;
+    fonts
+        .register(
+            FontResource::new(include_bytes!("../fonts/GeistMono.woff2").as_slice())
+                .generic_family(GenericFamily::MONOSPACE),
+        )
+        .map_err(program_error)?;
     // Converted CBDT/CBLC with GSUB sequences; no platform font discovery is needed.
-    fonts.register(
-        FontResource::new(include_bytes!("../fonts/AppleColorEmoji.ttf").as_slice())
-            .generic_family(GenericFamily::EMOJI),
-    )?;
+    fonts
+        .register(
+            FontResource::new(include_bytes!("../fonts/AppleColorEmoji.ttf").as_slice())
+                .generic_family(GenericFamily::EMOJI),
+        )
+        .map_err(program_error)?;
     // Text symbols such as U+2713 are outside Geist and the emoji presentation
     // font. Register after Apple emoji so colored emoji retain their chosen face.
-    fonts.register(FontResource::new(include_bytes!("../fonts/NotoSansSymbols2-Regular.ttf").as_slice()))?;
+    fonts
+        .register(FontResource::new(include_bytes!("../fonts/NotoSansSymbols2-Regular.ttf").as_slice()))
+        .map_err(program_error)?;
     for font in packaged_fonts {
-        fonts.register(FontResource::new(STANDARD.decode(font.bytes)?).override_info(FontOverride {
-            family_name: Some(font.family.into()),
-            weight: font.weight,
-            style: Some(if font.italic { FontStyle::italic() } else { FontStyle::normal() }),
-            ..Default::default()
-        }))?;
+        fonts
+            .register(FontResource::new(STANDARD.decode(font.bytes).map_err(program_error)?).override_info(
+                FontOverride {
+                    family_name: Some(font.family.into()),
+                    weight: font.weight,
+                    style: Some(if font.italic { FontStyle::italic() } else { FontStyle::normal() }),
+                    ..Default::default()
+                },
+            ))
+            .map_err(program_error)?;
     }
     let mut images = Vec::with_capacity(3);
     for frame in frames {
         let natural_size = matches!(frame.kind.as_deref(), Some("preview" | "export"));
-        let node = Node::from_html(&frame.html, FromHtmlOptions::default())?;
+        let node = Node::from_html(&frame.html, FromHtmlOptions::default()).map_err(program_error)?;
         // Shared authored CSS can include browser-only declarations for the editor.
         // Match Takumi's HTML/JS entry points: ignore unsupported declarations,
         // retaining the supported rules instead of refusing the entire stylesheet.
@@ -144,14 +160,17 @@ fn render(
                     .node(node.clone())
                     .stylesheet(stylesheet.clone())
                     .build(),
-            )?;
+            )
+            .map_err(program_error)?;
             if !measured.height.is_finite() || measured.height <= 0.0 || measured.height > 1_000_000.0 * scale as f32 {
-                return Err("Export content height is empty, non-finite or exceeds 1,000,000 CSS pixels".into());
+                return Err(Error::Program(
+                    "Export content height is empty, non-finite or exceeds 1,000,000 CSS pixels".into(),
+                ));
             }
             height = (measured.height / scale as f32).ceil() as u32;
             let right = measured_right(&measured);
             if !right.is_finite() || right > if pdf { 1_000_000.0 } else { 16384.0 } {
-                return Err("Export exceeds the content width limit".into());
+                return Err(Error::Program("Export exceeds the content width limit".into()));
             }
             width = width.max((right / scale as f32).ceil() as u32);
             if frame.kind.as_deref() == Some("preview") {
@@ -177,20 +196,21 @@ fn render(
                     .node(node)
                     .stylesheet(stylesheet)
                     .build(),
-            )?;
+            )
+            .map_err(program_error)?;
             if bytes.len() > pop_contracts::evaluator::PDF_BYTES {
-                return Err("PDF exceeds its output byte limit".into());
+                return Err(Error::Output("PDF exceeds its output byte limit".into()));
             }
-            images.push(STANDARD.encode(bytes));
+            images.push(bytes);
             continue;
         }
         if width as u64 * scale as u64 > 16384
             || height as u64 * scale as u64 > 16384
             || width as u64 * height as u64 * scale as u64 * scale as u64 > 24_000_000
         {
-            return Err(
-                "PNG exceeds 16384 pixels per side or 24 megapixels at 2×; export as PDF for longer documents".into()
-            );
+            return Err(Error::Program(
+                "PNG exceeds 16384 pixels per side or 24 megapixels at 2×; export as PDF for longer documents".into(),
+            ));
         }
         let image = takumi::render(
             RenderOptions::builder()
@@ -200,21 +220,25 @@ fn render(
                 .node(node)
                 .stylesheet(stylesheet)
                 .build(),
-        )?;
+        )
+        .map_err(program_error)?;
         let mut png = Vec::new();
         // The shared image contract accepts RGB/RGBA, not Takumi's automatic
         // palette optimization for flat artwork. Encode those same pixels directly.
         let mut encoder = png::Encoder::new(&mut png, image.width(), image.height());
         encoder.set_color(png::ColorType::Rgba);
         encoder.set_depth(png::BitDepth::Eight);
-        encoder.write_header()?.write_image_data(image.as_raw())?;
-        images.push(STANDARD.encode(png));
+        encoder.write_header().map_err(output_error)?.write_image_data(image.as_raw()).map_err(output_error)?;
+        images.push(png);
     }
-    let output = serde_json::to_string(&pop_contracts::evaluator::RenderReply::Images(images))?;
-    if output.len() > output_limit {
-        return Err("Capture output exceeds its byte limit".into());
+    // Match the child reply budget without encoding the in-process images.
+    let encoded_size = r#"{"ok":true,"images":[]}"#.len()
+        + images.iter().map(|bytes| bytes.len().div_ceil(3) * 4 + 2).sum::<usize>()
+        + images.len().saturating_sub(1);
+    if encoded_size > output_limit {
+        return Err(Error::Output("Capture output exceeds its byte limit".into()));
     }
-    Ok(output)
+    Ok(images)
 }
 
 fn measured_right(node: &MeasuredNode) -> f32 {

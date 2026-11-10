@@ -329,7 +329,7 @@ impl CloudDocument {
         {
             return Response::error("Compaction conflict", 409);
         }
-        if !pop_sharing_protocol::resources::hash_id(&digest) || hex(&Sha256::digest(&body)) != digest {
+        if !pop_contracts::wire::valid_attachment_id(&digest) || hex(&Sha256::digest(&body)) != digest {
             return Response::error("Base checksum mismatch", 400);
         }
         if !self.authorized_guest(req).await? {
@@ -745,7 +745,7 @@ impl DurableObject for CloudDocument {
                 Ok(input) => input,
                 Err(error) => return error.response(),
             };
-            if !pop_sharing_protocol::valid_document_id(&input.document) || input.owner_uid.is_empty() {
+            if !pop_contracts::identity::valid_document_id(&input.document) || input.owner_uid.is_empty() {
                 return Response::error("Invalid metadata", 400);
             }
             if self.phase()? == Some(RoomPhase::Ended) {
@@ -865,7 +865,7 @@ impl DurableObject for CloudDocument {
                 Ok(input) => input,
                 Err(error) => return error.response(),
             };
-            if !pop_sharing_protocol::resources::hash_id(&input.seed_sha256) {
+            if !pop_contracts::wire::valid_attachment_id(&input.seed_sha256) {
                 return Response::error("Invalid seed hash", 400);
             }
             // Reading the body yielded to Stop, which also removes the seed.
@@ -924,8 +924,8 @@ impl DurableObject for CloudDocument {
                     Ok(heads) => heads,
                     Err(_) => return Response::error("Invalid seed version", 400),
                 };
-                if !pop_sharing_protocol::resources::hash_id(&digest)
-                    || !pop_sharing_protocol::resources::hash_id(&app)
+                if !pop_contracts::wire::valid_attachment_id(&digest)
+                    || !pop_contracts::wire::valid_attachment_id(&app)
                     || heads.len() != seed.len()
                 {
                     return Response::error("Invalid seed metadata", 400);

@@ -1,12 +1,12 @@
 //! Same-build owner socket messages; protocol refusal precedes payload decoding.
-use super::engine::{EngineRequest, check_path};
+use super::engine::{DocumentRequest, check_path};
 use crate::{Code, Error, err};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct SocketRequest {
     pub protocol: u64,
-    pub request: EngineRequest,
+    pub request: DocumentRequest,
 }
 impl SocketRequest {
     /// Bound the transport, negotiate before interpreting the request, then apply
@@ -23,10 +23,7 @@ impl SocketRequest {
             request: Box<serde_json::value::RawValue>,
         }
         let envelope: Envelope = serde_json::from_str(input).map_err(|e| err(Code::InvalidRequest, e))?;
-        let request = EngineRequest::parse(envelope.request.get()).map_err(|e| err(Code::InvalidRequest, e))?;
-        if !request.is_document() {
-            return Err(err(Code::InvalidRequest, "Not a document command"));
-        }
+        let request = DocumentRequest::parse(envelope.request.get()).map_err(|e| err(Code::InvalidRequest, e))?;
         if input.len() > request.socket_limit() {
             return Err(err(Code::InvalidRequest, "Oversized socket request"));
         }

@@ -5,7 +5,7 @@
 //! opening a window needs dotpop.app. Only build/protocol queries and the exact restricted
 //! evaluator entry point are outside the JSON wire.
 use pop_contracts::wire::Code;
-use pop_contracts::wire::engine::{EngineRequest, EngineSuccess, True};
+use pop_contracts::wire::engine::{EngineRequest, EngineSuccess, FileRequest, True};
 use pop_runtime::command;
 use pop_runtime::owner::{Failure, FailureKind};
 use pop_storage::{file, registry, store};
@@ -21,7 +21,13 @@ mod preview;
 /// A classified refusal, as every engine reply spells one.
 fn rejected(reason: Code, error: impl std::fmt::Display) -> String {
     command::failure(
-        Failure { kind: FailureKind::Rejected, message: error.to_string(), reason: Some(reason), op_index: None },
+        Failure {
+            kind: FailureKind::Rejected,
+            message: error.to_string(),
+            reason: Some(reason),
+            op_index: None,
+            path: vec![],
+        },
         false,
         false,
     )
@@ -36,26 +42,27 @@ fn evaluator() -> Result<pop_runner::Evaluator, String> {
         std::env::current_exe().map_err(|e| e.to_string())?,
         vec!["--evaluate-command".into()],
     )
+    .map_err(|error| error.to_string())
 }
 
 fn success(result: EngineSuccess) -> String {
     serde_json::to_string(&result).expect("serializable reply")
 }
-fn dispatch(request: EngineRequest) -> String {
+fn dispatch(request: FileRequest) -> String {
     let result = (|| -> Result<EngineSuccess, store::Error> {
         Ok(match request {
-            EngineRequest::AttachmentRef { file } => {
+            FileRequest::AttachmentRef { file } => {
                 EngineSuccess::AttachmentRef { ok: True, reference: attachments::reference(Path::new(&file))? }
             }
-            EngineRequest::Templates {} => {
+            FileRequest::Templates {} => {
                 EngineSuccess::Templates { ok: True, catalog: file::list_templates(&file::template_roots()) }
             }
-            EngineRequest::Create { from, output } => {
+            FileRequest::Create { from, output } => {
                 file::create_document(&file::template_source(&from)?, Path::new(&output))?;
                 let path = std::fs::canonicalize(&output).unwrap_or(PathBuf::from(output));
                 EngineSuccess::Create { ok: True, document_path: path.to_string_lossy().into_owned() }
             }
-            EngineRequest::Pack { stage, file: path, app, render_views } => {
+            FileRequest::Pack { stage, file: path, app, render_views } => {
                 let (stage, path) = (Path::new(&stage), Path::new(&path));
                 let artwork = if render_views {
                     let evaluator = evaluator().map_err(|e| {
@@ -70,15 +77,15 @@ fn dispatch(request: EngineRequest) -> String {
                 };
                 EngineSuccess::Pack { ok: True, artwork }
             }
-            EngineRequest::ValidateMetadata { metadata } => {
+            FileRequest::ValidateMetadata { metadata } => {
                 pop_core::app::validate_metadata(&metadata).map_err(store::Error::Rejected)?;
                 EngineSuccess::ValidateMetadata { ok: True }
             }
-            EngineRequest::ValidateApp { app, stage } => {
+            FileRequest::ValidateApp { app, stage } => {
                 let (window, capabilities) = file::validate_app(app.get(), Path::new(&stage))?;
                 EngineSuccess::ValidateApp { ok: True, window, capabilities }
             }
-            EngineRequest::ArtworkExport { file: path, target, output } => {
+            FileRequest::ArtworkExport { file: path, target, output } => {
                 let name = match target {
                     pop_contracts::wire::engine::ArtworkTarget::Icon => file::Artwork::Icon,
                     pop_contracts::wire::engine::ArtworkTarget::Preview => file::Artwork::Preview,
@@ -86,25 +93,17 @@ fn dispatch(request: EngineRequest) -> String {
                 let present = file::export_artwork(Path::new(&path), name, Path::new(&output))?;
                 EngineSuccess::ArtworkExport { ok: True, output: present.then_some(output) }
             }
-            EngineRequest::Inspect { file: path } => {
+            FileRequest::Inspect { file: path } => {
                 let path = Path::new(&path);
                 EngineSuccess::Inspect { ok: True, info: file::inspect(path)? }
             }
-            EngineRequest::Schema { file: path } => EngineSuccess::Schema {
+            FileRequest::Schema { file: path } => EngineSuccess::Schema {
                 ok: True,
                 schema: serde_json::from_str(&file::descriptor(Path::new(&path))?).expect("valid descriptor"),
             },
-            EngineRequest::Open { document_path } => {
+            FileRequest::Open { document_path } => {
                 EngineSuccess::Open { ok: True, document_path: open::document(Path::new(&document_path))? }
             }
-            EngineRequest::Get { .. }
-            | EngineRequest::Batch { .. }
-            | EngineRequest::Export { .. }
-            | EngineRequest::ThemeExport { .. }
-            | EngineRequest::AttachmentsList { .. }
-            | EngineRequest::AttachmentsRead { .. }
-            | EngineRequest::Describe { .. }
-            | EngineRequest::Call { .. } => unreachable!("document requests route to the owner"),
         })
     })();
     match result {
@@ -120,11 +119,9 @@ fn request(input: &str, protocol: u64) -> String {
         Ok(request) => request,
         Err(error) => return rejected(Code::InvalidRequest, error),
     };
-    match request.route() {
-        pop_contracts::wire::engine::Route::Document => {
-            command::request_with_evaluator(request, protocol, evaluator().ok())
-        }
-        pop_contracts::wire::engine::Route::File => dispatch(request),
+    match request {
+        EngineRequest::Document(request) => command::request_with_evaluator(request, protocol, evaluator().ok()),
+        EngineRequest::File(request) => dispatch(request),
     }
 }
 fn main() -> ExitCode {

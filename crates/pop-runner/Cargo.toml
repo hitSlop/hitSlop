@@ -16,7 +16,7 @@ child = ["dep:rquickjs", "dep:seccompiler"]
 # In-process PNG artwork/widget capture for iOS. Commands stay unavailable.
 in-process = ["capture", "dep:rquickjs-sys"]
 
-capture = ["dep:rquickjs", "dep:takumi", "dep:takumi-pdf", "dep:base64", "dep:png"]
+capture = ["dep:rquickjs", "dep:takumi", "dep:takumi-pdf", "dep:png"]
 
 [dependencies]
 serde.workspace = true
@@ -29,7 +29,7 @@ rquickjs-sys = { version = "=0.14.0", features = ["bindgen"], optional = true }
 libc.workspace = true
 takumi = { git = "https://github.com/kane50613/takumi", rev = "e527358cbd9b4f5deb361f56ef2cb02a88759f2b", version = "=2.15.1", default-features = false, features = ["unstable", "raster-backend", "from-html", "svg-source", "png", "jpeg", "gif", "webp", "woff2"], optional = true }
 takumi-pdf = { git = "https://github.com/kane50613/takumi", rev = "e527358cbd9b4f5deb361f56ef2cb02a88759f2b", version = "=0.16.1", optional = true }
-base64 = { version = "0.22", optional = true }
+base64 = "0.22"
 png = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]

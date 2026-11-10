@@ -74,28 +74,34 @@ pub struct Invitation {
     pub capability: String,
 }
 impl Invitation {
-    pub fn validate(&self) -> Result<(), String> {
-        if !crate::valid_document_id(&self.room) || !crate::resources::hash_id(&self.capability) {
-            return Err("Sharing link is no longer valid".into());
+    pub fn validate(&self) -> Result<(), pop_contracts::Error> {
+        if !pop_contracts::identity::valid_document_id(&self.room)
+            || !pop_contracts::wire::valid_attachment_id(&self.capability)
+        {
+            return Err(invalid("Sharing link is no longer valid"));
         }
         Ok(())
     }
-    pub fn link(&self) -> Result<String, String> {
+    pub fn link(&self) -> Result<String, pop_contracts::Error> {
         self.validate()?;
         Ok(format!("{}/join#{}.{}", crate::TRUSTED_ORIGIN, self.room, self.capability))
     }
-    pub fn parse(link: &str) -> Result<Self, String> {
+    pub fn parse(link: &str) -> Result<Self, pop_contracts::Error> {
         let prefix = format!("{}/join#", crate::TRUSTED_ORIGIN);
         let link = link.trim();
         if link.len() != prefix.len() + 36 + 1 + 64 {
-            return Err("Sharing link is no longer valid".into());
+            return Err(invalid("Sharing link is no longer valid"));
         }
-        let fragment = link.strip_prefix(&prefix).ok_or("Sharing link is no longer valid")?;
-        let (room, capability) = fragment.split_once('.').ok_or("Sharing link is no longer valid")?;
+        let fragment = link.strip_prefix(&prefix).ok_or_else(|| invalid("Sharing link is no longer valid"))?;
+        let (room, capability) = fragment.split_once('.').ok_or_else(|| invalid("Sharing link is no longer valid"))?;
         let invitation = Self { room: room.into(), capability: capability.into() };
         invitation.validate()?;
         Ok(invitation)
     }
+}
+
+fn invalid(message: impl ToString) -> pop_contracts::Error {
+    pop_contracts::Error::new(pop_contracts::wire::Code::InvalidRequest, message)
 }
 
 #[cfg(test)]

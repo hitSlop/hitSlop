@@ -577,7 +577,7 @@ test("headless declarations fail at the actual import or initialization boundary
       ["import App from './App.svelte'; console.log(App);", "App.svelte"],
       ["document.body.innerHTML='bad';", "Definition initialization failed"],
       ["globalThis.initializationClock=Date.now();", "host-provided"],
-      ["for(;;) {}", "interrupted"],
+      ["for(;;) {}", "timed out"],
     ]) {
       await writeFile(join(source,"commands.ts"),prefix+actions);
       await expect(buildDefinition(source,stage,options)).rejects.toThrow(error);

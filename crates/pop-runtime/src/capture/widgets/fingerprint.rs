@@ -1,40 +1,20 @@
 //! A disposable cache identity for the actual installed renderer, including its fonts.
+use pop_storage::file::FileStamp;
 use sha2::{Digest, Sha256};
-use std::fs::{File, Metadata};
+use std::fs::File;
 use std::io;
 use std::io::Read;
-use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, OnceLock};
-
-#[derive(Clone, PartialEq, Eq)]
-struct Stamp {
-    device: u64,
-    inode: u64,
-    size: u64,
-    modified: (i64, i64),
-    changed: (i64, i64),
-}
-impl From<Metadata> for Stamp {
-    fn from(value: Metadata) -> Self {
-        Self {
-            device: value.dev(),
-            inode: value.ino(),
-            size: value.len(),
-            modified: (value.mtime(), value.mtime_nsec()),
-            changed: (value.ctime(), value.ctime_nsec()),
-        }
-    }
-}
 
 #[derive(Clone)]
 pub(super) struct Fingerprint {
     pub digest: [u8; 32],
-    stamp: Stamp,
+    stamp: FileStamp,
 }
 impl Fingerprint {
     pub fn check(&self, path: &Path) -> io::Result<()> {
-        if Stamp::from(std::fs::metadata(path)?) != self.stamp {
+        if FileStamp::from(std::fs::metadata(path)?) != self.stamp {
             return Err(io::Error::other("Widget renderer changed during capture; retry with the updated renderer"));
         }
         Ok(())
@@ -47,7 +27,7 @@ pub(super) fn renderer(path: &Path) -> io::Result<Fingerprint> {
     static CACHE: OnceLock<Mutex<Option<(PathBuf, Fingerprint)>>> = OnceLock::new();
     let cache = CACHE.get_or_init(|| Mutex::new(None));
     let mut file = File::open(path)?;
-    let stamp = Stamp::from(file.metadata()?);
+    let stamp = FileStamp::from(file.metadata()?);
     if let Some((cached_path, cached)) = &*pop_core::lock(cache)
         && cached_path == path
         && cached.stamp == stamp

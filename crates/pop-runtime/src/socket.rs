@@ -1,5 +1,6 @@
 //! One bounded newline-JSON exchange per Unix connection. The writer lock remains the
 //! authority; the listener owns only its socket and the owner's discovery publication.
+// Native failures carry classified text across the owner/FFI boundary, not Rust error sources.
 use crate::command;
 use crate::command::{ExportHandler, Result};
 use crate::owner::{Failure, FailureKind, Owner};
@@ -109,8 +110,8 @@ fn write_line(stream: &mut UnixStream, input: &str, deadline: Instant) -> Result
 }
 /// A client's one exchange. Mutations are never retried here, including partial writes.
 pub fn call(path: &Path, input: &str) -> Result<String> {
-    let header: pop_contracts::wire::socket::ProtocolHeader =
-        serde_json::from_str(input).map_err(|_| Failure::rejected(Code::InvalidRequest, "Invalid socket request"))?;
+    let header: pop_contracts::wire::socket::ProtocolHeader = serde_json::from_str(input)
+        .map_err(|error| Failure::rejected(Code::InvalidRequest, format!("Invalid socket request: {error}")))?;
     let hello = crate::encode(&pop_contracts::wire::socket::Hello::Hello { protocol: header.protocol });
     let response = exchange(path, &hello, Some(4096))?;
     let hello = match serde_json::from_str::<pop_contracts::wire::socket::HelloSuccess>(&response) {
@@ -128,8 +129,8 @@ pub fn call(path: &Path, input: &str) -> Result<String> {
     exchange(path, input, None)
 }
 fn exchange(path: &Path, input: &str, reply_limit: Option<usize>) -> Result<String> {
-    let mut stream =
-        UnixStream::connect(path).map_err(|_| io("Live document unavailable; writer lock remains authoritative"))?;
+    let mut stream = UnixStream::connect(path)
+        .map_err(|error| io(format!("Live document unavailable; writer lock remains authoritative: {error}")))?;
     configure(&stream)?;
     let deadline = Instant::now() + command::CLIENT_TIMEOUT;
     write_line(&mut stream, input, deadline)?;

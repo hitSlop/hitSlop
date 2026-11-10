@@ -77,7 +77,11 @@ pub fn check(bytes: &[u8], purpose: Purpose) -> Result<CheckedPng> {
             Purpose::Preview => 1,
             Purpose::Icon => {
                 if (info.width, info.height) != (pop_contracts::wire::ICON_SIDE, pop_contracts::wire::ICON_SIDE) {
-                    return Err(invalid("Icon artwork must be 512 × 512 pixels"));
+                    return Err(invalid(format!(
+                        "Icon artwork must be {} × {} pixels",
+                        pop_contracts::wire::ICON_SIDE,
+                        pop_contracts::wire::ICON_SIDE
+                    )));
                 }
                 1
             }

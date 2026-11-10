@@ -25,7 +25,7 @@ pub enum Category {
 
 impl Category {
     pub fn name(self) -> String {
-        serde_json::to_value(self).expect("category").as_str().expect("string category").into()
+        crate::enum_name(self)
     }
     pub fn parse(value: String) -> Result<Self> {
         serde_json::from_value(Value::String(value)).map_err(|_| err(Code::InvalidRequest, "Unknown category"))

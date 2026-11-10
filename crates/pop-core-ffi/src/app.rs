@@ -181,5 +181,5 @@ pub fn host_limits() -> HostLimits {
 }
 #[uniffi::export]
 pub fn app_resource_policy() -> String {
-    pop_contracts::wire::NATIVE_RESOURCE_POLICY.into()
+    pop_contracts::policy::NATIVE_RESOURCE_POLICY.into()
 }

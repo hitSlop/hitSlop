@@ -8,34 +8,31 @@ pub struct Resource {
     pub size: u64,
     pub media_type: String,
 }
-pub fn hash_id(id: &str) -> bool {
-    id.len() == 64 && id.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
-}
-pub fn validate(items: &[Resource]) -> Result<(), String> {
+pub fn validate(items: &[Resource]) -> Result<(), pop_contracts::Error> {
     let mut keys = std::collections::HashSet::new();
     let mut total = 0u64;
     for item in items {
-        if !hash_id(&item.hash)
+        if !pop_contracts::wire::valid_attachment_id(&item.hash)
             || item.size > pop_contracts::wire::ATTACHMENT_FILE_BYTES as u64
             || !keys.insert(&item.key)
             || item.media_type.is_empty()
             || item.media_type.len() > 100
             || item.media_type.contains(['\r', '\n'])
             || item.key != item.hash
-            || !passive(&item.media_type)
+            || !pop_contracts::media::attachment_media_type(&item.media_type)
         {
-            return Err("Invalid resource inventory".into());
+            return Err(invalid("Invalid resource inventory"));
         }
-        total = total.checked_add(item.size).ok_or("Resource inventory overflow")?;
+        total = total.checked_add(item.size).ok_or_else(|| invalid("Resource inventory overflow"))?;
     }
     if items.len() > pop_contracts::wire::ATTACHMENT_COUNT || total > pop_contracts::wire::ATTACHMENT_BYTES as u64 {
-        return Err("Resource inventory exceeds document limits".into());
+        return Err(invalid("Resource inventory exceeds document limits"));
     }
     Ok(())
 }
 /// Transfer only absent immutable blobs. Both inventories are untrusted at this
 /// boundary; a matching hash with different metadata must never become a cache hit.
-pub fn missing_attachments(required: &[Resource], present: &[Resource]) -> Result<Vec<Resource>, String> {
+pub fn missing_attachments(required: &[Resource], present: &[Resource]) -> Result<Vec<Resource>, pop_contracts::Error> {
     validate(required)?;
     validate(present)?;
     let present: std::collections::HashMap<_, _> = present.iter().map(|item| (&item.hash, item)).collect();
@@ -43,7 +40,7 @@ pub fn missing_attachments(required: &[Resource], present: &[Resource]) -> Resul
     for item in required {
         if let Some(existing) = present.get(&item.hash) {
             if item.size != existing.size || item.media_type != existing.media_type {
-                return Err("Attachment inventory metadata mismatch".into());
+                return Err(invalid("Attachment inventory metadata mismatch"));
             }
         } else {
             missing.push(item.clone());
@@ -52,26 +49,8 @@ pub fn missing_attachments(required: &[Resource], present: &[Resource]) -> Resul
     Ok(missing)
 }
 
-fn passive(kind: &str) -> bool {
-    matches!(
-        kind,
-        "application/octet-stream"
-            | "application/pdf"
-            | "image/png"
-            | "image/jpeg"
-            | "image/webp"
-            | "image/gif"
-            | "image/avif"
-            | "image/heic"
-            | "image/heif"
-            | "audio/mpeg"
-            | "audio/mp4"
-            | "audio/wav"
-            | "audio/ogg"
-            | "audio/webm"
-            | "video/mp4"
-            | "video/webm"
-    )
+fn invalid(message: impl ToString) -> pop_contracts::Error {
+    pop_contracts::Error::new(pop_contracts::wire::Code::InvalidRequest, message)
 }
 
 #[cfg(test)]
@@ -80,6 +59,13 @@ mod transfer_tests {
     fn blob(hash: char) -> Resource {
         let hash = hash.to_string().repeat(64);
         Resource { key: hash.clone(), hash, size: 42, media_type: "image/png".into() }
+    }
+    #[test]
+    fn inventory_accepts_flac_and_quicktime_attachments() {
+        let mut items = vec![blob('a'), blob('b')];
+        items[0].media_type = "audio/flac".into();
+        items[1].media_type = "video/quicktime".into();
+        assert!(validate(&items).is_ok());
     }
     #[test]
     fn attachment_transfers_skip_remote_blobs_and_recover_lost_upload_replies() {

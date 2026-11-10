@@ -32,6 +32,7 @@ pub struct Failure {
     pub message: String,
     pub reason: Option<Code>,
     pub op_index: Option<u32>,
+    pub path: Vec<String>,
 }
 // Request destinations are file paths, which Swift passes as strings.
 uniffi::custom_type!(PathBuf, String, {
@@ -145,6 +146,7 @@ impl From<core::Reply> for OwnerReply {
                     message: format!("Unexpected owner reply: {other:?}"),
                     reason: None,
                     op_index: None,
+                    path: vec![],
                 },
             },
         }
@@ -194,7 +196,13 @@ impl NativeOwner {
             mode,
             Arc::new(move |event| listener.event(event)),
             evaluator_path.map(|path| pop_runtime::evaluator(PathBuf::from(path))).transpose().map_err(|e| {
-                Failure { kind: FailureKind::Rejected, message: e, reason: Some(Code::InvalidRequest), op_index: None }
+                Failure {
+                    kind: FailureKind::Rejected,
+                    message: e.to_string(),
+                    reason: Some(Code::EngineError),
+                    op_index: None,
+                    path: vec![],
+                }
             })?,
         )?))))
     }

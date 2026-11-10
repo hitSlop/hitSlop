@@ -124,7 +124,7 @@ pub fn find<'a>(method: &str, path: &'a str) -> Option<Matched<'a>> {
         for pattern in route.path.split('/') {
             let segment = actual.next()?;
             match pattern {
-                "{document}" if pop_sharing_protocol::valid_document_id(segment) => found.document = Some(segment),
+                "{document}" if pop_contracts::identity::valid_document_id(segment) => found.document = Some(segment),
                 "{hash}" if !segment.is_empty() => found.hash = Some(segment),
                 literal if literal == segment && !literal.starts_with('{') => {}
                 _ => return None,
