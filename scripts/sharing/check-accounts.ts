@@ -4,7 +4,6 @@
  * Run through `bun run verify sharing` after installing worker-build (README). */
 import assert from "node:assert/strict";
 import { checkCompaction, relayHarness, decode, helloFrame, push, documentName } from "./check-compaction";
-import host from "../../apps/sharing/http";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { mkdtemp, rm, readFile, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -64,7 +63,7 @@ function runtime(roomsAvailable = true) {
     workers: [{
       name: "relay", modules: true, scriptPath: harness, modulesRoot: "/",
       compatibilityDate: "2025-11-05", modulesRules: [{ type: "ESModule", include: ["**/*.js"], fallthrough: true }, { type: "CompiledWasm", include: ["**/*.wasm"], fallthrough: true }],
-      bindings: { BROWSER_ORIGIN: "https://share.dotpop.click", FIREBASE_PROJECT: "hitslopapp", CREATION_ENABLED: "1" },
+      bindings: { FIREBASE_PROJECT: "hitslopapp", CREATION_ENABLED: "1" },
       durableObjects: { ...(roomsAvailable ? { DOCUMENTS: { className: "CloudDocument", useSQLite: true } } : {}), ACCOUNTS: { className: "DocumentAccount", useSQLite: true } },
       r2Buckets: ["SEEDS"],
       analyticsEngineDatasets: { METRICS: { dataset: "dotpop_documents" } },
@@ -109,97 +108,60 @@ try {
   assert.equal(oldSocket.status, 426, "Old socket protocols are told to update");
   assert.equal((await oldSocket.json() as {code:string}).code, "requires_update");
   await checkCompaction(worker, call, uid("compaction-owner"), uid);
-  const unused = { async fetch(): Promise<Response> { throw new Error("Static auth/AASA routes must not use assets or relay"); } };
-  const configURL = `${SharingHost.origin}/auth/config`;
-  assert.equal((await host.fetch(new Request(configURL), { ASSETS: unused, RELAY: unused })).status,503,
-    "Missing public Firebase configuration is retryable");
-  const configured = await host.fetch(new Request(configURL), {
-    ASSETS: unused, RELAY: unused, FIREBASE_PROJECT: "test-project", FIREBASE_WEB_API_KEY: "test-public-key",
-  });
-  assert.equal(configured.status,200);
-  assert.deepEqual(await configured.json(),{projectId:"test-project",apiKey:"test-public-key"});
-  assert.equal(configured.headers.get("Cache-Control"),"no-store");
-  assert.equal((await host.fetch(new Request(`https://copy.${SharingHost.domain}/auth/config`), {
-    ASSETS: unused, RELAY: unused, FIREBASE_PROJECT:"test-project", FIREBASE_WEB_API_KEY:"test-public-key",
-  })).status,404,"Authored origins cannot read host identity configuration");
-  const callbackURL = "https://share.dotpop.click/auth/apple";
-  const callback = await host.fetch(new Request(callbackURL), { ASSETS: unused, RELAY: unused });
-  assert.equal(callback.status, 200);
-  assert.equal(callback.headers.get("Content-Type"), "text/html; charset=utf-8");
-  assert.equal(callback.headers.get("Cache-Control"), "no-store");
-  assert.equal(callback.headers.get("Referrer-Policy"), "no-referrer");
-  const callbackPage = await callback.text();
+  // The join page, Apple callback, association file and icon deploy as static assets from
+  // apps/sharing/public, with `_headers` and `_redirects`; this reads the files that ship.
+  // The Worker itself serves nothing but the API.
+  const publicRoot = join(repository, "apps/sharing/public");
+  const text = (path: string) => readFile(join(publicRoot, path), "utf8");
+  const rules = new Map<string, Map<string, string>>();
+  let current: Map<string, string> | undefined;
+  for (const line of (await text("_headers")).split("\n")) {
+    if (!line.trim() || line.startsWith("#")) continue;
+    if (!/^\s/.test(line)) rules.set(line.trim(), current = new Map());
+    else { const [name, ...value] = line.trim().split(":"); current!.set(name!.trim(), value.join(":").trim()); }
+  }
+  const rule = (path: string, header: string) => rules.get(path)?.get(header);
+  assert.equal(rule("/*", "X-Content-Type-Options"), "nosniff");
+  assert.equal(rule("/*", "Referrer-Policy"), "no-referrer");
+  const callbackPage = await text("auth/apple.html");
   assert.ok(callbackPage.includes("dotpop://auth/apple"));
   const script = /<script>([\s\S]*?)<\/script>/.exec(callbackPage)![1]!;
   const digest = createHash("sha256").update(script).digest("base64");
-  assert.equal(callback.headers.get("Content-Security-Policy"),
+  assert.equal(rule("/auth/apple", "Content-Security-Policy"),
     `default-src 'none'; script-src 'sha256-${digest}'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`);
+  assert.equal(rule("/auth/apple", "Cache-Control"), "no-store");
   for (const fragment of ["#state=example&id_token=a.b.c&code=a%2Bb%26c", "#state=example&error=user_cancelled_authorize", ""]) {
     let destination: string | undefined;
     runInNewContext(script, { location: { hash: fragment, replace(url: string) { destination = url; } } });
     assert.equal(destination, fragment ? "dotpop://auth/apple" + fragment : undefined);
   }
-  const callbackHead = await host.fetch(new Request(callbackURL, { method: "HEAD" }), { ASSETS: unused, RELAY: unused });
-  assert.equal(callbackHead.status, 200);
-  assert.equal(await callbackHead.text(), "");
-  assert.equal((await host.fetch(new Request(callbackURL, { method: "POST" }), { ASSETS: unused, RELAY: unused })).status, 405);
-  assert.equal((await host.fetch(new Request(`https://copy.${SharingHost.domain}/auth/apple`), { ASSETS: unused, RELAY: unused })).status, 404);
-  assert.equal((await host.fetch(new Request("https://other.example/auth/apple"), { ASSETS: unused, RELAY: unused })).status, 403);
-  const associationURL = "https://share.dotpop.click/.well-known/apple-app-site-association";
-  const association = await host.fetch(new Request(associationURL), { ASSETS: unused, RELAY: unused });
-  assert.equal(association.status, 200);
-  assert.equal(association.headers.get("Content-Type"), "application/json");
-  assert.equal(association.headers.get("Location"), null);
-  assert.equal(association.headers.get("Cache-Control"), "public, max-age=3600");
-  assert.deepEqual(await association.json(), {
+  assert.deepEqual(JSON.parse(await text(".well-known/apple-app-site-association")), {
     applinks: { details: [{ appIDs: ["78UAXU8QG8.com.hitslop.app"], components: [{ "/": "/join", comment: "Live sharing links" }] }] },
-    appclips: { apps: ["78UAXU8QG8.com.hitslop.app.Clip"] },
   });
-  const head = await host.fetch(new Request(associationURL, { method: "HEAD" }), { ASSETS: unused, RELAY: unused });
-  assert.equal(head.status, 200);
-  assert.equal(await head.text(), "");
-  assert.equal((await host.fetch(new Request(associationURL, { method: "POST" }), { ASSETS: unused, RELAY: unused })).status, 405);
-  assert.equal((await host.fetch(new Request(associationURL.replace("share.dotpop.click", "copy.dotslop.com")), { ASSETS: unused, RELAY: unused })).status, 404);
-  const assets = { async fetch(request: Request) {
-    const path = new URL(request.url).pathname;
-    assert.ok(path === "/index.html" || path === "/share-icon.png", "Only the public preview assets are requested");
-    const bytes = await readFile(join(repository, "generated/sharing/assets", path));
-    return new Response(bytes, { headers: { "Content-Type": path.endsWith(".png") ? "image/png" : "text/html" } });
-  } };
+  assert.equal(rule("/.well-known/apple-app-site-association", "Content-Type"), "application/json");
+  assert.equal(rule("/.well-known/apple-app-site-association", "Cache-Control"), "public, max-age=3600");
   const invitation = `${SharingHost.origin}/join#${document}.${"b".repeat(64)}`;
-  let preview: string | undefined;
-  for (const url of [SharingHost.origin + "/", SharingHost.origin + "/join", invitation]) {
-    const response = await host.fetch(new Request(url), { ASSETS: assets, RELAY: unused });
-    assert.equal(response.status, 200);
-    assert.equal(response.headers.get("Content-Security-Policy"), SharingHost.hostPolicy);
-    const html = await response.text();
-    assert.match(html, /<title>Open a shared pop<\/title>/);
-    for (const tag of [
-      '<meta property="og:title" content="Open a shared pop"',
-      '<meta property="og:site_name" content="dotpop"',
-      '<meta property="og:type" content="website"',
-      '<meta property="og:description" content="Open this invitation in dotpop to edit together."',
-      `<meta property="og:image" content="${SharingHost.origin}/share-icon.png"`,
-      `<link rel="apple-touch-icon" href="${SharingHost.origin}/share-icon.png"`,
-    ]) assert.ok(html.includes(tag), `Preview metadata is present without running JavaScript: ${tag}`);
-    assert.ok(!html.includes(invitation) && !html.includes("b".repeat(64)), "Preview metadata contains no invitation credential");
-    if (preview) assert.equal(html, preview, "All invitations have the same public preview");
-    preview = html;
-  }
-  for (const method of ["GET", "HEAD"]) {
-    const response = await host.fetch(new Request(`${SharingHost.origin}/share-icon.png`, { method }), { ASSETS: assets, RELAY: unused });
-    assert.equal(response.status, 200);
-    assert.equal(response.headers.get("Content-Type"), "image/png");
-    const image = Buffer.from(await response.arrayBuffer());
-    if (method === "HEAD") assert.equal(image.length, 0);
-    else {
-      assert.equal(image.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
-      assert.ok(image.readUInt32BE(16) >= 900 && image.readUInt32BE(20) >= 900, "Messages receives a high-resolution preview image");
-    }
-  }
-  assert.equal((await host.fetch(new Request(`${SharingHost.origin}/share-icon.png`, { method: "POST" }), { ASSETS: unused, RELAY: unused })).status, 405);
-  for (const url of [`${SharingHost.origin}/unlisted.png`, `https://copy.${SharingHost.domain}/share-icon.png`])
-    assert.equal((await host.fetch(new Request(url), { ASSETS: unused, RELAY: unused })).status, 404);
+  const joinPage = await text("join.html");
+  assert.match(joinPage, /<title>Open a shared pop<\/title>/);
+  for (const tag of [
+    '<meta property="og:title" content="Open a shared pop"',
+    '<meta property="og:site_name" content="dotpop"',
+    '<meta property="og:type" content="website"',
+    '<meta property="og:description" content="Open this invitation in dotpop to edit together."',
+    `<meta property="og:image" content="${SharingHost.origin}/share-icon.png"`,
+    `<link rel="apple-touch-icon" href="${SharingHost.origin}/share-icon.png"`,
+  ]) assert.ok(joinPage.includes(tag), `Preview metadata is present without running JavaScript: ${tag}`);
+  assert.ok(!joinPage.includes("<script") && !joinPage.includes(invitation) && !joinPage.includes("b".repeat(64)), "The join page runs no code and holds no invitation credential");
+  assert.match(rule("/join", "Content-Security-Policy") ?? "", /^default-src 'none'; style-src 'unsafe-inline'; /, "The join page allows no script");
+  assert.equal((await text("_redirects")).trim(), "/ https://dotpop.click 302");
+  const image = await readFile(join(publicRoot, "share-icon.png"));
+  assert.equal(image.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
+  assert.ok(image.readUInt32BE(16) >= 900 && image.readUInt32BE(20) >= 900, "Messages receives a high-resolution preview image");
+  // Nothing but the API answers from the Worker: pages are static assets, and there is no
+  // browser surface (identity configuration, authored origins, CORS preflight).
+  for (const [path, init] of [["/join", {}], ["/auth/config", {}], ["/assets/ui.js", {}], ["/attachments/" + "b".repeat(64), {}],
+    ["/_resources/" + document, { method: "POST" }], ["/v1/documents", { method: "OPTIONS", headers: { Origin: SharingHost.origin } }]] as const)
+    assert.equal((await worker.dispatchFetch("https://share.dotpop.click" + path, init)).status, 404, "The Worker serves no " + path);
 
   assert.equal((await call("account", undefined, "DELETE")).status,401);
   assert.equal((await call("documents", uid("anonymous","anonymous"), "POST",{document})).status,401);
@@ -211,7 +173,6 @@ try {
   assert.equal((await call("documents",b,"POST",{document})).status,403,"UUID cannot be claimed by another account");
   const base="documents/"+document;
   assert.equal((await call(base+"/seed",a,"PUT",seed,seedHeaders(seed))).status,200);
-  assert.equal((await call(base+"/resources",a,"POST",{app,resources:[]})).status,200);
   assert.equal((await call(base+"/blobs",a)).status,200,"The creator lists uploaded blobs before Open");
   assert.equal((await call(base+"/blobs",b)).status,403,"Others cannot");
   assert.equal((await call(base+"/open",a,"POST",{seedSha256:hash(seed)})).status,200);
@@ -308,47 +269,16 @@ try {
     assert.equal((await next()).tag,2);assert.equal((await next()).tag,4);
     return {socket,next};
   };
-  const browserUpgrade = await call(base+"/sync",undefined,"GET",undefined,{
-    Upgrade:"websocket", Origin:SharingHost.origin,
-    "Sec-WebSocket-Protocol":`${SharingHost.socketProtocol}, jwt.${guest}`,
-  });
-  assert.equal(browserUpgrade.status,101,"Browsers authenticate with a verified JWT subprotocol");
-  assert.equal(browserUpgrade.headers.get("Sec-WebSocket-Protocol"),SharingHost.socketProtocol,"Never echo credentials");
-  assert(browserUpgrade.webSocket);
-  browserUpgrade.webSocket.accept(); browserUpgrade.webSocket.close();
   assert.equal((await call(base+"/sync",undefined,"GET",undefined,{
-    Upgrade:"websocket", Origin:SharingHost.origin,
-    "Sec-WebSocket-Protocol":`${SharingHost.socketProtocol}, cap.${enabled.capability}`,
-  })).status,403,"Capability socket authentication is refused");
+    Upgrade:"websocket", "Sec-WebSocket-Protocol":`${SharingHost.socketProtocol}, cap.${enabled.capability}`,
+  })).status,426,"Credentials in a socket subprotocol are never read");
   const ownerConnection=await connect(a),guestConnection=await connect(guest);
   const ownerSocket=ownerConnection.socket,guestSocket=guestConnection.socket;let ownerClosed=false;
   ownerSocket.addEventListener("close",()=>ownerClosed=true);
   const guestEnded=new Promise<void>(resolve=>guestSocket.addEventListener("close",()=>resolve()));
   const documents = await worker.getDurableObjectNamespace("DOCUMENTS");
   const documentStub = documents.get(documents.idFromName(documentName(document)));
-  let finishGrant!: () => void;
-  const grantBody = new ReadableStream<Uint8Array>({ start(controller) {
-    controller.enqueue(new TextEncoder().encode(JSON.stringify({ app })));
-    finishGrant = () => controller.close();
-  } });
-  const grantInit = { method:"POST", headers: { Origin:SharingHost.origin, Authorization:`Bearer ${guest}`,
-    "Content-Type":"application/json", "X-Test-Observe-Body":"1" }, body:grantBody, duplex:"half" as const };
-  const delayedGrant = worker.dispatchFetch(`https://${document}.${SharingHost.domain}/_resources/${document}`, grantInit);
-  let readStarted = false;
-  for (let attempt=0; attempt<500; attempt++) {
-    const progress = await documentStub.fetch("https://test/__test/body-reads");
-    if (Number(await progress.text()) > 0) { readStarted = true; break; }
-    await new Promise(resolve=>setTimeout(resolve,10));
-  }
-  assert.ok(readStarted,"The resource grant is waiting for request body EOF after initial authorization");
   const revoked=await json<AccessState>(base+"/sharing",a,"DELETE");assert(!revoked.sharing);assert(revoked.generation>enabled.generation);
-  finishGrant();
-  assert.equal((await delayedGrant).status,403,"Revocation during a resource request body must not mint a fresh cookie");
-  const resourcePreflight = await worker.dispatchFetch(`https://${document}.${SharingHost.domain}/_resources/${document}`, {
-    method:"OPTIONS", headers: { Origin:SharingHost.origin,
-      "Access-Control-Request-Method":"POST", "Access-Control-Request-Headers":"authorization" },
-  });
-  assert.equal(resourcePreflight.status,204);
   assert.equal((await call(base+"/seed",enabled.capability!)).status,403);assert.equal((await call(base+"/seed",guest)).status,403);assert.equal((await call(base+"/seed",b)).status,403);
   assert.equal((await call(base+"/seed",a)).status,200);assert(!ownerClosed,"revocation does not close private owner connection");
   assert.equal((await guestConnection.next()).code,3,"revocation delivers the real access-ended frame");
@@ -367,15 +297,8 @@ try {
   await json(base+"/members",staying,"POST",{capability:reopened.capability});
   const attachment=new Uint8Array([3,1,4,1,5,9]);
   assert.equal((await call(base+"/blob/"+hash(attachment),a,"PUT",attachment,{"Content-Length":String(attachment.length)})).status,200);
-  const resourceSession=async(token:string)=>{
-    const response=await worker.dispatchFetch(`https://${document}.${SharingHost.domain}/_resources/${document}`,{method:"POST",
-      headers:{Origin:SharingHost.origin,Authorization:`Bearer ${token}`,"Content-Type":"application/json"},body:JSON.stringify({app})});
-    assert.equal(response.status,200,"A member is granted a resource session");await response.arrayBuffer();
-    const cookie=/__Host-pop-resource=[^;]+/.exec(response.headers.get("Set-Cookie")??"")?.[0];assert(cookie);
-    return cookie;
-  };
-  const readAttachment=async(cookie:string)=>{
-    const response=await worker.dispatchFetch(`https://${document}.${SharingHost.domain}/attachments/${hash(attachment)}`,{headers:{Cookie:cookie}});
+  const readAttachment=async(token:string)=>{
+    const response=await call("documents/"+document+"/blob/"+hash(attachment),token);
     const bytes=new Uint8Array(await response.arrayBuffer());
     if (response.status===200) assert.deepEqual(bytes,attachment);
     return response.status;
@@ -397,8 +320,7 @@ try {
     return (await stubSQL<{n:number}>(account,"SELECT count(*) AS n FROM documents WHERE document=?",[id]))[0]!.n > 0;
   };
   const queuedAt=async(stub:typeof documentStub,name:string)=>(await stubSQL<{n:number}>(stub,"SELECT count(*) AS n FROM pending_registry WHERE uid=?",[name]))[0]!.n>0;
-  const leavingCookie=await resourceSession(b),stayingCookie=await resourceSession(staying);
-  assert.equal(await readAttachment(leavingCookie),200,"A member's resource session reads attachments");
+  assert.equal(await readAttachment(b),200,"A member reads attachments");
   // Leave revokes before it releases the account's hint. Here the account commits the release
   // but its reply is lost: leaving still ends access at once, and the release stays queued.
   const leaver=joiner("creator-b");
@@ -410,8 +332,8 @@ try {
   assert.equal(removal.document, document, "Leave removes the entry live");
   memberLibrary.socket.close();
 
-  assert.equal(await readAttachment(leavingCookie),403,"Leaving ends that member's resource sessions before they expire");
-  assert.equal(await readAttachment(stayingCookie),200,"Another member's resource session stays valid");
+  assert.equal(await readAttachment(b),403,"Leaving ends that member's attachment access");
+  assert.equal(await readAttachment(staying),200,"Another member keeps attachment access");
   assert.ok(!await registered(b,document)&&await queuedAt(documentStub,leaver.name),"The release without a reply stays queued");
   await leaver.hook("release-failure",{enabled:false});
   assert.equal((await documentStub.fetch("https://test/__test/alarm")).status,200);
@@ -428,8 +350,7 @@ try {
     const base="documents/"+id;
     assert.equal((await call("documents",a,"POST",{document:id})).status,204);
     assert.equal((await call(base+"/seed",a,"PUT",seed,seedHeaders(seed))).status,200);
-    assert.equal((await call(base+"/resources",a,"POST",{app,resources:[]})).status,200);
-    assert.equal((await call(base+"/open",a,"POST",{seedSha256:hash(seed)})).status,200);
+      assert.equal((await call(base+"/open",a,"POST",{seedSha256:hash(seed)})).status,200);
     return {id,base,stub:documents.get(documents.idFromName(documentName(id))),invite:await json<AccessState>(base+"/sharing",a,"POST")};
   };
   const idle="00000000-0000-4000-8000-000000000095";
@@ -589,7 +510,6 @@ try {
   const laterSeed=Buffer.alloc(512,43);
   await call("documents",a,"POST",{document:competing});
   await call(competingBase+"/seed",a,"PUT",seed,seedHeaders(seed));
-  await call(competingBase+"/resources",a,"POST",{app,resources:[]});
   await call(competingBase+"/seed",a,"PUT",laterSeed,seedHeaders(laterSeed));
   assert.equal((await call(competingBase+"/open",a,"POST")).status,400,"Open requires the seed it makes live");
   assert.equal((await call(competingBase+"/open",a,"POST",{seedSha256:hash(seed)})).status,409,
@@ -652,7 +572,6 @@ try {
   const repairBase="documents/"+repairDocument;
   assert.equal((await call("documents",a,"POST",{document:repairDocument})).status,204);
   assert.equal((await call(repairBase+"/seed",a,"PUT",seed,seedHeaders(seed))).status,200);
-  assert.equal((await call(repairBase+"/resources",a,"POST",{app,resources:[]})).status,200);
   assert.equal((await call(repairBase+"/open",a,"POST",{seedSha256:hash(seed)})).status,200);
   await worker.dispose();worker=runtime();
   const restored = await library(secondSession);
@@ -714,5 +633,5 @@ try {
   await recoveredAccount.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"INSERT INTO creation_intents VALUES(?)",args:[intentId]})});
   assert.equal((await call("account",intentToken,"DELETE")).status,200);
   assert.equal((await call("documents/"+intentId,intentToken)).status,410,"Account deletion includes unfinished initialization intents");
-  console.log("Passed: persistent UUID/private identity, anonymous links, generation-bound members, member-bound resource sessions, fail-closed and reset-safe joins, revoke-first leaves and registry cleanup, the member limit under racing joins, owner-preserving revocation/leave, restart-safe registry repair, deletion tombstones.");
+  console.log("Passed: persistent UUID/private identity, anonymous links, generation-bound members, member-bound attachment reads, fail-closed and reset-safe joins, revoke-first leaves and registry cleanup, the member limit under racing joins, owner-preserving revocation/leave, restart-safe registry repair, deletion tombstones.");
 } finally { await worker.dispose(); await rm(root,{recursive:true,force:true}); }

@@ -124,7 +124,7 @@ fn bootstrap_at(origin: &str, owner: &Owner, token: &str, state_directory: &Path
     }
     bind_owner(owner, &key, document)
 }
-/// Upload one staged seed, its app and its attachments, then make exactly that seed live.
+/// Upload one staged seed and its attachments, then make exactly that seed live.
 /// The relay does not check attachments at Open: every one the seed references is uploaded
 /// first, from the same immutable snapshot, whatever the live document has done since.
 /// A failure leaves the room uploading for a retry, which sends only missing blobs.
@@ -143,7 +143,6 @@ fn upload_seed(key: &RoomKey, seed: &Seed, token: &str, state_directory: &Path) 
         ],
     )?;
     let store = Store::open(&seed.snapshot, Mode::Snapshot).map_err(fail)?;
-    resources::upload_app(key, &store, token)?;
     let attachments = resources::inventory(store.attachments().map_err(fail)?);
     let mut uploaded = resources::remote_blobs(key)?;
     resources::upload(key, &attachments, &mut uploaded, |id| Ok(store.attachment(id)?))?;
@@ -283,8 +282,6 @@ mod tests {
                 }
                 (200, b"ready".to_vec())
             }
-            ("POST", "/resources") => (200, b"ready".to_vec()),
-            ("PUT", asset) if asset.starts_with("/asset/") => (200, b"stored".to_vec()),
             ("GET", "/blobs") => (200, serde_json::to_vec(&room.blobs).unwrap()),
             ("PUT", blob) if blob.starts_with("/blob/") => {
                 if room.blob_limit.is_some_and(|limit| room.blobs.len() >= limit) {

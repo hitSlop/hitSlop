@@ -2,9 +2,8 @@
 mod transport;
 use pop_core::{
     Code,
-    browser_wire::BrowserSaveStatus,
     page_wire::{HostAction, HostReply, SpeechOutcome},
-    preview::{PreviewEvent, PreviewRequest, PreviewResource},
+    preview::{PreviewEvent, PreviewRequest, PreviewResource, PreviewSaveStatus},
 };
 use pop_runtime::{
     command::{self, PageDispatch},
@@ -57,9 +56,9 @@ pub fn serve(path: &Path) -> ExitCode {
                         },
                         Event::SaveStatus { status, failure, .. } => PreviewEvent::Save {
                             status: match status {
-                                SaveStatus::Saved => BrowserSaveStatus::Saved,
-                                SaveStatus::Saving => BrowserSaveStatus::Saving,
-                                SaveStatus::Failed => BrowserSaveStatus::Failed,
+                                SaveStatus::Saved => PreviewSaveStatus::Saved,
+                                SaveStatus::Saving => PreviewSaveStatus::Saving,
+                                SaveStatus::Failed => PreviewSaveStatus::Failed,
                             },
                             error: failure.map(|f| f.message),
                         },

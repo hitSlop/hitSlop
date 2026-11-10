@@ -3,19 +3,11 @@ import { OutcomeCodes } from "../schema/constants";
 import { DocumentError } from "../sdk/internal";
 import { preview } from "./preview";
 
-let browserBridge: ((request: unknown) => Promise<string>) | undefined;
-/** Installed only by the host frame bootstrap, before authored code loads. */
-export function installBrowserBridge(bridge: (request: unknown) => Promise<string>) {
-  browserBridge = bridge;
-}
-export const hasBrowserBridge = () => Boolean(browserBridge);
-
 /** One native request path. WebKit correlates each reply with its returned promise. */
 export async function call<M extends PageMethod>(request: PageRequest<M>): Promise<PageResult<M>> {
   let reply: unknown;
   try {
-    if (browserBridge) reply = await browserBridge(request);
-    else if (preview.host) reply = await preview.host.request(request);
+    if (preview.host) reply = await preview.host.request(request);
     else {
       const handler = globalThis.webkit?.messageHandlers?.pop;
       if (!handler) throw new Error("Native document bridge is unavailable");
@@ -49,8 +41,8 @@ export async function call<M extends PageMethod>(request: PageRequest<M>): Promi
   return result as PageResult<M>;
 }
 
-// WebKit hosts (macOS 15.2+, iOS 26+) have native base64 on Uint8Array; Chrome has it from
-// 140, and the browser host sets no minimum Chrome. The fallbacks avoid per-byte callbacks.
+// WebKit hosts (macOS 15.2+, iOS 26+) have native base64 on Uint8Array; `pop dev` runs in
+// any browser, so the fallbacks avoid per-byte callbacks.
 const encode = (bytes: Uint8Array) => {
   if (bytes.toBase64) return bytes.toBase64();
   const chunks: string[] = [];

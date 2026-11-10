@@ -6,7 +6,6 @@ const WINDOW_MS: u64 = 60_000;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "action", rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 pub enum BudgetDecision {
     Ready,
     Wait { milliseconds: u64 },

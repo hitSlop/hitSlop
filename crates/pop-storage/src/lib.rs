@@ -3,7 +3,6 @@ mod error;
 pub mod file;
 pub mod images;
 pub mod media;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod registry;
 pub mod store;
 pub use pop_contracts::wire::{self, *};
@@ -21,7 +20,6 @@ use pop_contracts::hex;
 fn random(buffer: &mut [u8]) {
     getrandom::getrandom(buffer).expect("random bytes");
 }
-#[cfg(not(target_arch = "wasm32"))]
 fn random_hex(bytes: usize) -> String {
     let mut buffer = vec![0; bytes];
     random(&mut buffer);

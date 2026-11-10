@@ -1,4 +1,4 @@
-//! What a failed relay request means, decided once for the native client and the browser.
+//! What a failed relay request means, decided once for every client.
 use serde::Serialize;
 
 /// Which relay route a request used, for the statuses whose meaning depends on it.
@@ -41,14 +41,6 @@ pub enum Outcome {
     SignIn,
     /// Anything else: shown, and retried where the caller retries.
     Failed,
-}
-/// The browser-facing projection of a classified relay failure.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(export_to = "sharing.generated.ts"))]
-pub struct Failure {
-    pub outcome: Outcome,
-    pub message: String,
 }
 /// `code` is the relay's `ApiFailure` code, when the body carried one.
 pub fn classify(status: u16, code: Option<&str>, route: Route) -> Outcome {

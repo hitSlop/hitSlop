@@ -1,33 +1,6 @@
 use super::*;
 use pop_sharing_protocol::resources::{self as resource_types, Resource};
 
-pub(crate) fn upload_app(key: &RoomKey, store: &Store, token: &str) -> Result<()> {
-    let reader = store.resource_reader().map_err(fail)?;
-    let manifest = store.sharing_manifest().map_err(fail)?;
-    transport::http(
-        key,
-        "POST",
-        "resources",
-        Some(token),
-        &serde_json::to_vec(&manifest).map_err(fail)?,
-        &[("Content-Type", "application/json")],
-    )?;
-    for item in manifest.resources {
-        let bytes = reader
-            .read_range(pop_storage::file::ResourceRoute::App, &item.key, 0, item.size)
-            .map_err(fail)?
-            .ok_or_else(|| fail("Missing app bytes"))?;
-        transport::http(
-            key,
-            "PUT",
-            &format!("asset/{}", item.hash),
-            Some(token),
-            &bytes,
-            &[("Content-Type", &item.media_type)],
-        )?;
-    }
-    Ok(())
-}
 pub(crate) fn inventory(items: Vec<pop_storage::store::Attachment>) -> Vec<Resource> {
     items
         .into_iter()
@@ -43,7 +16,7 @@ fn local_blobs(owner: &Owner) -> std::result::Result<Vec<Resource>, transport::H
 pub(crate) fn remote_blobs(key: &RoomKey) -> std::result::Result<Vec<Resource>, transport::HttpFailure> {
     let list = transport::http_typed(key, "GET", "blobs", Some(key.bearer()), &[], &[])?;
     let items: Vec<Resource> = serde_json::from_slice(&list).map_err(fail)?;
-    resource_types::validate(&items, true).map_err(fail)?;
+    resource_types::validate(&items).map_err(fail)?;
     Ok(items)
 }
 /// The one attachment upload: every blob in `local` that `uploaded` (what the relay

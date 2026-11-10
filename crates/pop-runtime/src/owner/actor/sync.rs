@@ -228,17 +228,6 @@ impl Owner {
         }));
         SyncConnection { sender: self.sender.clone(), admission: self.sync_admission.clone(), connection }
     }
-    pub fn sync_attach(&self, sink: SyncSink) {
-        self.sync_connection(sink);
-    }
-    pub fn sync_frame(&self, bytes: Vec<u8>) {
-        let connection = self.sync_admission.lock().expect("sync admission").connection;
-        SyncConnection { sender: self.sender.clone(), admission: self.sync_admission.clone(), connection }.frame(bytes);
-    }
-    pub fn sync_detach(&self) {
-        let connection = self.sync_admission.lock().expect("sync admission").connection;
-        SyncConnection { sender: self.sender.clone(), admission: self.sync_admission.clone(), connection }.detach();
-    }
     /// The room this document syncs through, when it is shared.
     pub fn share(&self) -> Result<Option<store::Share>> {
         Ok(self.store.share()?)
@@ -412,7 +401,6 @@ impl Actor {
         }
     }
     /// Frames held while a command evaluated, once it has finished.
-    #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn sync_resume(&mut self) {
         while !self.evaluating
             && let Some((bytes, ticket)) = self.link.held.pop_front()

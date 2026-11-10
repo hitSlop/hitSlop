@@ -3,7 +3,9 @@
   "main": "../../generated/sharing/relay/worker/shim.mjs",
   "compatibility_date": "2026-10-19",
   "workers_dev": false,
-  "vars": { "BROWSER_ORIGIN": "https://share.dotpop.click", "FIREBASE_PROJECT": "hitslopapp", "CREATION_ENABLED": "1" },
+  "routes": [{ "pattern": "share.dotpop.click", "custom_domain": true }],
+  "assets": { "directory": "./public" },
+  "vars": { "FIREBASE_PROJECT": "hitslopapp", "CREATION_ENABLED": "1" },
   "durable_objects": { "bindings": [{ "name": "DOCUMENTS", "class_name": "CloudDocument" }, { "name": "ACCOUNTS", "class_name": "DocumentAccount" }] },
   "migrations": [{ "tag": "documents-v1", "new_sqlite_classes": ["CloudDocument", "DocumentAccount"] }],
   "r2_buckets": [{ "binding": "SEEDS", "bucket_name": "dotpop-documents" }],
@@ -19,8 +21,8 @@
   "env": {
     "staging": {
       "name": "dotpop-staging",
+      "assets": { "directory": "./public" },
       "vars": {
-        "BROWSER_ORIGIN": "https://share.dotpop.click",
         "FIREBASE_PROJECT": "hitslopapp",
         "CREATION_ENABLED": "1"
       },

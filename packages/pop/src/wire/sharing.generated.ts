@@ -13,18 +13,10 @@ revision: number, };
 
 export type ApiFailure = { code: string, message: string, };
 
-export type BudgetDecision = { "action": "ready" } | { "action": "wait", milliseconds: number, } | { "action": "tooLarge" };
-
 /**
  * One acknowledged local state, exported by the serial owner for a bounded receipt.
  */
 export type Confirmation = { version: string, };
-
-/**
- * What a browser copy joins: the invitation's document, checked against its metadata,
- * and the seed's declared size. Routes are `/v1/documents/{document}/...`.
- */
-export type ConnectionPlan = { document: string, size: number, };
 
 export type CreateRoom = { document: string, };
 
@@ -32,29 +24,12 @@ export type DocumentMetadata = { title: string, templateId: string, };
 
 export type DocumentRole = "owner" | "editor";
 
-/**
- * The browser-facing projection of a classified relay failure.
- */
-export type Failure = { outcome: Outcome, message: string, };
-
-/**
- * Whether a room-full connection has already retried after compaction.
- */
-export type FullState = "available" | "waiting" | "retried";
-
 export type JoinDocument = { capability: string, };
 
 /**
  * Server frames; only a final snapshot page establishes absence from a library.
  */
 export type LibraryFrame = { "type": "snapshot", entries: Array<AccountEntry>, last: boolean, } | { "type": "upsert", entry: AccountEntry, } | { "type": "remove", document: string, };
-
-/**
- * The next operation, without performing it or sampling a clock.
- */
-export type MaintenanceAction = { "action": "idle" } | { "action": "jitter", milliseconds: number, } | { "action": "readBase" } | { "action": "retryBase", milliseconds: number, } | { "action": "reconnect" } | { "action": "outgrown" };
-
-export type Manifest = { app: string, resources: Array<Resource>, };
 
 /**
  * The seed an upload makes live. The relay refuses (409) one that is not the seed it
@@ -67,21 +42,12 @@ export type OpenRoom = {
  */
 seedSha256: string, };
 
-/**
- * A failure's meaning. Names match the pause kinds of the four that pause sync.
- */
-export type Outcome = "ended" | "needsUpdate" | "refused" | "outgrown" | "filesFull" | "conflict" | "signIn" | "failed";
-
 export type Pause = { kind: PauseKind, reason: string, };
 
 /**
  * Stable recovery choices shared by every transport and UI.
  */
 export type PauseKind = "roomFull" | "outgrown" | "needsUpdate" | "refused" | "missingHistory" | "filesFull" | "ended";
-
-export type Resource = { key: string, hash: string, size: number, media_type: string, };
-
-export type ResourceGrant = { app: string, };
 
 /**
  * A document's seed and app, read by any member. Access and the invitation secret are
@@ -94,19 +60,6 @@ export type RoomInfo = { document: string, phase: RoomPhase, seedHash: string | 
 compact: boolean, };
 
 export type RoomPhase = "uploading" | "live" | "ended";
-
-/**
- * How the trusted host opens a browser copy: through its invitation, or as a local copy
- * that no longer syncs.
- */
-export type SharingControl = { "type": "joinInvitation", invitation: string, } | { "type": "openLocal" };
-
-export type SharingEvent = { "type": "identityAttention", message: string, } | { "type": "resourcesReady" } | { "type": "files", status: string, } | { "type": "sync", status: string, phase: SyncPhase, };
-
-/**
- * The observation made by a transport at one compaction boundary.
- */
-export type Step = { "step": "probe", compact: boolean, } | { "step": "recheck", compact: boolean, } | { "step": "baseUnavailable" } | { "step": "baseTooLarge" } | { "step": "compacted" };
 
 /**
  * Where a replica stands with its room, apart from the words shown for it.

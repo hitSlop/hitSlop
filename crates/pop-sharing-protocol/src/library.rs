@@ -35,7 +35,7 @@ impl AccountEntry {
     /// # Errors
     /// Returns an error for invalid identity, revision or oversized metadata.
     pub fn validate(&self) -> Result<()> {
-        if !crate::valid_room(&self.document) || self.revision == 0 {
+        if !crate::valid_document_id(&self.document) || self.revision == 0 {
             return Err(err(Code::InvalidBytes, "Invalid library document or revision"));
         }
         if self.title.len() > limits::TITLE_BYTES || self.template_id.len() > limits::TEMPLATE_ID_BYTES {
@@ -82,7 +82,7 @@ impl LibraryFrame {
             }
             Self::Upsert { entry } => entry.validate(),
             Self::Remove { document } => {
-                if !crate::valid_room(document) {
+                if !crate::valid_document_id(document) {
                     return Err(err(Code::InvalidBytes, "Invalid library document"));
                 }
                 Ok(())

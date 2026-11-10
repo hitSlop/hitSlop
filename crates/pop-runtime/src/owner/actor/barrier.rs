@@ -47,7 +47,6 @@ impl Actor {
     }
     /// Admits the ready prefix in order. If a request must still wait (for example a
     /// fence after a command starts evaluating), it stays at the head of the queue.
-    #[cfg(not(target_arch = "wasm32"))]
     pub(super) fn release_held(&mut self) {
         if self.barrier.replaying {
             return;
@@ -76,7 +75,6 @@ impl Actor {
 
 /// Requests that end the owner once admitted, so edits queued behind them are refused.
 fn closes(request: &Request) -> bool {
-    #[cfg(not(target_arch = "wasm32"))]
     if matches!(request, Request::Handoff { .. }) {
         return true;
     }
@@ -85,7 +83,6 @@ fn closes(request: &Request) -> bool {
 
 /// Saved-state fences cover all earlier queued writes, including command evaluation.
 pub(super) fn fence(request: &Request) -> bool {
-    #[cfg(not(target_arch = "wasm32"))]
     if matches!(request, Request::SetArtwork { .. } | Request::Handoff { .. }) {
         return true;
     }
@@ -102,7 +99,6 @@ pub(super) fn fence(request: &Request) -> bool {
 
 /// Requests that change the document.
 pub(super) fn edits(request: &Request) -> bool {
-    #[cfg(not(target_arch = "wasm32"))]
     if matches!(request, Request::SetArtwork { .. }) {
         return true;
     }

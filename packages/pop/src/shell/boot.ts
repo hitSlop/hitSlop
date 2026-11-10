@@ -4,7 +4,7 @@ import { createContext as abi1 } from "./abi/1";
 import { ownerAttachments } from "./attachments";
 import { ownerSpeech } from "./speech";
 import { ownerHaptics } from "./haptics";
-import { call, hasBrowserBridge } from "./bridge";
+import { call } from "./bridge";
 import { OwnerDocument as Document } from "./owner/document";
 import { nativeTransport } from "./owner/transport";
 import { installPresentationStage, presentationStage } from "./presentation";
@@ -20,7 +20,7 @@ import { ErrorTextLimit, type RuntimeABI } from "../schema/constants";
 import { preview } from "./preview";
 import { installEnvironment } from "./environment";
 
-const isNative = () => Boolean(globalThis.webkit?.messageHandlers?.pop) || hasBrowserBridge();
+const isNative = () => Boolean(globalThis.webkit?.messageHandlers?.pop);
 /** Reports a page error to the host, or to the console in the browser preview. */
 const report = (native: boolean, kind: "application" | "operation", error: unknown) => {
   if (native) void call({ method: "pageError", kind, error: describe(error) }).catch(() => {});

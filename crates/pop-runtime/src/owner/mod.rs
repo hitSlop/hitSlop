@@ -6,19 +6,15 @@ mod admission;
 mod failure;
 use crate::file::{self, Artwork};
 use crate::{Origin, store, theme};
-#[cfg(target_arch = "wasm32")]
-pub use actor::BrowserDriver;
 use actor::Message;
 pub use actor::{SyncConnection, SyncEvent, SyncSink};
 pub(crate) use admission::{Permit, serialized_size};
 pub use failure::{Failure, FailureKind};
-#[cfg(not(target_arch = "wasm32"))]
 pub use pop_runner::Evaluator;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
 use std::time::Duration;
-#[cfg(not(target_arch = "wasm32"))]
 use std::time::Instant;
 
 type Result<T> = std::result::Result<T, Failure>;
@@ -69,7 +65,6 @@ pub enum Request {
     /// fences edits first (the close barrier), so the state cannot move under the copy. Any
     /// failure removes only the temporary file this request made and leaves the owner open
     /// with every edit.
-    #[cfg(not(target_arch = "wasm32"))]
     Handoff {
         dest: PathBuf,
         preview: Option<Vec<u8>>,
@@ -101,7 +96,6 @@ pub enum Request {
         name: Artwork,
     },
     /// Derived images are admitted only for the saved state they were rendered from.
-    #[cfg(not(target_arch = "wasm32"))]
     SetArtwork {
         source_version: String,
         preview: Option<Vec<u8>>,
@@ -238,15 +232,12 @@ pub struct Owner {
     sender: mpsc::Sender<Message>,
     store: Arc<store::Store>,
     path: PathBuf,
-    #[cfg(not(target_arch = "wasm32"))]
     started: Instant,
 }
 impl Owner {
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn open(path: &Path, mode: store::Mode, listener: Listener) -> Result<Self> {
         Self::open_with_evaluator(path, mode, listener, None)
     }
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn open_with_evaluator(
         path: &Path,
         mode: store::Mode,
@@ -257,7 +248,6 @@ impl Owner {
         let store = Arc::new(store::Store::open(&path, mode)?);
         Self::from_store(path, store, mode, listener, evaluator)
     }
-    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn from_store(
         path: PathBuf,
         store: Arc<store::Store>,
@@ -295,18 +285,15 @@ impl Owner {
     pub fn app(&self) -> &file::OpenedApp {
         self.store.app()
     }
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn resource_reader(&self) -> Result<file::ResourceReader> {
         Ok(self.store.resource_reader()?)
     }
     pub fn attach(&self, view: String) {
         let _ = self.sender.send(Message::Attach(view));
     }
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn publish_discovery(&self, json: &str) -> Result<()> {
         Ok(self.store.publish_discovery(json)?)
     }
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn withdraw_discovery(&self) {
         self.store.withdraw_discovery();
     }
@@ -316,7 +303,6 @@ impl Owner {
         self.enqueue(request, view, None, callback);
     }
     /// The deadline is checked on the edit worker, before the command is admitted.
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn submit_until(&self, request: Request, view: Option<String>, deadline: Instant, callback: Completion) {
         self.enqueue(request, view, Some(deadline.saturating_duration_since(self.started)), callback);
     }

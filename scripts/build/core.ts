@@ -45,13 +45,11 @@ async function run(command: string[]) {
 }
 /** A pinned generator: `generated/core-tools/bin/<name>` (or `variable`), refused at any
  * other version. */
-async function generator(name: string, version: string, variable: string, install: string, localPath = `generated/core-tools/bin/${name}`) {
-  const local = join(repository, localPath);
+async function generator(name: string, version: string, variable: string, install: string) {
+  const local = join(repository, `generated/core-tools/bin/${name}`);
   const binary = process.env[variable] ?? (existsSync(local) ? local : name);
   const { stdout, code } = await exec([binary, "--version"], { env }).catch(() => ({ stdout: "", code: 1 }));
-  // Official Binaryen archives append a release tag; Homebrew omits it.
-  const reported = stdout.trim().replace(/ \(version_\d+\)$/, "");
-  if (code || reported !== `${name} ${version}`) throw new Error(`Install matching tooling: ${install}`);
+  if (code || stdout.trim() !== `${name} ${version}`) throw new Error(`Install matching tooling: ${install}`);
   return binary;
 }
 
@@ -70,29 +68,6 @@ export async function buildCoreWasm() {
   await publishFolder(join(repository, "generated/core/wasm"), (stage) =>
     run([bindgen, "--target", "web", "--out-dir", stage, cargoOutput("pop_core_wasm.wasm", target)]),
   );
-}
-
-/** SQLite compiles C for wasm32; Apple's clang has no WebAssembly backend. */
-export async function buildBrowserWasm() {
-  const optimizer = await generator("wasm-opt", `version ${tools.binaryen}`, "POP_WASM_OPT",
-    `bash scripts/build/install-binaryen.sh (requires Binaryen ${tools.binaryen}; POP_WASM_OPT may select its wasm-opt)`,
-    "generated/core-tools/binaryen/bin/wasm-opt");
-  const llvm = process.platform === "darwin" ? "/opt/homebrew/opt/llvm/bin/" : "";
-  const browserEnv = {
-    ...env,
-    CC_wasm32_unknown_unknown: process.env.CC_wasm32_unknown_unknown || `${llvm}clang`,
-    AR_wasm32_unknown_unknown: process.env.AR_wasm32_unknown_unknown || `${llvm}llvm-ar`,
-  };
-  const bindgen = await generator("wasm-bindgen", tools.wasmBindgen, "POP_WASM_BINDGEN",
-    `cargo install wasm-bindgen-cli --version ${tools.wasmBindgen} --locked --root generated/core-tools`);
-  const target = "wasm32-unknown-unknown";
-  const command = ["cargo", "build", "--locked", "--profile", "wasm", "--target", target, "-p", "pop-core-wasm", "--features", "browser"];
-  const { code } = await exec(command, { cwd: repository, env: browserEnv, inherit: ["stdout", "stderr"] });
-  if (code) throw new Error("Browser core build failed");
-  await publishFolder(join(repository, "generated/browser/core"), async stage => {
-    await run([bindgen, "--target", "web", "--out-dir", stage, join(repository, "target", target, "wasm/pop_core_wasm.wasm")]);
-    await run([optimizer, "-Oz", "--enable-bulk-memory", "--enable-sign-ext", "--enable-nontrapping-float-to-int", "--enable-mutable-globals", "--enable-reference-types", "--enable-multivalue", join(stage, "pop_core_wasm_bg.wasm"), "-o", join(stage, "pop_core_wasm_bg.wasm")]);
-  });
 }
 
 /** Every platform a published CLI carries a file engine for, built by the engines workflow

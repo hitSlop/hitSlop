@@ -195,7 +195,7 @@ pub const OUTPUT: usize = 4 << 20;
 pub const WATCHDOG_MS: u64 = 3000;
 pub const EXECUTION_MS: u64 = 2000;
 pub use crate::wire::RUNTIME_ABI;
-/// The bounded envelope used by both native and browser command drivers.
+/// The bounded envelope the command drivers send to the evaluator.
 pub fn command_input(runtime_abi: u64, bundle: &str, request: &str) -> Result<String, String> {
     let input = serde_json::to_string(&Job {
         runtime_abi,

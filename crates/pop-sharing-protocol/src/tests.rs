@@ -114,12 +114,7 @@ fn decode_as(kind: &str, input: &Value) -> Result<Value, serde_json::Error> {
         "AccessState" => decoded::<AccessState>(input),
         "DocumentRole" => decoded::<DocumentRole>(input),
         "DocumentMetadata" => decoded::<DocumentMetadata>(input),
-        "ConnectionPlan" => decoded::<ConnectionPlan>(input),
-        "SharingControl" => decoded::<SharingControl>(input),
-        "SharingEvent" => decoded::<SharingEvent>(input),
-        "ResourceGrant" => decoded::<ResourceGrant>(input),
         "ApiFailure" => decoded::<ApiFailure>(input),
-        "Manifest" => decoded::<Manifest>(input),
         "Resource" => decoded::<Resource>(input),
         "ResourceList" => decoded::<Vec<Resource>>(input),
         other => panic!("Uncovered DTO {other}"),
@@ -154,14 +149,12 @@ fn every_http_dto_has_a_fixture() {
         "OpenRoom",
         "RoomInfo",
         "RoomPhase",
-        "ResourceGrant",
         "ApiFailure",
         "DocumentRole",
         "AccessState",
         "JoinDocument",
         "UpdateDocument",
         "DocumentMetadata",
-        "Manifest",
         "Resource",
     ] {
         assert!(covered.contains(name), "HTTP DTO {name} has no fixture in http.json");
@@ -202,8 +195,6 @@ fn malformed_varint_overflow_is_refused() {
 fn unknown_variants_fail_closed_but_error_codes_remain_opaque() {
     let cases: Value = serde_json::from_str(include_str!("../tests/fixtures/v1/unknown.json")).unwrap();
     assert!(serde_json::from_value::<RoomPhase>(cases["phase"].clone()).is_err());
-    assert!(serde_json::from_value::<SharingControl>(cases["control"].clone()).is_err());
-    assert!(serde_json::from_value::<SharingEvent>(cases["event"].clone()).is_err());
     for bytes in cases["frames"].as_array().unwrap() {
         assert!(Frame::decode(&unhex(bytes.as_str().unwrap())).is_err());
     }

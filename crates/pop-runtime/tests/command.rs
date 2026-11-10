@@ -82,7 +82,7 @@ fn document_commands_refuse_a_link_with_the_regular_file_reason() {
     let saved = std::fs::read(&path).unwrap();
     let link = dir.path().join("link.pop");
     std::os::unix::fs::symlink(&path, &link).unwrap();
-    for method in ["get", "describe", "batch", "call", "copy", "export"] {
+    for method in ["get", "describe", "batch", "call", "export"] {
         // Do not canonicalize the supplied leaf before sending the request.
         let mut request = json!({"method":method,"documentPath":link});
         match method {
@@ -91,11 +91,9 @@ fn document_commands_refuse_a_link_with_the_regular_file_reason() {
                 request["command"] = "missing".into();
                 request["args"] = json!({});
             }
-            "copy" | "export" => {
+            "export" => {
                 request["output"] = json!(dir.path().join("output.pop"));
-                if method == "export" {
-                    request["format"] = "png".into();
-                }
+                request["format"] = "png".into();
             }
             _ => {}
         }
@@ -108,23 +106,6 @@ fn document_commands_refuse_a_link_with_the_regular_file_reason() {
     assert!(!dir.path().join("output.pop").exists());
 }
 
-#[test]
-fn browser_snapshot_is_a_clean_independent_document_and_never_overwrites() {
-    let (dir, path) = document();
-    assert_eq!(run(batch(&path))["ok"], true);
-    let before = std::fs::read(&path).unwrap();
-    let output = dir.path().join("browser.pop");
-    let copy = json!({"method":"copy","documentPath":path,"output":output});
-    assert_eq!(run(copy.clone())["ok"], true);
-    let original = file::open(&path, true).unwrap();
-    let copied = file::open(&output, true).unwrap();
-    assert_ne!(original.document_uuid, copied.document_uuid);
-    assert_eq!(run(request(&output, "get"))["state"]["value"]["hits"], 1);
-    assert_eq!(std::fs::read(&path).unwrap(), before);
-    let saved = std::fs::read(&output).unwrap();
-    assert_eq!(run(copy)["ok"], false);
-    assert_eq!(std::fs::read(&output).unwrap(), saved);
-}
 struct NoExport;
 impl ExportHandler for NoExport {
     fn export(&self, _: ExportRequest, completion: Arc<ExportCompletion>) {
@@ -911,21 +892,4 @@ fn speech_requests_reach_the_host_only_when_the_app_declared_speech() {
     assert_eq!(page_json(&malformed)["reason"], "invalid_request");
     assert_eq!(page_json(&page(&owner, "replaced", &request))["code"], "owner_replaced");
     close(&owner);
-}
-
-#[test]
-fn browser_envelopes_refuse_invalid_fields_before_dispatch() {
-    use pop_runtime::browser_wire::{BrowserRequest, TRANSFER_BYTES};
-    let valid = json!({"type":"resource","id":"r","route":"app","key":"ui.js","offset":0,"length":TRANSFER_BYTES});
-    assert!(BrowserRequest::decode(&valid.to_string()).is_ok());
-    for invalid in [
-        json!({"type":"flush","id":"r","extra":true}),
-        json!({"type":"resource","id":"r","route":"app","key":"ui.js","offset":-1,"length":1}),
-        json!({"type":"resource","id":"r","route":"app","key":"ui.js","offset":0,"length":TRANSFER_BYTES + 1}),
-        json!({"type":"resource","id":"r","route":"app","key":"ui.js","offset":0,"length":null}),
-        json!({"type":"evaluated","output":"{}","error":"both"}),
-        json!({"type":"open","copy":"------------------------------------","source":null}),
-    ] {
-        assert!(BrowserRequest::decode(&invalid.to_string()).is_err(), "{invalid}");
-    }
 }

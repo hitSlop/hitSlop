@@ -1,4 +1,4 @@
-//! Small experimental HTTP inventory. No document state or semantic relay parsing.
+//! Attachment inventory validation. No document state or semantic relay parsing.
 use crate::limits;
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -9,46 +9,27 @@ pub struct Resource {
     pub size: u64,
     pub media_type: String,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-pub struct Manifest {
-    pub app: String,
-    pub resources: Vec<Resource>,
-}
 pub fn hash_id(id: &str) -> bool {
     id.len() == 64 && id.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
 }
-pub fn asset_key(key: &str) -> bool {
-    matches!(key, "ui.js" | "ui.css")
-        || key.strip_prefix("media/").is_some_and(|name| {
-            name.split_once('.').is_some_and(|(id, ext)| {
-                hash_id(id) && !ext.is_empty() && ext.bytes().all(|c| c.is_ascii_alphanumeric())
-            })
-        })
-}
-pub fn validate(items: &[Resource], attachments: bool) -> Result<(), String> {
-    let (count, file, bytes) = if attachments {
-        (limits::ATTACHMENT_COUNT, limits::ATTACHMENT_FILE_BYTES, limits::ATTACHMENT_BYTES)
-    } else {
-        (limits::ASSET_COUNT, limits::ASSET_FILE_BYTES, limits::ASSET_BYTES)
-    };
+pub fn validate(items: &[Resource]) -> Result<(), String> {
     let mut keys = std::collections::HashSet::new();
     let mut total = 0u64;
     for item in items {
         if !hash_id(&item.hash)
-            || item.size > file as u64
+            || item.size > limits::ATTACHMENT_FILE_BYTES as u64
             || !keys.insert(&item.key)
             || item.media_type.is_empty()
             || item.media_type.len() > 100
             || item.media_type.contains(['\r', '\n'])
-            || (attachments && (item.key != item.hash || !passive(&item.media_type)))
-            || (!attachments && !asset_key(&item.key))
+            || item.key != item.hash
+            || !passive(&item.media_type)
         {
             return Err("Invalid resource inventory".into());
         }
         total = total.checked_add(item.size).ok_or("Resource inventory overflow")?;
     }
-    if items.len() > count || total > bytes as u64 {
+    if items.len() > limits::ATTACHMENT_COUNT || total > limits::ATTACHMENT_BYTES as u64 {
         return Err("Resource inventory exceeds document limits".into());
     }
     Ok(())
@@ -56,8 +37,8 @@ pub fn validate(items: &[Resource], attachments: bool) -> Result<(), String> {
 /// Transfer only absent immutable blobs. Both inventories are untrusted at this
 /// boundary; a matching hash with different metadata must never become a cache hit.
 pub fn missing_attachments(required: &[Resource], present: &[Resource]) -> Result<Vec<Resource>, String> {
-    validate(required, true)?;
-    validate(present, true)?;
+    validate(required)?;
+    validate(present)?;
     let present: std::collections::HashMap<_, _> = present.iter().map(|item| (&item.hash, item)).collect();
     let mut missing = Vec::new();
     for item in required {

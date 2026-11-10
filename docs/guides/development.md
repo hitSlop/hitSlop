@@ -15,7 +15,7 @@ bun run build
 bun run verify --all --native
 ```
 
-`build` generates platform contracts, builds the Rust core bindings (arm64 XCFramework and WASM) and the page shell (bundled with Vite), installs the shell into the app resources and the CLI, builds agent skills, and compiles the Rust document engine. The engine stays in its Cargo output directory; `POP_ENGINE` selects it, and `POP_APP` names a development dotpop.app for `pop open` and bundled-starter discovery. Verification prepares each tier’s prerequisites itself: Swift gets native bindings, the engine/evaluator and shell; SDK/shell tests get SDK WASM; CLI/render/native tests get the engine/evaluator and shell; browser/package consumers get durable-browser WASM. `bun scripts/build/build.ts --prepare OUTPUT[,OUTPUT]` prepares named outputs and their prerequisites (listed in `scripts/build/preparation.ts`). Template artwork is rendered by that engine as each template builds, in a separate, cached `bun run build:templates` step. Rust toolchain setup is described in [crates/README.md](../../crates/README.md).
+`build` generates platform contracts, builds the Rust core bindings (arm64 XCFramework and WASM) and the page shell (bundled with Vite), installs the shell into the app resources and the CLI, builds agent skills, and compiles the Rust document engine. The engine stays in its Cargo output directory; `POP_ENGINE` selects it, and `POP_APP` names a development dotpop.app for `pop open` and bundled-starter discovery. Verification prepares each tier’s prerequisites itself: Swift gets native bindings, the engine/evaluator and shell; SDK/shell tests get SDK WASM; CLI/render/native tests get the engine/evaluator and shell; package consumers get the engine/evaluator and shell. `bun scripts/build/build.ts --prepare OUTPUT[,OUTPUT]` prepares named outputs and their prerequisites (listed in `scripts/build/preparation.ts`). Template artwork is rendered by that engine as each template builds, in a separate, cached `bun run build:templates` step. Rust toolchain setup is described in [crates/README.md](../../crates/README.md).
 
 To work on the app, generate `apps/apple/pop.xcodeproj` with `xcodegen generate --spec apps/apple/project.yml` and open it in Xcode. `bun run apple:build` builds and verifies a disposable development app under `generated/app`. Both refresh bundled templates through the template cache before embedding them.
 
@@ -108,7 +108,7 @@ Quick Checklist is the reference example. Active projects under `pop` declare `p
 - `rust` (`bun run core:test`): the Rust suite with cargo-nextest.
 - `swift` (`bun run swift:test`): native tests with cached document/ABI apps and presentation fixtures.
 - `app`: complete macOS app build and bundle acceptance; included in `release:check`.
-- `browser`: Chrome durable copies and WebKit native-owner preview, without Swift compilation; run explicitly or in nightly/manual qualification, not by `--native`.
+- `webkit`: the `pop dev` native-owner preview and `EditableText` in Playwright WebKit, without Swift compilation; run explicitly or in nightly/manual qualification, not by `--native`.
 - `render`: portable engine artwork and PNG/PDF rendering of the fixtures (`POP_RENDER=all` for every bundled template), with no Swift build.
 - `native` (`bun run test:native`): the crash matrix (with host death when `POP_APP_BINARY` names an app) and the macOS corpus replay.
 - `packed`: exact npm artifact dependency/type/init/check/preview verification, without the Mac app. `POP_PACKED_NATIVE=1` adds the complete build/register/theme/export workflow.
@@ -135,21 +135,3 @@ To stop tracking local material, use `git rm --cached` and add an ignore rule. B
 integrating a commit that removes tracked files into another checkout, back up any
 local copies outside the repository and restore them afterward: Git can delete the
 previously tracked copies when switching or pulling.
-
-## Local browser runtime
-
-`bun scripts/build/browser.ts` builds the Chrome runtime packaged with the CLI.
-It requires `wasm32-unknown-unknown`, wasm-bindgen CLI 0.2.129, LLVM clang/llvm-ar
-with the WebAssembly target, and Binaryen 132. Run
-`bash scripts/build/install-binaryen.sh` to install the checksum-verified official
-Binaryen release under `generated/core-tools/binaryen`, as CI does. The build checks
-the optimizer version before compiling: `POP_WASM_OPT` overrides that local
-installation, with PATH used only when neither is provided. Ubuntu's older Binaryen
-package cannot parse the browser module's `table.fill` instruction.
-On macOS install LLVM with `brew install llvm`; Apple's clang cannot compile SQLite
-for this target. `CC_wasm32_unknown_unknown` and `AR_wasm32_unknown_unknown` can
-override the compiler paths. Linux uses `clang` and `llvm-ar` on PATH.
-
-`bun run verify browser local-host` exercises actual Google Chrome with a temporary
-persistent profile. Install Google Chrome first. This checks the durable browser
-host; `pop dev` continues to use the native Rust owner.

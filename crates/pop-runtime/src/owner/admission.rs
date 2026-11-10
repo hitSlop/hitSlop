@@ -39,12 +39,8 @@ pub(super) struct ByteLease {
 }
 impl Admission {
     pub(super) fn reserve(self: &Arc<Self>, request: &Request, view: &Option<String>) -> Option<Permit> {
-        let control = match request {
-            Request::Flush | Request::Discard | Request::Close { .. } => true,
-            #[cfg(not(target_arch = "wasm32"))]
-            Request::Handoff { .. } => true,
-            _ => false,
-        };
+        let control =
+            matches!(request, Request::Flush | Request::Discard | Request::Close { .. } | Request::Handoff { .. });
         let bytes = retained_bytes(request).saturating_add(view.as_ref().map_or(0, String::capacity));
         let copy = matches!(request, Request::Copy { .. });
         self.reserve_request(bytes, control, copy)
@@ -136,7 +132,6 @@ fn retained_bytes(request: &Request) -> usize {
         }
         Request::Command { name, args_json, .. } => name.capacity().saturating_add(args_json.capacity()),
         Request::Close { preview, icon } => artwork_bytes(preview, icon),
-        #[cfg(not(target_arch = "wasm32"))]
         Request::Handoff { dest, preview, icon } => dest.capacity().saturating_add(artwork_bytes(preview, icon)),
         Request::Copy { destination, preview, icon } => {
             destination.capacity().saturating_add(artwork_bytes(preview, icon))
@@ -144,7 +139,6 @@ fn retained_bytes(request: &Request) -> usize {
         Request::CaptureSource { destination }
         | Request::Backup { destination }
         | Request::StageSeed { destination } => destination.capacity(),
-        #[cfg(not(target_arch = "wasm32"))]
         Request::SetArtwork { source_version, preview, icon } => {
             source_version.capacity().saturating_add(artwork_bytes(preview, icon))
         }

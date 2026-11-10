@@ -87,6 +87,3 @@ mod test_adapter {
         }
     }
 }
-
-#[cfg(feature = "browser")]
-mod browser;

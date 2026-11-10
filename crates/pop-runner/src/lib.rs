@@ -1,5 +1,5 @@
-//! Bounded command evaluation. Native processes and disposable browser workers run
-//! the same QuickJS realm and ABI prelude; only the owner applies returned intents.
+//! Bounded command evaluation. Native processes run a QuickJS realm and ABI
+//! prelude; only the owner applies returned intents.
 pub use pop_contracts::evaluator::{
     Batch, CAPTURE_OUTPUT, EXECUTION_MS, Font, Frame, IMAGE_BYTES, INPUT, Job, JobKind, JobLimits, MARKUP_BYTES,
     OUTPUT, PDF_BYTES, PDF_CPU_SECONDS, PDF_OUTPUT, PDF_WATCHDOG_MS, RUNTIME_ABI, RasterRequest, RenderReply,

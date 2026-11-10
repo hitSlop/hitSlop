@@ -17,7 +17,7 @@ included) use the native Rust core. Bun SDK tests use the WASM adapter.
 - `pop-library`: device-local index of the live account feed, downloaded copies and
   recovery copies over runtime and storage.
 - `pop-core-ffi`: UniFFI adapter used by the Apple host and its Quick Look extensions.
-- `pop-core-wasm`: wasm-bindgen adapters for SDK tests and durable browser copies; browser authoring development uses the native owner.
+- `pop-core-wasm`: wasm-bindgen adapter for SDK tests; `pop dev` uses the native owner.
 - `pop-engine`: the document engine the CLI runs on any platform (templates, create,
   pack, inspect, schema, export and document operations); `pack` also renders the artwork
   a build does not supply when asked. On macOS and Linux the engine exports closed documents in its own
@@ -26,7 +26,7 @@ included) use the native Rust core. Bun SDK tests use the WASM adapter.
   and failure table, free of Loro, used by the native and web clients and the Worker.
 - `pop-sharing-client`: native identity-authenticated, event-driven transport, cloud
   HTTP calls, the account library feed and durable confirmed-version receipts over the existing owner.
-- `pop-sync`: the pure supervisor shared by native and browser drivers (reconnect
+- `pop-sync`: the pure sync supervisor driven by the native sharing client (reconnect
   backoff, fold/compaction decisions, push budgets); no I/O, clocks or Loro, and document
   replication remains in core.
 - `pop-runner`: the restricted QuickJS child and its bounded process launcher, with
@@ -34,7 +34,7 @@ included) use the native Rust core. Bun SDK tests use the WASM adapter.
   `pop-evaluator` binary provides the same child for native-host integration.
 
 `apps/sharing` is the Cloudflare Worker built on `pop-sharing-protocol`;
-Rust clients share its protocol types directly; ts-rs exports the browser types.
+Rust clients share its protocol types directly; ts-rs exports its TypeScript types.
 
 The root toolchain/lockfile pin Rust 1.96.1 (edition 2024, with clippy and rustfmt),
 Loro 1.17.1 (the exact crates.io release), UniFFI 0.32.2 and wasm-bindgen 0.2.129.

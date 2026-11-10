@@ -3,13 +3,11 @@ import { resolve, join } from "node:path";
 import { stageEngines } from "./engines";
 import { buildSkills } from "../../packages/pop/src/cli/skills-build";
 import { buildEngine, cargoOutput } from "./core";
-import { buildBrowser } from "./browser";
 import { buildShell } from "./shell";
 /** The npm package (`generated/npm`), carrying the file engines it ships. */
 export async function packPackages(prepared = false) {
   if (!prepared) {
     await buildShell();
-    await buildBrowser();
     await buildEngine();
   }
   await buildSkills();

@@ -54,7 +54,7 @@ export type SpeechOutcome = { "status": "transcribed", text: string, locale: str
 
 /**
  * Why this host cannot transcribe: the app did not declare `speech`; this host has no
- * speech service (`pop dev`, a browser copy); the OS cannot
+ * speech service (`pop dev`); the OS cannot
  * (too old, or recognition is off); this locale has no on-device recognizer, and the
  * host never sends a recording off the device instead; the person declined; or the
  * provider cannot decode this recording's format.

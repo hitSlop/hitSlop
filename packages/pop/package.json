@@ -29,7 +29,6 @@
     "skills",
     ".crust/root/skills",
     "shell",
-    "browser",
     "engine",
     "tsconfig.pop.json"
   ],

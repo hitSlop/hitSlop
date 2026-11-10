@@ -41,7 +41,7 @@ pub struct HostEnvironment {
     pub device: HostDevice,
 }
 impl HostEnvironment {
-    /// Browsers and development owners cannot infer the page's device from their process.
+    /// Development owners cannot infer the page's device from their process.
     pub fn unknown() -> Self {
         Self { platform: HostPlatform::Unknown, device: HostDevice::Unknown }
     }
@@ -316,7 +316,7 @@ pub enum SpeechOutcome {
     },
 }
 /// Why this host cannot transcribe: the app did not declare `speech`; this host has no
-/// speech service (`pop dev`, a browser copy); the OS cannot
+/// speech service (`pop dev`); the OS cannot
 /// (too old, or recognition is off); this locale has no on-device recognizer, and the
 /// host never sends a recording off the device instead; the person declined; or the
 /// provider cannot decode this recording's format.

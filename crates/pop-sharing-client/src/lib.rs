@@ -76,7 +76,7 @@ impl RoomKey {
         &self.identity
     }
     fn identity(document: &str, token: &str) -> Result<Self> {
-        if !pop_sharing_protocol::valid_copy(document)
+        if !pop_sharing_protocol::valid_document_id(document)
             || token.is_empty()
             || token.len() > pop_sharing_protocol::limits::IDENTITY_TOKEN_BYTES
         {
@@ -88,7 +88,7 @@ impl RoomKey {
 fn room_info(key: &RoomKey, token: Option<&str>) -> std::result::Result<RoomInfo, transport::HttpFailure> {
     let bytes = transport::http_typed(key, "GET", "", Some(token.unwrap_or(key.bearer())), &[], &[])?;
     let info: RoomInfo = serde_json::from_slice(&bytes).map_err(fail)?;
-    if !pop_sharing_protocol::valid_copy(&info.document)
+    if !pop_sharing_protocol::valid_document_id(&info.document)
         || info.document != key.room
         || info.seed_hash.as_deref().is_some_and(|hash| !pop_sharing_protocol::resources::hash_id(hash))
         || info.seed_size.is_some_and(|size| size as usize > pop_sharing_protocol::SEED_BYTES)

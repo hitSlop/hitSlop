@@ -84,8 +84,6 @@ pub enum EngineRequest {
         #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
         attachments: Option<Vec<String>>,
     },
-    #[serde(rename = "copy")]
-    Copy { document_path: String, output: String },
     #[serde(rename = "export")]
     Export { document_path: String, format: ExportFormat, output: String },
     #[serde(rename = "templates")]
@@ -143,7 +141,6 @@ macro_rules! document_path {
         match $request {
             EngineRequest::Get { document_path }
             | EngineRequest::Batch { document_path, .. }
-            | EngineRequest::Copy { document_path, .. }
             | EngineRequest::ThemeExport { document_path }
             | EngineRequest::AttachmentsList { document_path }
             | EngineRequest::AttachmentsRead { document_path, .. }
@@ -161,7 +158,6 @@ impl EngineRequest {
         match self {
             Self::Get { .. }
             | Self::Batch { .. }
-            | Self::Copy { .. }
             | Self::Export { .. }
             | Self::ThemeExport { .. }
             | Self::AttachmentsList { .. }
@@ -239,7 +235,6 @@ impl EngineRequest {
             Self::ThemeExport { .. } => "theme.export",
             Self::Get { .. } => "get",
             Self::Batch { .. } => "batch",
-            Self::Copy { .. } => "copy",
             Self::Export { .. } => "export",
             Self::Templates { .. } => "templates",
             Self::Create { .. } => "create",
@@ -280,9 +275,7 @@ impl EngineRequest {
                     return Err("Invalid command name");
                 }
             }
-            Self::Copy { document_path, output }
-            | Self::Export { document_path, output, .. }
-            | Self::ArtworkExport { file: document_path, output, .. } => {
+            Self::Export { document_path, output, .. } | Self::ArtworkExport { file: document_path, output, .. } => {
                 check_path(document_path)?;
                 check_path(output)?;
             }
@@ -497,8 +490,6 @@ pub enum EngineSuccess {
     Get { ok: True, state: GetState },
     #[serde(rename = "batch")]
     Batch { ok: True, ids: Vec<String> },
-    #[serde(rename = "copy")]
-    Copy { ok: True, output: String },
     #[serde(rename = "export")]
     Export { ok: True, output: String },
     #[serde(rename = "theme.export")]

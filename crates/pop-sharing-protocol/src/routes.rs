@@ -1,8 +1,5 @@
 //! The one table of public service routes. Worker dispatch and rate-limit classification
 //! read `ROUTES`; a request that matches no row is a 404 before any handler or limiter.
-//!
-//! The authored-domain resource host (`/assets`, `/attachments`, `/_resources`) is a
-//! separate surface with its own cookie authorization and is not described here.
 
 /// One operation per (method, path). Handlers match on this, never on path text.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -23,9 +20,6 @@ pub enum Op {
     Open,
     GetSeed,
     PutSeed,
-    GetResources,
-    PutResources,
-    PutAsset,
     ListBlobs,
     GetBlob,
     PutBlob,
@@ -107,9 +101,6 @@ pub static ROUTES: &[Route] = &[
     route(Op::Open, "POST", "/v1/documents/{document}/open", Document, L::None),
     route(Op::GetSeed, "GET", "/v1/documents/{document}/seed", Document, L::Seed),
     route(Op::PutSeed, "PUT", "/v1/documents/{document}/seed", Document, L::None),
-    route(Op::GetResources, "GET", "/v1/documents/{document}/resources", Document, L::None),
-    route(Op::PutResources, "POST", "/v1/documents/{document}/resources", Document, L::None),
-    route(Op::PutAsset, "PUT", "/v1/documents/{document}/asset/{hash}", Document, L::None),
     route(Op::ListBlobs, "GET", "/v1/documents/{document}/blobs", Document, L::None),
     route(Op::GetBlob, "GET", "/v1/documents/{document}/blob/{hash}", Document, L::None),
     route(Op::PutBlob, "PUT", "/v1/documents/{document}/blob/{hash}", Document, L::Blob),
@@ -133,7 +124,7 @@ pub fn find<'a>(method: &str, path: &'a str) -> Option<Matched<'a>> {
         for pattern in route.path.split('/') {
             let segment = actual.next()?;
             match pattern {
-                "{document}" if crate::valid_copy(segment) => found.document = Some(segment),
+                "{document}" if crate::valid_document_id(segment) => found.document = Some(segment),
                 "{hash}" if !segment.is_empty() => found.hash = Some(segment),
                 literal if literal == segment && !literal.starts_with('{') => {}
                 _ => return None,

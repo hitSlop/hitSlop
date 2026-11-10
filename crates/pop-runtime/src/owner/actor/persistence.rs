@@ -1,4 +1,4 @@
-//! Serial storage effects, driven by the native thread or browser worker.
+//! Serial storage effects, driven by the native persistence thread.
 use super::*;
 
 pub(super) enum Work {
@@ -25,7 +25,6 @@ pub(super) enum Work {
     },
     /// Publishes a verified copy of the live state at `dest`, then releases the store
     /// without saving.
-    #[cfg(not(target_arch = "wasm32"))]
     Handoff {
         generation: u64,
         dest: PathBuf,
@@ -38,41 +37,25 @@ pub(super) enum Work {
     },
 }
 /// The artwork a window rendered, by name, leaving out what it did not render.
-#[cfg(not(target_arch = "wasm32"))]
 fn named_artwork<'a>(preview: &'a Option<Vec<u8>>, icon: &'a Option<Vec<u8>>) -> Vec<(Artwork, &'a [u8])> {
     [(Artwork::Preview, preview), (Artwork::Icon, icon)]
         .into_iter()
         .filter_map(|(name, png)| Some((name, png.as_deref()?)))
         .collect()
 }
-#[cfg_attr(
-    target_arch = "wasm32",
-    expect(dead_code, reason = "native path payloads reach the persistence queue but are refused in the browser")
-)]
 pub(super) enum StorageAction {
-    Copy {
-        path: PathBuf,
-        state: Vec<u8>,
-        preview: Option<Vec<u8>>,
-        icon: Option<Vec<u8>>,
-    },
+    Copy { path: PathBuf, state: Vec<u8>, preview: Option<Vec<u8>>, icon: Option<Vec<u8>> },
     CaptureSource(PathBuf),
     Backup(PathBuf),
     StageSeed(PathBuf),
     Artwork(Artwork),
-    #[cfg(not(target_arch = "wasm32"))]
-    SetArtwork {
-        source_version: String,
-        preview: Option<Vec<u8>>,
-        icon: Option<Vec<u8>>,
-    },
+    SetArtwork { source_version: String, preview: Option<Vec<u8>>, icon: Option<Vec<u8>> },
     Attachments,
     ReadAttachment(String),
     PutAttachment(Vec<u8>),
     Share(store::Share),
     Unshare,
 }
-#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn persistence(store: Arc<store::Store>, work: mpsc::Receiver<Work>, sender: mpsc::Sender<Message>) {
     for work in work {
         let done = perform(&store, work);
@@ -83,7 +66,7 @@ pub(super) fn persistence(store: Arc<store::Store>, work: mpsc::Receiver<Work>, 
         }
     }
 }
-/// One serial storage effect, driven by a native thread or a browser worker.
+/// One serial storage effect, driven by a native thread.
 pub(super) fn perform(store: &store::Store, work: Work) -> Message {
     match work {
         Work::Save { generation, target, job } => {
@@ -98,37 +81,22 @@ pub(super) fn perform(store: &store::Store, work: Work) -> Message {
             let refresh_status = matches!(action, StorageAction::Share(_) | StorageAction::Unshare);
             let result = contained(|| {
                 Ok(match action {
-                    #[cfg(not(target_arch = "wasm32"))]
                     StorageAction::Copy { path, state, preview, icon } => {
                         store.copy_clean(&path, &state, &named_artwork(&preview, &icon))?;
                         Reply::Unit
                     }
-                    #[cfg(not(target_arch = "wasm32"))]
                     StorageAction::CaptureSource(path) => {
                         store.capture_source(&path)?;
                         Reply::Unit
                     }
-                    #[cfg(not(target_arch = "wasm32"))]
                     StorageAction::Backup(path) => {
                         store.backup(&path)?;
                         Reply::Unit
                     }
-                    #[cfg(not(target_arch = "wasm32"))]
                     StorageAction::StageSeed(path) => {
                         store.stage_seed(&path)?;
                         Reply::Unit
                     }
-                    #[cfg(target_arch = "wasm32")]
-                    StorageAction::Copy { .. }
-                    | StorageAction::CaptureSource(_)
-                    | StorageAction::Backup(_)
-                    | StorageAction::StageSeed(_) => {
-                        return Err(Failure::rejected(
-                            Code::InvalidRequest,
-                            "Native path operation is unavailable in the browser",
-                        ));
-                    }
-                    #[cfg(not(target_arch = "wasm32"))]
                     StorageAction::SetArtwork { source_version, preview, icon } => {
                         if store.document()?.reading()?.version != source_version {
                             return Err(Failure::new(FailureKind::Replaced, "Artwork source changed"));
@@ -158,15 +126,10 @@ pub(super) fn perform(store: &store::Store, work: Work) -> Message {
                 if let Some(job) = job {
                     let _ = store.write(&job);
                 }
-                #[cfg(not(target_arch = "wasm32"))]
-                {
-                    let artwork = named_artwork(&preview, &icon);
-                    if !artwork.is_empty() {
-                        let _ = store.set_artwork(&artwork);
-                    }
+                let artwork = named_artwork(&preview, &icon);
+                if !artwork.is_empty() {
+                    let _ = store.set_artwork(&artwork);
                 }
-                #[cfg(target_arch = "wasm32")]
-                let _ = (preview, icon);
                 // Only a confirmed close ends the undo session. Reclamation then takes
                 // a fresh lease, so a failed close keeps its undo attachments intact.
                 store.close_reclaiming()?;
@@ -174,7 +137,6 @@ pub(super) fn perform(store: &store::Store, work: Work) -> Message {
             });
             Message::Stored { generation, result, callback, closing: true, refresh_status: false }
         }
-        #[cfg(not(target_arch = "wasm32"))]
         Work::Handoff { generation, dest, state, preview, icon, value, theme, callback } => {
             let result = contained(|| {
                 store.handoff_copy(&dest, &state, &named_artwork(&preview, &icon), &value, &theme)?;

@@ -1,4 +1,4 @@
-//! Durable storage for native and browser hosts. A document is one SQLite file (`file` owns its
+//! Durable storage for hosts. A document is one SQLite file (`file` owns its
 //! format); this module saves its state: a history (a Loro snapshot, then the updates saved
 //! after it), its attachments and its artwork. The writer lock lives in the registry, outside the file. SQLite never
 //! sees anything but opaque Loro bytes.
@@ -14,19 +14,14 @@
 //! `Store` call on the other, so a slow write never blocks edits.
 
 mod attachments;
-#[cfg(target_arch = "wasm32")]
-mod browser;
-#[cfg(not(target_arch = "wasm32"))]
 mod copy;
 mod save;
 pub use crate::error::{Error, Result};
 use crate::error::{failed, rejected, sqlite};
 use crate::file::{self, Artwork, Kind, OpenedApp, rows};
-#[cfg(not(target_arch = "wasm32"))]
 use crate::registry::Lease;
 use crate::{Document, lock};
 pub use attachments::Attachment;
-#[cfg(not(target_arch = "wasm32"))]
 use attachments::delete_unreferenced;
 use pop_core::HistoryVersion;
 use rusqlite::{Connection, Transaction, TransactionBehavior};
@@ -34,7 +29,6 @@ use save::{Metadata, Rows, bounds, checked_bounds, checkpoint_row, within};
 pub use save::{Pressure, SaveJob};
 use sha2::{Digest, Sha256};
 use std::path::Path;
-#[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -49,7 +43,6 @@ fn load_failure(e: crate::Error) -> Error {
 /// connection closes before the lock is released.
 struct Backing {
     conn: Option<Connection>,
-    #[cfg(not(target_arch = "wasm32"))]
     lease: Option<Lease>,
 }
 struct Account {
@@ -90,14 +83,8 @@ pub struct Share {
 /// nothing, so a render never locks the file or changes what it holds (it may finish
 /// rolling back a crashed write, as any reader does).
 pub struct Store {
-    #[cfg(target_arch = "wasm32")]
-    browser_file: (String, String),
-    #[cfg(target_arch = "wasm32")]
-    resource_cache: std::sync::Arc<Mutex<file::ResourceCache>>,
-    #[cfg(not(target_arch = "wasm32"))]
     path: PathBuf,
     /// The file's device and inode when opened; a rename or replacement is `Moved`.
-    #[cfg(not(target_arch = "wasm32"))]
     inode: (u64, u64),
     /// The app the document was built with, checked once when it opened.
     app: OpenedApp,
@@ -144,7 +131,6 @@ fn load(conn: &Connection, app: &crate::AppSpec) -> Result<(Document, Metadata)>
 
 /// A new file may be published only after its saved state has passed the same acceptance
 /// as opening it. The caller keeps the source read transaction through its copy.
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn validate_saved(conn: &Connection, app: &crate::AppSpec) -> Result<()> {
     load(conn, app).map(|_| ())
 }
@@ -168,7 +154,6 @@ impl Store {
     /// the file, including SQLite's quick check; a template is never opened as a document
     /// (`file::create_document` makes one from it). `Snapshot` mode reads a document's
     /// saved state, or a template's initial values, once.
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn open(path: &Path, mode: Mode) -> Result<Self> {
         let (lease, conn, app) = match mode {
             Mode::Document => {
@@ -213,7 +198,6 @@ impl Store {
     /// A reader of the app's assets on its own connection, which pages read from while this
     /// store saves. The file is the one this store's open checked, or the reader fails with
     /// `Moved`.
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn resource_reader(&self) -> Result<file::ResourceReader> {
         let conn = file::reader(&self.path)?;
         self.check(false)?;
@@ -224,7 +208,6 @@ impl Store {
     pub fn check(&self, writable: bool) -> Result<()> {
         // A stat, never the backing mutex a save holds: a theme change never waits for one.
         let owned = self.owned.load(Ordering::Acquire);
-        #[cfg(not(target_arch = "wasm32"))]
         match crate::registry::identity(&self.path) {
             Ok((dev, ino, links)) if (dev, ino) == self.inode && (links == 1 || !owned) => {}
             _ => return Err(Error::Moved),
@@ -337,18 +320,7 @@ impl Store {
     /// (`Moved`). When the path again names this store's file, the store reconnects and the
     /// work runs once more; a writer's lease never left the file.
     fn connected<T>(&self, conn: &mut Option<Connection>, work: impl Fn(&Connection) -> Result<T>) -> Result<T> {
-        #[cfg(target_arch = "wasm32")]
-        if conn.is_none() {
-            *lock(&self.resource_cache) = Default::default();
-            self.check(false)?;
-            let (name, vfs) = &self.browser_file;
-            let (fresh, app) = browser::open_browser(name, vfs, "reopen")?;
-            load(&fresh, app.app.spec())?;
-            file::configure_writer(&fresh)?;
-            *conn = Some(fresh);
-        }
         match work(conn.as_ref().ok_or(Error::Closed)?) {
-            #[cfg(not(target_arch = "wasm32"))]
             Err(Error::Moved) if self.check(false).is_ok() => {
                 let fresh = if self.owned.load(Ordering::Acquire) {
                     let writer = file::writer(&self.path, false)?;
@@ -359,15 +331,6 @@ impl Store {
                 };
                 // Replacing closes the stale connection, which holds no transaction.
                 work(conn.insert(fresh))
-            }
-            // An OPFS I/O failure can poison SQLite's pager even after space is
-            // available again. Keep the Web Lock and unsaved owner state, but close
-            // this connection. The next explicit attempt reopens through the same
-            // VFS and recovers its journal before retrying the save.
-            #[cfg(target_arch = "wasm32")]
-            Err(error @ Error::Failed(_)) => {
-                drop(conn.take());
-                Err(error)
             }
             other => other,
         }
@@ -409,7 +372,6 @@ impl Store {
             return Err(failed(format!("close; retaining document ownership: {e}")));
         }
         self.owned.store(false, Ordering::Release);
-        #[cfg(not(target_arch = "wasm32"))]
         if let Some(lease) = backing.lease.take() {
             lease.withdraw();
         }
@@ -419,7 +381,6 @@ impl Store {
     /// Closes first, then best-effort reclaims unreferenced blobs under a new writer lease.
     /// A failed close keeps every attachment available to the still-live undo session.
     /// Snapshot closes never write, and housekeeping cannot turn a successful close into failure.
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn close_reclaiming(&self) -> Result<()> {
         let was_writer = self.owned.load(Ordering::Acquire);
         let identity = self.app.document_uuid.clone();
@@ -455,11 +416,9 @@ impl Store {
     }
 
     /// Names the live owner for clients: a writer publishes its socket in the registry.
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn publish_discovery(&self, json: &str) -> Result<()> {
         lock(&self.backing).lease.as_ref().ok_or(Error::Closed)?.publish(json)
     }
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn withdraw_discovery(&self) {
         if let Some(lease) = &lock(&self.backing).lease {
             lease.withdraw();

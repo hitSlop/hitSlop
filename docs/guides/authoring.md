@@ -222,7 +222,7 @@ just like `getDocument(schema)`. Its read-only `current` snapshot is reactive:
 
 `platform` is `macos`, `ios`, `android`, `windows`, `linux` or `unknown`.
 `device` is `phone`, `tablet`, `desktop` or `unknown`. Native hosts supply identity;
-browser hosts report `unknown`. Android and Windows hosts are future
+the `pop dev` Browser preset reports `unknown`. Android and Windows hosts are future
 work. A device category is a presentation hint, not a permission or capability check.
 
 `layout` is `compact` below 640 CSS pixels of the actual document viewport and
@@ -363,7 +363,7 @@ m4a, mp3, wav, flac, mp4 and mov. It returns `unavailable` with reason `format` 
 other formats, including Ogg and WebM, before asking for permission. Let the provider
 decide format support rather than keeping a format list in authored code. A transcript holds at most
 1 MiB of text. `unavailable` carries a `reason`: `notDeclared` (no `"speech"` in
-`capabilities`), `host` (`pop dev`, a browser copy or an export),
+`capabilities`), `host` (`pop dev` or an export),
 `system` (the Mac cannot recognize speech now), `locale` (no on-device recognizer for the
 locale), `permission` (the person declined speech recognition for pop), or
 `format` (this provider cannot transcribe the recording format). `cancelled`

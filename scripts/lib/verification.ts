@@ -13,14 +13,14 @@ export async function changedPaths(cwd: string, ref: string) {
 
 export type Preparation = <T>(name: string, action: () => Promise<T>) => Promise<T>;
 
-export type TestTier = "tooling" | "bun" | "cli" | "render" | "browser" | "native" | "packed";
+export type TestTier = "tooling" | "bun" | "cli" | "render" | "webkit" | "native" | "packed";
 export function testInventory(files: string[]): Record<TestTier, string[]> {
-  const groups: Record<TestTier, string[]> = { tooling: [], bun: [], cli: [], render: [], browser: [], native: [], packed: [] };
+  const groups: Record<TestTier, string[]> = { tooling: [], bun: [], cli: [], render: [], webkit: [], native: [], packed: [] };
   for (const file of files.sort()) {
     if (file.startsWith("tests/examples/") || file.startsWith("pop/"))
       throw new Error(`Per-example tests are not allowed: ${file}`);
     const tier = file.startsWith("tests/packed/") ? "packed"
-      : file.endsWith(".browser.test.ts") ? "browser"
+      : file.endsWith(".webkit.test.ts") ? "webkit"
       : /^(tests\/native\/(?:render|landing)|packages\/pop\/tests\/cli\/build)\.native\.test\.ts$/.test(file) ? "render"
       : file.endsWith(".native.test.ts") ? "native"
       : file.startsWith("tests/verification/") ? "tooling"

@@ -38,10 +38,10 @@ export const tierInputs = {
   ],
   // Also the README and the app's links, which scripts/ci/hygiene.ts compares with the site.
   types: [/^README\.md$/, /PopLinks\.swift$/, /^\.prettier(?:rc(?:\.[^/]*)?|ignore)$/, /^\.oxlintrc\.json$/, /^packages\/pop\/src\//, /^pop\/(?!.*\.md$)/, /^tests\/apps\/(?!.*\.md$)/, /\.(ts|svelte)$/, /(^|\/)tsconfig[^/]*\.json$/, /(^|\/)package\.json$/, /^bun\.lock$/],
-  bun: [...rustInputs, /^packages\/pop\/src\//, /^packages\/pop\/tests\/(sdk|shell)\/(?!.*\.browser\.test\.ts$)/, /^tests\/(fixtures|compat|release)\//, /^scripts\/(?!ci\/)/],
-  cli: [...rustInputs, /^packages\/pop\/(src|templates|skills)\//, /^packages\/pop\/tests\/cli\/(?!.*\.(native|browser)\.test\.ts$)/, /^tests\/(apps|fixtures|compat)\//, /^scripts\/(?!ci\/)/],
+  bun: [...rustInputs, /^packages\/pop\/src\//, /^packages\/pop\/tests\/(sdk|shell)\/(?!.*\.webkit\.test\.ts$)/, /^tests\/(fixtures|compat|release)\//, /^scripts\/(?!ci\/)/],
+  cli: [...rustInputs, /^packages\/pop\/(src|templates|skills)\//, /^packages\/pop\/tests\/cli\/(?!.*\.(native|webkit)\.test\.ts$)/, /^tests\/(apps|fixtures|compat)\//, /^scripts\/(?!ci\/)/],
   render: [...rustInputs, /^packages\/pop\/(src|shell)\//, /^packages\/pop\/tests\/cli\/build\.native\.test\.ts$/, /^packages\/pop\/tests\/cli\/.*-fixture\.ts$/, /^tests\/native\/(render|landing)\.native\.test\.ts$/, /^apps\/landing\/scripts\/templates\.ts$/, /^tests\/(apps|fixtures|abi|presentation)\//, /^scripts\/(build|lib|templates)\//, /^pop\/bundled\.json$/, /^\.github\/actions\/native-cache\//],
-  browser: [...rustInputs, /^packages\/pop\/(src|templates)\//, /\.browser\.test\.ts$/, /^packages\/pop\/tests\/cli\/.*-fixture\.ts$/, /^tests\/(browser|apps)\//, /^scripts\/(build|lib)\//],
+  webkit: [...rustInputs, /^packages\/pop\/(src|templates)\//, /\.webkit\.test\.ts$/, /^packages\/pop\/tests\/cli\/.*-fixture\.ts$/, /^tests\/(webkit|apps)\//, /^scripts\/(build|lib)\//],
   rust: [/^scripts\/compat\//, ...rustInputs, /^packages\/pop\/(src\/schema|generated|acceptance|tests\/schema)\//, /^tests\/compat\//, /^\.config\/nextest\.toml$/],
   sharing: [/^\.github\/workflows\/sharing\.yml$/, ...rustInputs, /^apps\/sharing\//, /^scripts\/sharing\//, /^scripts\/build\/sharing\.ts$/, /^apps\/apple\/App\/Shared\/Assets\.xcassets\/AppIcon\.appiconset\/appicon-1024\.png$/],
   landing: [/^apps\/landing\//],
@@ -69,9 +69,9 @@ export const nativeGateInputs = [
 
 /** On a pull request, the sharing tier (the built relay on Miniflare) is required only when one
  * of the tier's own inputs changes (the Rust workspace and its build inputs, so the core's sync
- * and document code and Cargo.lock included, the relay and its scripts) or the sharing and
- * browser hosts it serves. Master pushes and release tags qualify it in sharing.yml. */
-export const sharingGateInputs = [...tierInputs.sharing, /^packages\/pop\/src\/(sharing|browser)\//];
+ * and document code and Cargo.lock included, the relay and its scripts). Master pushes and
+ * release tags qualify it in sharing.yml. */
+export const sharingGateInputs = tierInputs.sharing;
 
 // Policy workflows and tests of the runner do not change how product checks execute.
 export const sharedInputs = [

@@ -98,7 +98,6 @@ fn dispatch(request: EngineRequest) -> String {
             }
             EngineRequest::Get { .. }
             | EngineRequest::Batch { .. }
-            | EngineRequest::Copy { .. }
             | EngineRequest::Export { .. }
             | EngineRequest::ThemeExport { .. }
             | EngineRequest::AttachmentsList { .. }

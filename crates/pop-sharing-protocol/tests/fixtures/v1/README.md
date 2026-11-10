@@ -16,7 +16,7 @@ example per variant, all permissions and all acks, varint boundaries, u64 peers/
 UTF-8. Each decodes to the documented `frame` value and re-encodes byte-for-byte. The
 fixture bytes are independent expectations, not produced by tests.
 
-`unknown.json` holds fail-closed behavior: unknown JSON phases, control/event tags, frame
+`unknown.json` holds fail-closed behavior: unknown JSON phases, frame
 tags, permissions and acknowledgements are rejected, and a value missing a required field
 (`incomplete`) is refused rather than completed with a default. Unknown HTTP failure codes
 remain strings; unknown binary Error codes remain bytes. Extra JSON reply fields are

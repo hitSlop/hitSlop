@@ -245,9 +245,6 @@ export async function checkCompaction(
     (await test("sql", { sql, args })).json() as Promise<any[]>;
   const fixture = async (count: number, size = 1) => test("fixture", { count, size });
   const seed = new Uint8Array(512).fill(42);
-  const invalidManifestBytes = new TextEncoder().encode("{");
-  const malformedManifest = await call(base + "/resources", owner, "POST", invalidManifestBytes);
-  assert.equal(malformedManifest.status, 400, "Malformed app inventory is a request refusal");
   assert.equal(
     (
       await call(base + "/seed", owner, "PUT", seed, {
@@ -256,11 +253,6 @@ export async function checkCompaction(
         "X-Sharing-Version": '[["0000000000000002",5]]',
       })
     ).status,
-    200,
-  );
-  assert.equal(
-    (await call(base + "/resources", owner, "POST", { app: "aa".repeat(32), resources: [] }))
-      .status,
     200,
   );
   assert.equal((await call(base + "/open", owner, "POST", { seedSha256: hash(seed) })).status, 200);
@@ -588,11 +580,6 @@ export async function checkCompaction(
         "X-Sharing-Version": "[]",
       })
     ).status,
-    200,
-  );
-  assert.equal(
-    (await call(idleBase + "/resources", owner, "POST", { app: "aa".repeat(32), resources: [] }))
-      .status,
     200,
   );
   assert.equal((await call(idleBase + "/open", owner, "POST", { seedSha256: hash(seed) })).status, 200);

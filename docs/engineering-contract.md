@@ -23,22 +23,6 @@ Old documents depend on a few public boundaries; everything behind them may chan
 | How descriptor kinds map to Loro containers ([storage layout](reference/document-types.md#storage-layout)) | `meta.layout` in each document (1), written when it is created | Reads and edits the layout it has shipped; refuses a newer one. Opening and saving never change a document's layout |
 | CLI ↔ document engine ↔ live owner | The command protocol: `--client-protocol N` on `pop-engine`, and `protocol` in every socket request; `--protocol` reports the protocol served | Serves exactly its own protocol, with no adapters for older programs, and refuses any other before touching the document (exit status 2, or `requires_update`), naming the older side to update. The refusal path never changes: `--client-protocol N` first, exit status 2 and one stderr line; the live discovery record's `socket` and `documentPath` fields (other fields are ignored; its location is per platform); newline-delimited framing; `protocol` read before any other check; and the reply `{ok: false, code: "rejected", reason: "requires_update", error}`. Protocol 1 is today's commands, arguments, request and reply JSON (a reply may gain members, which readers ignore), outputs and exit statuses |
 
-### Local browser storage
-
-The Chrome beta uses browser-container format 2, separate from the `.pop` storage
-version. Each `copies/<id>/container.json` marker is checked before sahpool opens or
-cleanup touches that pool. Unknown and unmarked containers are refused
-without repair or migration. IndexedDB version 1 stores only the copies catalog.
-Record and qualify changes to the pinned VFS against persisted pool fixtures before
-shipping browser storage publicly.
-
-Import validates the staged SQLite file before renewing its document UUID in one
-transaction. Reopening a browser copy retains its UUID. Export drains page drafts,
-then independently flushes the Rust owner; a failed flush never exports stale state.
-The Save As destination completes only after its writable stream closes. Temporary
-exports are unique and protected by the copy lock until the stream finishes or the
-owning tab disappears. No browser edit writes back to the original desktop file.
-
 ### How documents evolve
 
 A pop carries its own copy of the SDK: its `ui.js` and `commands.js` were compiled with
@@ -158,8 +142,7 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
 - `pop-core` owns document semantics and app acceptance over Loro. `pop-contracts`
   owns passive wire types and shared limits. `pop-storage` owns the `.pop` database,
   writer lease, storage acceptance and save policy; `pop-runtime` owns the serial
-  document owner, persistence worker and socket routing. Native and browser adapters
-  use these same boundaries. Swift `DocumentOwner` delivers typed requests and events;
+  document owner, persistence worker and socket routing. Swift `DocumentOwner` delivers typed requests and events;
   Loro bytes never reach Swift. The page shell (`packages/pop/src/shell`) holds no CRDT.
 - A `.pop` file is one SQLite database. A template holds its app: the `app` row
   (catalog columns, a definition document and two requirements), `assets` (including
@@ -241,7 +224,7 @@ in [cloud documents](cloud-documents.md).
 
 Retention and compatibility assertions are normative. Passing the published corpora is
 regression evidence, not a proof over all possible documents. Timing, memory and file-size
-measurements are qualification results, not new public format limits. Platform/browser
+measurements are qualification results, not new public format limits. Platform
 and release qualification remain tracked in the [roadmap](roadmap.md).
 
 ## Rules
@@ -274,7 +257,7 @@ and release qualification remain tracked in the [roadmap](roadmap.md).
   identity. Every accepted operation keeps the document valid; invalid stored state is
   refused without modifying the file.
 - Never add a JSON copy of the document, persistent JSON mirrors, JSON reconciliation, a
-  JavaScriptCore engine or a second document engine. The WASM core serves SDK tests and local browser copies with the same Rust owner and SQLite store. Browser authoring development uses a native owner; the native engine validates authoring input. Browser copies hold a per-copy Web Lock and save through OPFS; authored code runs on a separate per-copy origin. A download drains the page, flushes the owner and streams one SQLite read transaction.
+  JavaScriptCore engine or a second document engine. The WASM core serves SDK tests only. `pop dev` uses the native Rust owner; native engine validation owns authoring checks.
 - Rust owns wire types and shared limits (`crates/pop-contracts/src/wire`); ts-rs exports
   TypeScript and UniFFI carries native types to Swift. App acceptance also belongs to Rust; JSON Schema is only a descriptor projection for tool clients. Run `bun run schema:generate`; never edit generated files.
 - Storage checks every file it opens (its tables, markers and resource bounds); core

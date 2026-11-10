@@ -4,7 +4,6 @@ use serde::{Deserialize, Serialize};
 /// Whether a room-full connection has already retried after compaction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 pub enum FullState {
     Available,
     Waiting,
@@ -14,7 +13,6 @@ pub enum FullState {
 /// The observation made by a transport at one compaction boundary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 #[serde(tag = "step", rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 pub enum Step {
     Probe {
         compact: bool,
@@ -31,7 +29,6 @@ pub enum Step {
 /// The next operation, without performing it or sampling a clock.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "action", rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 pub enum MaintenanceAction {
     Idle,
     Jitter {

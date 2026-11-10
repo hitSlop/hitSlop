@@ -196,16 +196,9 @@ const tiers: Tier[] = [
         await quiet(["cargo", "clippy", "--locked", "-p", "pop-core-ffi", "--no-default-features", "--features", "mobile-capture", "--", "-D", "warnings"]);
         await quiet(["cargo", "clippy", "--locked", "-p", "pop-sharing-worker", "--target", "wasm32-unknown-unknown", "--", "-D", "warnings"]);
         // The WASM adapter's lints do not depend on the host: Linux and release runs check
-        // them, so macOS runs skip two builds and Homebrew's clang.
-        if (process.platform === "linux" || release) {
-          const wasm = ["-p", "pop-core-wasm", "--target", "wasm32-unknown-unknown"];
-          await quiet(["cargo", "clippy", "--locked", ...wasm, "--", "-D", "warnings"]);
-          const llvm = process.platform === "darwin" ? "/opt/homebrew/opt/llvm/bin/" : "";
-          await quiet(["cargo", "clippy", "--locked", ...wasm, "--features", "browser", "--", "-D", "warnings"], { env: {
-            CC_wasm32_unknown_unknown: process.env.CC_wasm32_unknown_unknown || `${llvm}clang`,
-            AR_wasm32_unknown_unknown: process.env.AR_wasm32_unknown_unknown || `${llvm}llvm-ar`,
-          } });
-        }
+        // them, so macOS runs skip a build.
+        if (process.platform === "linux" || release)
+          await quiet(["cargo", "clippy", "--locked", "-p", "pop-core-wasm", "--target", "wasm32-unknown-unknown", "--", "-D", "warnings"]);
         await quiet(["cargo", "nextest", "run", "--locked", "--workspace", "--no-run"]);
       });
       // Ask nextest which tests the actual filter selects. A filtered store:: run
@@ -277,9 +270,9 @@ const tiers: Tier[] = [
     run: async () => {},
   },
   {
-    // Playwright WebKit and Chrome: `pop dev`, EditableText and the local Chrome browser host.
-    name: "browser", native: true, nightly: true, needs: ["browser", "engine", "shell"], inputs: tierInputs.browser,
-    run: (args) => bunTest(inventory.browser, args, { POP_TEST_EVIDENCE: runDirectory }),
+    // Playwright WebKit: the `pop dev` preview and EditableText.
+    name: "webkit", native: true, nightly: true, needs: ["engine", "shell"], inputs: tierInputs.webkit,
+    run: (args) => bunTest(inventory.webkit, args, { POP_TEST_EVIDENCE: runDirectory }),
   },
   {
     name: "native",
@@ -339,7 +332,7 @@ const toolchains = {
     ? await run(["swift", "--version"]).then(s => s.trim()) : null,
 };
 let corpusIdentity: unknown = null;
-const corpusTiers = new Set(["compat", "rust", "swift", "native", "browser", "app"]);
+const corpusTiers = new Set(["compat", "rust", "swift", "native", "webkit", "app"]);
 const digestOf = (tier: Tier, files: Record<string, string>) =>
   sha256(JSON.stringify([corpusTiers.has(tier.name) ? corpusIdentity : null, Bun.version, { rust: usesRust(tier) ? toolchains.rust : null, swift: tier.name === "swift" || tier.name === "app" ? toolchains.swift : null }, process.platform, process.arch, process.env.POP_CARGO_PROFILE || "release", nightly, inputsOf(tier, files).map((path) => [path, files[path]])]));
 /** Paths among `tier`'s inputs that differ between two snapshots. */
@@ -476,7 +469,7 @@ const report = {
 const done = new Map<Build, Promise<void>>();
 /** Prepare only actual shared outputs, once per graph. */
 function build(name: Build): Promise<void> {
-  if (flag("--no-build") || (flag("--built") && ["engine", "shell", "native", "sdk", "browser", "templates"].includes(name))) return Promise.resolve();
+  if (flag("--no-build") || (flag("--built") && ["engine", "shell", "native", "sdk", "templates"].includes(name))) return Promise.resolve();
   if (!done.has(name))
     done.set(name, (async () => {
       for (const dependency of prerequisites[name]) await build(dependency);

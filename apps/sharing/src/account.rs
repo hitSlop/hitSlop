@@ -265,7 +265,7 @@ mod runtime {
                         Ok(input) => input,
                         Err(error) => return error.response(),
                     };
-                if !pop_sharing_protocol::valid_copy(&input.document) || input.generation.is_none() {
+                if !pop_sharing_protocol::valid_document_id(&input.document) || input.generation.is_none() {
                     return Response::error("Invalid document", 400);
                 }
                 if self.sql.exec("SELECT count(*) AS n FROM deleting", None)?.one::<Number>()?.n > 0 {
@@ -386,7 +386,7 @@ mod runtime {
                 Ok(input) => input,
                 Err(error) => return error.response(),
             };
-            if !pop_sharing_protocol::valid_copy(&input.document) {
+            if !pop_sharing_protocol::valid_document_id(&input.document) {
                 return Response::error("Invalid document", 400);
             }
             let known = self

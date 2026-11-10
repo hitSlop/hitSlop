@@ -10,8 +10,8 @@ Popular templates and imports from Files; its host is portrait-only, and per-pop
 orientation declarations remain future work. iPhone Home Screen widgets render library
 pop with a widget view locally, open them on tap, and refresh in the background when iOS
 allows. [Cloud documents](cloud-documents.md) sync a person's devices and carry live
-collaboration: the Share popover creates a link anyone can use to edit in the Mac or
-iPhone app or in Chrome at share.dotpop.click, and Stop ends the link while everyone
+collaboration: the Share popover creates a link that opens an invitation page for the Mac and
+iPhone apps, where people sign in with Apple to edit, and Stop ends the link while everyone
 keeps their copy. Operations are in [sharing](../apps/sharing/README.md).
 
 ## Where we're heading
@@ -55,14 +55,10 @@ Release qualification of the fresh 2.0.0 lineage. The record of what shipped is
   iPhone app on the App Store.
 - **Hands-on sharing checks.** Two devices editing, offline then reconnect, growing a
   shared document past the base cap (the `Outgrown` pause and **Save Unshared Copy…**),
-  stopping and rejoining, account deletion, and a guest upgrading to Apple sign-in with
-  the same UID.
+  stopping and rejoining, and account deletion.
 - **Outgrown warning.** Warn at about 75% of the 16 MiB base cap, before sharing pauses.
 - **Large-value authoring check.** Rewriting a large scalar every commit stores the whole
   value each time; `pack` could flag large values that belong in attachments.
-- **Membership policy.** A reset anonymous credential leaves its old UID's membership in
-  place until revocation, and a document admits at most 64 members. Decide owner member
-  management and any change to the limit; no quota changes have been made.
 - **Known sharing limits.** A timed-out account call can still be processed late, which can
   drop the registration of a leave-and-rejoin or leave a stale discovery hint after cleanup
   (never extra access; fixing it needs per-registration versioning). An interrupted first
@@ -71,21 +67,12 @@ Release qualification of the fresh 2.0.0 lineage. The record of what shipped is
   sync; the fix is a relay route that resets an `Uploading` room's blobs). A download that
   races account detachment can publish a file before its library row is updated; the next
   reconcile recovers it.
-- **Invalid-cookie admission.** UID-bound resource revocation is implemented; the separate
-  request-admission hardening remains in [ideas](ideas.md#resource-leases-after-a-member-leaves).
-- **Who may compact, and who owns an ID.** Any invited editor, including an anonymous guest,
-  can compact a room, and the Worker validates only the digest and frontier of the base it
-  receives; decide owner-only compaction or validating the base. Document UUIDs are chosen by
-  the client and the first named account to register one owns it, so a recipient who enables
-  sync first can block the original owner; consider server-derived IDs or a nonce.
 - **Structural follow-ups (no feature change).** A typed library membership state with
-  `CHECK` constraints and dropping the unread `documents.revision` column; one owned object
-  per browser connection attempt in `packages/pop/src/sharing/worker.ts`; small scheduling
+  `CHECK` constraints and dropping the unread `documents.revision` column; small scheduling
   and write types in the Rust owner's persistence; sharing receipts moved into the library
-  index database; splitting `CloudDocument::fetch`, `packages/pop/src/browser/host.ts::own`,
-  `pop-library`'s `lib.rs` and `DocumentSession.swift`.
+  index database; splitting `CloudDocument::fetch`, `pop-library`'s `lib.rs` and `DocumentSession.swift`.
 - **App Clip.** A spike after the iPhone app is on the App Store: whether the Rust sync
-  client's sockets run in a Clip, and how a guest's anonymous Firebase identity reaches the
+  client's sockets run in a Clip, and how a guest signs in with Apple and reaches the
   installed app. A Smart App Banner on the join page is the cheaper first step.
 - **Widgets.** Requalify every widget family and size on the release candidate, and
   background refresh on devices.
@@ -169,8 +156,7 @@ writable local copy, and bundled and cached masters work offline. Publisher iden
 upload limits, package isolation, checksums, immutable release identity and abuse controls
 are prerequisites.
 
-**Further collaboration.** Person-level permissions, read-only links, browser creator
-accounts, CLI share/join and reliable offline web reopening. Keep qualifying
+**Further collaboration.** Person-level permissions, read-only links and CLI share/join. Keep qualifying
 [container-creation and undo conflicts](reference/document-types.md#storage-layout) as
 collaboration grows.
 

@@ -19,8 +19,6 @@ serde_json = { workspace = true, features = ["raw_value"] }
 thiserror.workspace = true
 getrandom = "0.2"
 data-encoding = "=2.11.1"
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 pop-capture = { path = "../pop-capture", default-features = false }
 pop-runner = { path = "../pop-runner", default-features = false }
 libc = "0.2"

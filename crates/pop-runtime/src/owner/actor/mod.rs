@@ -2,27 +2,17 @@
 use super::*;
 use crate::{Code, Document};
 mod barrier;
-#[cfg(target_arch = "wasm32")]
-mod browser;
-#[cfg(not(target_arch = "wasm32"))]
 mod commands;
 mod persistence;
 mod saving;
 mod sync;
-#[cfg(target_arch = "wasm32")]
-pub use browser::BrowserDriver;
-#[cfg(not(target_arch = "wasm32"))]
 use commands::{Evaluation, Invocation, Work as EvaluationWork};
-#[cfg(target_arch = "wasm32")]
-use persistence::perform;
-#[cfg(not(target_arch = "wasm32"))]
 use persistence::persistence;
 use persistence::{StorageAction, Work};
 pub(super) use sync::Admission;
 use sync::{Link, SyncMessage};
 pub use sync::{SyncConnection, SyncEvent, SyncSink};
 
-#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn spawn(
     store: Arc<store::Store>,
     mode: store::Mode,
@@ -64,7 +54,6 @@ pub(super) fn spawn(
 }
 
 pub(super) enum Message {
-    #[cfg(not(target_arch = "wasm32"))]
     Evaluated {
         invocation: Invocation,
         result: Result<Evaluation>,
@@ -124,7 +113,6 @@ struct Actor {
     /// Driver-supplied time; shared admission and save scheduling never read an OS clock.
     now: Duration,
     unix_ms: u64,
-    #[cfg(not(target_arch = "wasm32"))]
     evaluate: Option<mpsc::Sender<EvaluationWork>>,
     evaluating: bool,
     core: Document,
@@ -170,7 +158,6 @@ impl Actor {
             admission: Arc::default(),
             now: Duration::ZERO,
             unix_ms: 0,
-            #[cfg(not(target_arch = "wasm32"))]
             evaluate: None,
             evaluating: false,
             core,
@@ -225,7 +212,6 @@ impl Actor {
         self.begin_sync_step();
         match message {
             Message::Stop => return false,
-            #[cfg(not(target_arch = "wasm32"))]
             Message::Evaluated { invocation, result } => self.command_finished(invocation, result),
             Message::Attach(view) => self.view = Some(view),
             Message::Sync(message) => self.sync(message),
@@ -317,7 +303,6 @@ impl Actor {
         self.reject_waiters(closed());
         self.fail_held(closed());
     }
-    #[cfg(not(target_arch = "wasm32"))]
     fn run(mut self, messages: mpsc::Receiver<Message>, started: Instant) {
         self.start();
         loop {
@@ -422,11 +407,6 @@ impl Actor {
             return Ok(None);
         }
         let reply = match request {
-            #[cfg(target_arch = "wasm32")]
-            Request::Command { .. } => {
-                return Err(Failure::rejected(Code::EngineError, "This pop has no command evaluator"));
-            }
-            #[cfg(not(target_arch = "wasm32"))]
             Request::Command { name, args_json, origin } => {
                 self.begin_command(name, args_json, origin, view, deadline, callback)?;
                 return Ok(None);
@@ -476,7 +456,6 @@ impl Actor {
                 self.wait(callback, AfterSave::Storage(StorageAction::StageSeed(destination)))?;
                 return Ok(None);
             }
-            #[cfg(not(target_arch = "wasm32"))]
             Request::SetArtwork { source_version, preview, icon } => {
                 self.mutation()?;
                 if self.core.reading()?.version != source_version {
@@ -498,7 +477,6 @@ impl Actor {
                 self.wait(callback, AfterSave::Close { preview, icon })?;
                 return Ok(None);
             }
-            #[cfg(not(target_arch = "wasm32"))]
             Request::Handoff { dest, preview, icon } => {
                 self.mutation()?;
                 let reading = self.core.reading()?;
@@ -578,7 +556,6 @@ impl Actor {
     }
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn native_unix_ms() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis() as u64
 }

@@ -191,7 +191,7 @@ availability in the affected docs.
 
 ## Sharing deployment
 
-`sharing.yml` qualifies the relay and browser host on matching `master` changes. After
+`sharing.yml` qualifies the relay on matching `master` changes. After
 publication and promotion, the release job explicitly dispatches it on the released tag,
 so share.dotpop.click runs the released core. Tags created with `GITHUB_TOKEN` do not
 trigger tag-push workflows; keep the explicit dispatch and the sharing workflow enabled.
@@ -243,8 +243,6 @@ depend on them:
   `78UAXU8QG8.com.hitslop.widgets` (Mac) and `group.com.hitslop` (iPhone).
 - Apple Services ID `com.hitslop.app.signin`, the Mac's web sign-in flow.
 - Firebase project `hitslopapp`, serving Auth, Analytics and Crashlytics.
-- `dotslop.com`, the isolated browser rendering domain whose UUID subdomains serve
-  authored pages.
 - The npm package `@hitslop/pop` and the GitHub repository `hitSlop/dotpop`.
 
 ## Local release backup
@@ -330,10 +328,9 @@ The Sparkle package's `exactVersion` in `apps/apple/project.yml` also selects th
 For the first lineage-2 release, hand-test old-product refusal (a clean older file stays byte-identical;
 if SQLite recovers a hot journal first, check the last committed state and the refusal instead),
 Mac/iPhone edits, offline/reconnect, sign-out,
-anonymous Chrome joining and Apple account linking. Transfer photos totalling more
+and joining a shared pop with Sign in with Apple. Transfer photos totalling more
 than 16 MiB from Mac to iPhone and verify the images after reopening. Exercise outgrowth
-and Save Unshared Copy. Deploy the account/document Worker and
-browser host, following the sharing operator checklist. The candidate workflow captures
+and Save Unshared Copy. Deploy the Worker, following the sharing operator checklist. The candidate workflow captures
 the first lineage-2 corpus; pin its retained hash after publication.
 
 `bun run release:check` runs all release tiers with the shipping `dist` Cargo profile.
@@ -411,9 +408,9 @@ Mac's Time Machine backup alongside the retained release assets.
   Verify discovery on a fresh device, download-on-open, invitation revocation while
   owner sync continues, and sign-out hiding files without losing pending edits.
 - Check live collaboration without launch flags in the signed Mac candidate: Apple
-  sign-in, create/copy a link, join on another Mac/iPhone and in Chrome, edit from
+  sign-in, create/copy a link, join on another Mac or iPhone, edit from
   each copy, reconnect after offline edits, Stop and re-share, Save Unshared Copy,
-  and account deletion. Open a `share.dotpop.click/join` link from the browser and
+  and account deletion. Open a `share.dotpop.click/join` link on a Mac and an iPhone and
   confirm the app receives its complete capability fragment.
 - Update from the previous supported signed release through Sparkle. Confirm publisher,
   resulting version and that its existing documents still work. For the first public

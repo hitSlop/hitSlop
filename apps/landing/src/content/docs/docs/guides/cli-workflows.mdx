@@ -298,33 +298,3 @@ The Mac app and the `pop` package share a release version. Within a project, upd
 Update the global CLI with `bun install -g @hitslop/pop@VERSION`, replacing `VERSION` with the matching released version. Installed agent skills point at the global CLI, so they update with it.
 
 Interactive commands may show an update notice on stderr with that command, checked at most daily. Network failures do not fail your command. CI and piped commands skip these checks; set `POP_NO_UPDATE_CHECK=1` to disable them in a terminal as well.
-
-## Local browser copies
-
-```sh
-pop open --browser ./MyDocument.pop
-pop open --browser
-```
-
-Example responses (copy and import IDs vary):
-
-```text
-http://127.0.0.1:41238/?copy=COPY_ID#import=IMPORT_ID
-Local browser host is running. Keep this terminal open; Ctrl-C stops it.
-```
-
-Opening the list prints `http://127.0.0.1:41238`. The host message appears only when
-this invocation starts the host; one that reuses it prints the URL and exits.
-
-The first command opens an independent copy in desktop Google Chrome. The second
-opens your saved browser copies. Keep the host terminal running; Ctrl-C stops it.
-Later invocations reuse the same host. No account or server upload is involved.
-
-Edits autosave in this browser profile on this device. **Download .pop** includes the
-current app, data, theme and referenced attachments for opening in the desktop client.
-The original file stays unchanged. Browser storage can be cleared or evicted: download
-copies you want to keep. Reload requires the local host to be running.
-
-Chrome on desktop is supported. Safari, private browsing and mobile browsers remain unqualified. Hosted edit links use the separate
-[live sharing](/docs/guides/live-sharing/). Fullscreen appears for apps declaring
-`fullscreenable`; **Keep awake** is a separate, initially off toggle.

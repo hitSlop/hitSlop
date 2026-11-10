@@ -217,8 +217,7 @@ describes today's APIs and platform limits.
 - **Workers and audio worklets:** package local entry points for heavier background
   processing and richer audio libraries. Keep the existing refusal of blob/data executable
   code; this needs explicit build and host support.
-- **Broader transcription:** support transcription in browser copies and investigate a
-  newer native speech backend, while retaining a useful path when unavailable.
+- **Broader transcription:** investigate a newer native speech backend, while retaining a useful path when unavailable.
 - **Permissions for each pop:** build on [code-bound grants](#permissions-bound-to-the-apps-code),
   so a person chooses which app can use an integration and reviews that choice after
   a remix or upgrade.
@@ -231,7 +230,7 @@ background execution remain design work; this proposal sets no new API names or 
 
 - **What:** let an app discover what its current host can actually do, so it can adapt
   its interface and offer a useful fallback when a feature is unavailable.
-- **Why:** a native document, development preview and browser copy do not have identical
+- **Why:** a native document and the development preview do not have identical
   services. For example, a voice notebook can still play its recording when on-device
   transcription is unavailable. OS-name checks alone cannot describe that difference.
 - **Builds on:** the roadmap's CLI `hello` feature list and page host/feature handshake,
@@ -377,6 +376,17 @@ Document Durable Objects publish title, membership and sharing changes to accoun
 library feeds. Offline devices reconcile on reconnect. The Document Durable Object
 remains the permission authority.
 
+### Opening a shared pop in a browser
+
+A shared pop can be opened where dotpop is not installed. The intended design is a live
+session, not a saved copy: the document core and the sync session compile to WASM, the
+cloud document holds the state, and the browser keeps no storage of its own, so leaving
+the tab leaves nothing behind. `pop-core` stays free of storage, threads and operating
+system dependencies, and the reconnect supervisor stays pure, so both can run there
+unchanged. An earlier implementation kept a durable copy in the browser's origin-private
+storage; it is in git history before the browser removal on branch
+`chore/crates-foundation`.
+
 ### Slimmer history for shared documents
 
 [Compaction](cloud-documents.md#sync-and-compaction) folds retained updates into one
@@ -415,8 +425,8 @@ does not freeze their API or promise that every future addition is compatible.
 The manifesto also argues for cloud sandboxes, organization-wide governance and routing
 between model providers. Those serve an enterprise agent platform. pop takes the
 principles (agents next to the work, visible authorship, nothing starts from scratch) and
-keeps local documents usable without an account. Cloud sync is optional; owners sign in
-with Apple, and link guests need no account.
+keeps local documents usable without an account. Cloud sync is optional; owners and
+guests sign in with Apple.
 
 ## Possible command extensions after launch
 
@@ -424,17 +434,3 @@ Commands currently serve agents and take flat scalar arguments. Page command cal
 could add a context method behind a new runtime ABI; `s.row(list)` could add a checked
 argument kind, and nested arguments could widen package-format acceptance. None is
 required for launch. Pages share plain functions over `Scope` with commands today.
-
-## Resource leases after a member leaves
-
-**Implemented.** Resource sessions are bound to the Firebase UID that created them.
-Reads check current membership before and after awaited R2 access. Individual leave
-deletes that member's sessions; global invitation revocation and document deletion
-clear all sessions. Boundary tests cover leave, global revocation and continued private
-owner access. The cookies cannot read the SQLite seed, document state or sync stream.
-
-A separate nonblocking hardening follow-up is invalid-cookie admission. The authored
-resource entry runs before the ordinary document-route IP limiter. A forged cookie with
-valid syntax can therefore reach an arbitrary Document DO before its token is looked up;
-the lookup still denies access to bytes. Consider bounded invalid-cookie or IP controls
-that account for legitimate parallel asset and attachment loads.

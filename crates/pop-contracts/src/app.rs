@@ -70,7 +70,7 @@ pub struct AppMetadata {
 }
 
 /// A device or host service an app declares it uses. The host admits a request only for a
-/// declared capability; the OS or browser permission still applies. Authoring refuses any
+/// declared capability; the OS permission still applies. Authoring refuses any
 /// value not listed here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

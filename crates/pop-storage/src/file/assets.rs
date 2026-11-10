@@ -3,7 +3,6 @@
 use crate::error::{Result, failed, invalid, sqlite};
 use crate::wire::ASSET_PATH_BYTES;
 use rusqlite::{Connection, MAIN_DB, OptionalExtension};
-#[cfg(not(target_arch = "wasm32"))]
 use std::borrow::Cow;
 use std::io::Read;
 
@@ -81,7 +80,6 @@ pub(super) fn read_asset(conn: &Connection, key: &str) -> Result<Option<Vec<u8>>
 /// anything else as it is, so media ranges read straight from the file. Quality 10 stores
 /// within a page or so of 11 in half the time; past 4 MiB it takes seconds, so larger
 /// assets use 9.
-#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn encode<'a>(key: &str, bytes: &'a [u8]) -> Result<(Encoding, Cow<'a, [u8]>)> {
     let kind = content_type(key);
     if kind.starts_with("text/") || matches!(kind, "application/json" | "image/svg+xml" | "application/wasm") {
@@ -123,6 +121,9 @@ struct ResourceRow {
     info: ResourceInfo,
 }
 
+/// How much of an attachment verification hashes per read.
+const ATTACHMENT_VERIFY_CHUNK: usize = 1 << 20;
+
 /// One query-only connection, with first-touch attachment verification and decoded text
 /// caching. Identity media ranges use SQLite BLOB reads without loading the whole asset.
 #[derive(Default)]
@@ -133,15 +134,11 @@ pub(crate) struct ResourceCache {
 }
 pub struct ResourceReader<C = Connection> {
     conn: C,
-    cache: std::sync::Arc<std::sync::Mutex<ResourceCache>>,
+    cache: std::sync::Mutex<ResourceCache>,
 }
 impl<C: std::borrow::Borrow<Connection>> ResourceReader<C> {
-    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn new(conn: C) -> Self {
-        Self::with_cache(conn, Default::default())
-    }
-    pub(crate) fn with_cache(conn: C, cache: std::sync::Arc<std::sync::Mutex<ResourceCache>>) -> Self {
-        Self { conn, cache }
+        Self { conn, cache: Default::default() }
     }
     fn row(&self, route: ResourceRoute, key: &str) -> Result<Option<ResourceRow>> {
         let row = match route {
@@ -207,7 +204,7 @@ impl<C: std::borrow::Borrow<Connection>> ResourceReader<C> {
             let media = crate::media::attachment_type_stream(&mut blob, row.info.size as usize).map_err(failed)?;
             blob.seek(SeekFrom::Start(0)).map_err(failed)?;
             let mut hash = Sha256::new();
-            let mut chunk = vec![0; crate::wire::browser::TRANSFER_BYTES];
+            let mut chunk = vec![0; ATTACHMENT_VERIFY_CHUNK];
             loop {
                 let count = blob.read(&mut chunk).map_err(failed)?;
                 if count == 0 {

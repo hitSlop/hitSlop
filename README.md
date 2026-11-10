@@ -109,8 +109,8 @@ so the catalog uses their latest changes.
 - Export a PNG or PDF to send an invoice, print a recipe, or drop a plan into a message.
 - Use **Share a Copy** to send a saved copy, with its attachments and colors, while you keep working in the original.
 - Add a widget for a pop with a widget view: on your Mac desktop, or for library pops on the iPhone Home Screen in TestFlight. Tap to open it; iPhone widgets also refresh in the background, when iOS allows.
-- Choose **Live collaboration** in the Share popover. The owner signs in with Apple; anyone with the link can edit in dotpop on Mac/iPhone or in Chrome at share.dotpop.click. Chrome saves a downloadable browser copy. **Stop** ends the link and everyone keeps their copy. [Live sharing](https://dotpop.click/docs/guides/live-sharing/) explains how it works.
-- Design for the phone as well as the desktop: pops can switch to a compact layout on iPhone and play native haptics, which stay silent on Mac and in browsers. [Make it work on iPhone](https://dotpop.click/docs/guides/mobile/).
+- Choose **Live collaboration** in the Share popover. The owner signs in with Apple to create the link; anyone with it joins in dotpop on Mac or iPhone, also signing in with Apple. **Stop** ends the link and everyone keeps their copy. [Live sharing](https://dotpop.click/docs/guides/live-sharing/) explains how it works.
+- Design for the phone as well as the desktop: pops can switch to a compact layout on iPhone and play native haptics, which stay silent on Mac. [Make it work on iPhone](https://dotpop.click/docs/guides/mobile/).
 - Pin a pop **Always on Top**, or enter fullscreen in apps that enable it, including Checklist and Hourglass.
 - Finder icons can show what's inside, such as a counter's total.
 - Change a document's colors without touching its code, or edit the source to make a different tool.
@@ -173,7 +173,7 @@ Here’s where we’re heading:
 
 - [x] **iPhone app.** Open, edit and create pops, import from Files, and add Home Screen widgets in TestFlight on iOS 26+.
 - [x] **Sync.** Keep pops in sync between your Mac and iPhone when you sign in.
-- [x] **Live collaboration.** Edit together through a link on Mac, iPhone or Chrome.
+- [x] **Live collaboration.** Edit together through a link on Mac or iPhone.
 - [ ] **Release the iPhone app.** Bring iPhone to the App Store and qualify sharing on release devices.
 - [ ] **More platforms.** Explore iPadOS, Android, Windows and Linux native apps.
 - [ ] **Ask from the window.** Work with your agent beside your document, see what it changed, and undo its edits.

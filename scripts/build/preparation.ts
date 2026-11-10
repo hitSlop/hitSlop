@@ -4,10 +4,9 @@ export const prerequisites = {
   shell: [],
   native: ["engine"],
   sdk: [],
-  browser: [],
   sharing: [],
   templates: ["engine", "shell"],
-  packages: ["engine", "shell", "browser"],
+  packages: ["engine", "shell"],
   app: [],
 } as const;
 export type Build = keyof typeof prerequisites;

@@ -10,12 +10,6 @@ pub fn constants() -> Vec<(&'static str, Value)> {
     vec![
         ("DocumentLineage", json!(pop_contracts::lineage::DOCUMENT_LINEAGE)),
         ("CompactLayoutWidth", json!(crate::page_wire::COMPACT_LAYOUT_WIDTH)),
-        (
-            "BrowserHost",
-            json!({"port": browser::PORT, "protocol": browser::PROTOCOL, "containerFormat": browser::CONTAINER_FORMAT, "chunkBytes": browser::TRANSFER_BYTES, "fileBytes": browser::FILE_BYTES}),
-        ),
-        ("BrowserResourcePolicy", json!(browser::page_policy())),
-        ("BrowserHostPolicy", json!(browser::host_policy())),
         ("NativeResourcePolicy", json!(crate::NATIVE_RESOURCE_POLICY)),
         // The CLI substitutes its loopback origin; all policy directives live here.
         (

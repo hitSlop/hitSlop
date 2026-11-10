@@ -97,7 +97,6 @@ export async function request(
 }
 
 const replyFields = {
-  copy: ["output"],
   get: ["state"],
   batch: ["ids"],
   export: ["output"],
@@ -135,7 +134,7 @@ function acknowledged(value: unknown, method: EngineMethod): value is EngineRepl
   if (replyFields[method].some((key) => !Object.hasOwn(reply, key))) return false;
   if (method === "batch" || method === "call")
     return Array.isArray(reply.ids) && reply.ids.every((id) => typeof id === "string");
-  if (method === "export" || method === "copy") return typeof reply.output === "string";
+  if (method === "export") return typeof reply.output === "string";
   if (method === "artwork.export") return reply.output === null || typeof reply.output === "string";
   if (method === "create" || method === "open") return typeof reply.documentPath === "string";
   return true;

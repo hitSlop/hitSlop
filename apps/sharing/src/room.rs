@@ -12,10 +12,10 @@ use wasm_bindgen::{JsCast, JsValue, closure::Closure, prelude::wasm_bindgen};
 use worker::*;
 #[path = "access.rs"]
 mod access;
+#[path = "blobs.rs"]
+mod blobs;
 #[path = "publication.rs"]
 pub(crate) mod publication;
-#[path = "resources.rs"]
-mod resources;
 
 // A SQLite snapshot must contain the complete fixed-size database header.
 const SQLITE_HEADER_BYTES: usize = 100;
@@ -111,70 +111,18 @@ pub async fn main(req: Request, env: Env, _: Context) -> Result<Response> {
     response.headers_mut().set("Content-Type", "application/json")?;
     Ok(response)
 }
-async fn serve(mut req: Request, env: Env) -> Result<Response> {
-    if req.path().starts_with("/assets/")
-        || req.path().starts_with("/attachments/")
-        || req.path().starts_with("/_resources/")
-    {
-        return resources::entry(req, env).await;
-    }
-    let origin = req.headers().get("Origin")?;
-    let allowed = env.var("BROWSER_ORIGIN").ok().map(|v| v.to_string());
-    if origin.is_some() && origin != allowed {
-        return Response::error("Origin refused", 403);
-    }
-    if req.method() == Method::Options {
-        if origin.is_none() {
-            return Response::error("Origin required", 403);
-        }
-        let mut response = Response::empty()?.with_status(204);
-        response.headers_mut().set("Access-Control-Allow-Origin", origin.as_deref().unwrap())?;
-        response.headers_mut().set("Access-Control-Allow-Methods", "GET, HEAD, POST, PUT, PATCH, DELETE")?;
-        response.headers_mut().set(
-            "Access-Control-Allow-Headers",
-            "Authorization, Content-Type, X-Sharing-SHA256, X-Sharing-App, X-Sharing-Version",
-        )?;
-        response.headers_mut().set("Vary", "Origin")?;
-        return Ok(response);
-    }
+async fn serve(req: Request, env: Env) -> Result<Response> {
     let path = req.path();
+    // One table decides what exists: an unlisted method, path or extra segment is a 404
+    // before any limiter, identity check or Durable Object is reached.
     let Some(matched) = routes::find(req.method().as_ref(), &path) else {
         return Response::error("Not found", 404);
     };
+    let websocket = req.headers().get("Upgrade")?.as_deref() == Some("websocket");
     let protocol = matched.route.socket_protocol();
-    if req.headers().get("Upgrade")?.as_deref() == Some("websocket") && protocol.is_none() {
-        return requires_update(origin.as_deref());
+    if websocket && (protocol.is_none() || req.headers().get("Sec-WebSocket-Protocol")?.as_deref() != protocol) {
+        return requires_update();
     }
-    let expected_protocol = protocol.unwrap_or(SOCKET_PROTOCOL);
-    let browser_socket = req.headers().get("Upgrade")?.as_deref() == Some("websocket") && origin.is_some();
-    if browser_socket {
-        req = req.clone_mut()?;
-        let protocols = req.headers().get("Sec-WebSocket-Protocol")?.unwrap_or_default();
-        let values: Vec<_> = protocols.split(',').map(str::trim).collect();
-        if values.first().copied() != Some(expected_protocol) {
-            return requires_update(origin.as_deref());
-        }
-        if values.len() != 2 {
-            return Response::error("Protocol refused", 403);
-        }
-        let Some(token) = values[1].strip_prefix("jwt.") else {
-            return Response::error("Denied", 403);
-        };
-        if crate::auth::key_id(token).is_err() {
-            return Response::error("Denied", 403);
-        }
-        req.headers_mut()?.set("Authorization", &format!("Bearer {token}"))?;
-        // Only the public protocol is selected; never echo credentials in replies.
-        req.headers_mut()?.delete("Sec-WebSocket-Protocol")?;
-    }
-    if req.headers().get("Upgrade")?.as_deref() == Some("websocket")
-        && !browser_socket
-        && req.headers().get("Sec-WebSocket-Protocol")?.as_deref() != Some(expected_protocol)
-    {
-        return requires_update(origin.as_deref());
-    }
-    // One table decides what exists: an unlisted method, path or extra segment is a 404
-    // before any limiter, identity check or Durable Object is reached.
     if matched.route.op == Op::Health {
         return Response::ok("pop-sharing");
     }
@@ -182,12 +130,7 @@ async fn serve(mut req: Request, env: Env) -> Result<Response> {
         // Cloudflare sets this header. Missing IPs share a conservative fallback budget.
         let ip = req.headers().get("CF-Connecting-IP")?.unwrap_or_else(|| "unknown".into());
         if !env.rate_limiter(binding)?.limit(ip).await?.success {
-            let mut response = Response::error("Limited", 429)?;
-            if let Some(origin) = origin {
-                response.headers_mut().set("Access-Control-Allow-Origin", &origin)?;
-                response.headers_mut().set("Vary", "Origin")?;
-            }
-            return Ok(response);
+            return Response::error("Limited", 429);
         }
     }
     let mut response = match (matched.route.scope, matched.document) {
@@ -203,29 +146,20 @@ async fn serve(mut req: Request, env: Env) -> Result<Response> {
         }
         _ => return Response::error("Not found", 404),
     };
-    let headers = response.headers().clone();
-    response = response.with_headers(headers);
-    if let Some(origin) = origin {
-        response.headers_mut().set("Access-Control-Allow-Origin", &origin)?;
-        response.headers_mut().set("Vary", "Origin")?;
-    }
     if response.status_code() == 101 {
-        response.headers_mut().set("Sec-WebSocket-Protocol", expected_protocol)?;
+        let headers = response.headers().clone();
+        response = response.with_headers(headers);
+        response.headers_mut().set("Sec-WebSocket-Protocol", protocol.unwrap_or(SOCKET_PROTOCOL))?;
     }
     Ok(response)
 }
 
-fn requires_update(origin: Option<&str>) -> Result<Response> {
-    let response = Response::from_json(&pop_sharing_protocol::http::ApiFailure {
+fn requires_update() -> Result<Response> {
+    Ok(Response::from_json(&pop_sharing_protocol::http::ApiFailure {
         code: "requires_update".into(),
         message: "Update pop to use this document service".into(),
-    })?;
-    let mut response = response.with_status(426);
-    if let Some(origin) = origin {
-        response.headers_mut().set("Access-Control-Allow-Origin", origin)?;
-        response.headers_mut().set("Vary", "Origin")?;
-    }
-    Ok(response)
+    })?
+    .with_status(426))
 }
 
 // worker 0.8.7 exposes SQL but not transactionSync. Bind that one native method;
@@ -513,7 +447,7 @@ impl CloudDocument {
                     }
                 }
             }
-            self.sql.exec("DELETE FROM resource_sessions; DELETE FROM resource_blobs; DELETE FROM records; DELETE FROM chunks; DELETE FROM meta WHERE key IN ('seed_hash','seed_size','resources','root','heads','base_version')",None)?;
+            self.sql.exec("DELETE FROM resource_blobs; DELETE FROM records; DELETE FROM chunks; DELETE FROM meta WHERE key IN ('seed_hash','seed_size','root','heads','base_version')",None)?;
             self.state.storage().sync().await?;
             if let Some(uid) = self.text("owner_uid")?
                 && !self.release_registration(&uid, None).await?
@@ -733,7 +667,7 @@ impl CloudDocument {
 
 fn initialize(sql: &SqlStorage) {
     sql.exec("CREATE TABLE IF NOT EXISTS pending_registry(uid TEXT PRIMARY KEY,generation INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS members(uid TEXT PRIMARY KEY,generation INTEGER NOT NULL)",None).expect("document access tables");
-    sql.exec("CREATE TABLE IF NOT EXISTS garbage(key TEXT PRIMARY KEY); CREATE TABLE IF NOT EXISTS resource_sessions(token TEXT PRIMARY KEY,uid TEXT NOT NULL,host TEXT NOT NULL,app TEXT NOT NULL,expires REAL NOT NULL); CREATE TABLE IF NOT EXISTS resource_blobs(id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS records(seq INTEGER PRIMARY KEY AUTOINCREMENT,spans TEXT NOT NULL,size INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS chunks(seq INTEGER NOT NULL,part INTEGER NOT NULL,bytes BLOB NOT NULL,PRIMARY KEY(seq,part))",None).expect("create sharing tables");
+    sql.exec("CREATE TABLE IF NOT EXISTS garbage(key TEXT PRIMARY KEY); CREATE TABLE IF NOT EXISTS resource_blobs(id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS records(seq INTEGER PRIMARY KEY AUTOINCREMENT,spans TEXT NOT NULL,size INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS chunks(seq INTEGER NOT NULL,part INTEGER NOT NULL,bytes BLOB NOT NULL,PRIMARY KEY(seq,part))",None).expect("create sharing tables");
 }
 
 fn decode_hex(text: &str) -> Result<Vec<u8>> {
@@ -763,12 +697,6 @@ impl DurableObject for CloudDocument {
         }
     }
     async fn fetch(&self, mut req: Request) -> Result<Response> {
-        if req.path().starts_with("/assets/")
-            || req.path().starts_with("/attachments/")
-            || req.path().starts_with("/_resources/")
-        {
-            return self.resource_fetch(req).await;
-        }
         let path = req.path();
         if req.method() == Method::Post
             && self.text("document")?.is_some_and(|document| path == format!("/internal/documents/{document}/library"))
@@ -815,7 +743,7 @@ impl DurableObject for CloudDocument {
                 Ok(input) => input,
                 Err(error) => return error.response(),
             };
-            if !pop_sharing_protocol::valid_copy(&input.document) || input.owner_uid.is_empty() {
+            if !pop_sharing_protocol::valid_document_id(&input.document) || input.owner_uid.is_empty() {
                 return Response::error("Invalid metadata", 400);
             }
             if self.phase()? == Some(RoomPhase::Ended) {
@@ -905,11 +833,10 @@ impl DurableObject for CloudDocument {
             }
             return Response::from_json(&self.info()?);
         }
-        let owner_write = matches!(op, Op::Open | Op::PutSeed | Op::PutResources | Op::PutAsset);
+        let owner_write = matches!(op, Op::Open | Op::PutSeed);
         let owner = if owner_write
             || (matches!(op, Op::PutBlob | Op::ListBlobs) && phase == RoomPhase::Uploading)
-            || (matches!(op, Op::GetSeed | Op::GetResources | Op::ListBlobs | Op::GetBlob)
-                && !self.authorized_guest(&req).await?)
+            || (matches!(op, Op::GetSeed | Op::ListBlobs | Op::GetBlob) && !self.authorized_guest(&req).await?)
         {
             match self.authorize_creator(&req).await? {
                 crate::auth::CreatorAuthorization::Allowed => {}
@@ -924,7 +851,7 @@ impl DurableObject for CloudDocument {
             }
             false
         };
-        // Serializing preparation and open prevents a late seed/manifest/asset write
+        // Serializing preparation and open prevents a late seed write
         // from changing a Live room. Stop stays independent and can cancel an upload.
         let _upload = if owner_write { Some(self.uploads.lock().await) } else { None };
         let phase = self.phase()?.ok_or_else(|| fail("Missing phase"))?;
@@ -954,27 +881,11 @@ impl DurableObject for CloudDocument {
             if phase == RoomPhase::Live {
                 return Response::from_json(&self.info()?);
             }
-            let Some(manifest) = self.text("resources")? else {
-                return Response::error("App not ready", 409);
-            };
-            let manifest: crate::resource_types::Manifest = serde_json::from_str(&manifest)?;
-            if self.text("app")?.as_ref() != Some(&manifest.app) {
-                return Response::error("Different app", 409);
-            }
             let bucket = self.env.bucket("SEEDS")?;
             let seed_size: u64 =
                 self.text("seed_size")?.unwrap_or_default().parse().map_err(|_| fail("Invalid seed size"))?;
             if bucket.head(object_key(room, "seed")).await?.is_none_or(|o| o.size() != seed_size) {
                 return Response::error("Seed not ready", 409);
-            }
-            for item in manifest.resources {
-                if bucket
-                    .head(object_key(room, &format!("assets/{}", item.hash)))
-                    .await?
-                    .is_none_or(|o| o.size() != item.size)
-                {
-                    return Response::error("App not ready", 409);
-                }
             }
             if self.phase()? == Some(RoomPhase::Ended) {
                 return Response::error("Sharing ended", 410);
@@ -990,9 +901,8 @@ impl DurableObject for CloudDocument {
         if !owner && phase != RoomPhase::Live {
             return Response::error("Publication pending", 409);
         }
-        if matches!(op, Op::GetResources | Op::PutResources | Op::PutAsset | Op::ListBlobs | Op::GetBlob | Op::PutBlob)
-        {
-            return self.resource_api(&mut req, room, op, matched.hash).await;
+        if matches!(op, Op::ListBlobs | Op::GetBlob | Op::PutBlob) {
+            return self.blob_api(&mut req, room, op, matched.hash).await;
         }
         if op == Op::Compact {
             return self.compact(&mut req).await;

@@ -202,7 +202,6 @@ impl CloudDocument {
             // depends on the account's reply.
             let generation = self.generation()?;
             self.sql.exec("DELETE FROM members WHERE uid=?", vec![claims.sub.clone().into()])?;
-            self.sql.exec("DELETE FROM resource_sessions WHERE uid=?", vec![claims.sub.clone().into()])?;
             self.queue_release(&claims.sub, generation).await?;
             for ws in self.state.get_websockets() {
                 if ws.deserialize_attachment::<SocketState>()?.is_some_and(|state| state.uid == claims.sub) {
@@ -260,7 +259,7 @@ impl CloudDocument {
                             .filter(|v| *v <= i64::MAX as u64)
                             .ok_or_else(|| fail("Access generation exhausted"))?;
                         self.queue_registry_releases()?;
-                        self.sql.exec("DELETE FROM members; DELETE FROM resource_sessions; DELETE FROM meta WHERE key='capability'",None)?;
+                        self.sql.exec("DELETE FROM members; DELETE FROM meta WHERE key='capability'", None)?;
                         self.put("access_generation", &generation.to_string())?;
                         self.schedule_cleanup(5_000).await?;
                         self.state.storage().sync().await?;

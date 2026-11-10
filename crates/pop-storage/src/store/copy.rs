@@ -1,8 +1,6 @@
 //! Native clean copies, sharing seeds, capture sources, backups and artwork.
 use super::*;
 
-const RESOURCE_HASH_CHUNK_BYTES: u64 = 1 << 20;
-
 impl Store {
     /// Files import reads one accepted snapshot without owning or modifying the source.
     /// The destination gets an independent identity, retaining the imported file's
@@ -92,48 +90,6 @@ impl Store {
         let app = self.app.app.spec();
         self.read(|conn| {
             file::copy(conn, dest, false, true, Some(&|staged: &Connection| clean(staged, app, state, &artwork)))
-        })
-    }
-
-    /// The public app resource inventory from one accepted SQLite snapshot, hashed
-    /// through the bounded resource reader.
-    pub fn sharing_manifest(&self) -> Result<pop_sharing_protocol::resources::Manifest> {
-        use pop_sharing_protocol::resources::{self, Manifest, Resource};
-        self.check(false)?;
-        self.read(|connection| {
-            let read = connection.unchecked_transaction().map_err(sqlite("read sharing resources"))?;
-            let connection: &Connection = &read;
-            let reader = file::ResourceReader::with_cache(connection, Default::default());
-            let mut inventory = Vec::new();
-            for key in rows::asset_keys(&read)? {
-                if !resources::asset_key(&key) {
-                    continue;
-                }
-                let info = reader
-                    .info(file::ResourceRoute::App, &key)?
-                    .ok_or_else(|| failed("Missing public app resource"))?;
-                let mut hash = Sha256::new();
-                let mut offset = 0;
-                while offset < info.size {
-                    let length = (info.size - offset).min(RESOURCE_HASH_CHUNK_BYTES);
-                    let bytes = reader
-                        .read_range(file::ResourceRoute::App, &key, offset, length)?
-                        .ok_or_else(|| failed("Missing app resource bytes"))?;
-                    if bytes.len() as u64 != length {
-                        return Err(failed("Incomplete app resource bytes"));
-                    }
-                    hash.update(&bytes);
-                    offset += length;
-                }
-                inventory.push(Resource {
-                    key,
-                    hash: crate::hex(&hash.finalize()),
-                    size: info.size,
-                    media_type: info.media_type,
-                });
-            }
-            resources::validate(&inventory, false).map_err(failed)?;
-            Ok(Manifest { app: crate::hex(&rows::app_digest(&read)?), resources: inventory })
         })
     }
 

@@ -135,7 +135,6 @@ impl Actor {
                 Work::Store { callback, .. } | Work::Restore { callback, .. } | Work::Close { callback, .. } => {
                     complete(callback, Err(poisoned()))
                 }
-                #[cfg(not(target_arch = "wasm32"))]
                 Work::Handoff { callback, .. } => complete(callback, Err(poisoned())),
                 Work::Save { .. } => {}
             }

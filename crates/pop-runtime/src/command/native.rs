@@ -236,20 +236,6 @@ fn dispatch(
                     state: AttachmentBytes { bytes: data_encoding::BASE64.encode(&bytes) },
                 }
             }
-            EngineRequest::Copy { document_path, output, .. } => {
-                saving = true;
-                let output = if exporter.is_some() {
-                    export(ExportRequest { document_path, format: None, output }, exporter, deadline)?
-                } else {
-                    call(
-                        owner,
-                        owner::Request::Copy { destination: Path::new(&output).to_owned(), preview: None, icon: None },
-                        deadline,
-                    )?;
-                    output
-                };
-                EngineSuccess::Copy { ok: True, output }
-            }
             EngineRequest::Export { document_path, format, output, .. } => EngineSuccess::Export {
                 ok: True,
                 output: export(ExportRequest { document_path, format: Some(format), output }, exporter, deadline)?,

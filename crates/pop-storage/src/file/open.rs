@@ -1,16 +1,13 @@
 //! Bounded summaries and fully checked application reads.
 use super::assets::read_asset;
 use super::check::{contents, layout, markers, one};
-#[cfg(not(target_arch = "wasm32"))]
 use super::{Artwork, reader, resolve};
 use super::{Kind, assets, rows};
 use crate::app::{AppDefinition, AppMetadata, Author, WindowFrame};
-#[cfg(not(target_arch = "wasm32"))]
 use crate::error::failed;
 use crate::error::{Error, Result, invalid, sqlite};
 use crate::wire::MANIFEST_BYTES;
 use rusqlite::Connection;
-#[cfg(not(target_arch = "wasm32"))]
 use std::fs;
 use std::path::Path;
 
@@ -56,7 +53,6 @@ fn summary_on(conn: &Connection, path: &Path) -> Result<Summary> {
     let kind = if one(conn, "SELECT count(*) FROM document")? == 0 { Kind::Template } else { Kind::Document };
     Ok(Summary { kind, package_format, runtime_abi, metadata, bytes: stored_bytes(conn, path)? })
 }
-#[cfg(not(target_arch = "wasm32"))]
 pub fn summary(path: &Path) -> Result<Summary> {
     let conn = reader(path)?;
     let read = conn.unchecked_transaction().map_err(sqlite("read"))?;
@@ -180,17 +176,14 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
         bytes: summary.bytes,
     })
 }
-#[cfg(not(target_arch = "wasm32"))]
 pub fn open(path: &Path, integrity: bool) -> Result<OpenedApp> {
     opened(&reader(path)?, path, integrity)
 }
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn checked(path: &Path) -> Result<(Connection, Kind)> {
     let conn = reader(path)?;
     let kind = summary_on(&conn, path)?.kind;
     Ok((conn, kind))
 }
-#[cfg(not(target_arch = "wasm32"))]
 pub fn artwork(path: &Path, preferred: &[Artwork]) -> Result<Option<(Artwork, Vec<u8>)>> {
     let conn = reader(path)?;
     let read = conn.unchecked_transaction().map_err(sqlite("read"))?;
@@ -202,13 +195,11 @@ pub fn artwork(path: &Path, preferred: &[Artwork]) -> Result<Option<(Artwork, Ve
     }
     Ok(None)
 }
-#[cfg(not(target_arch = "wasm32"))]
 pub fn kind(path: &Path) -> Result<Kind> {
     Ok(summary(path)?.kind)
 }
 /// Copies existing cosmetic artwork without running the app or changing its file.
 /// A caller provides a fresh output path; existing files are never overwritten.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn export_artwork(path: &Path, name: Artwork, output: &Path) -> Result<bool> {
     use std::io::Write;
     let Some((_, png)) = artwork(path, &[name])? else {
@@ -225,7 +216,6 @@ pub fn export_artwork(path: &Path, name: Artwork, output: &Path) -> Result<bool>
 
 /// A summary for `pop inspect`: kind, markers, assets, artwork and the document's sizes,
 /// of a file every open would accept.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn inspect(path: &Path) -> Result<crate::engine::InspectInfo> {
     use crate::engine::{AttachmentTotals, FileKind, InspectInfo, NamedSize, StateSizes};
     let conn = reader(path)?;
@@ -277,18 +267,12 @@ pub fn inspect(path: &Path) -> Result<crate::engine::InspectInfo> {
 }
 
 /// The app's descriptor, for `pop schema`, from a file every open would accept.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn descriptor(path: &Path) -> Result<String> {
     Ok(open(path, false)?.app.document_json().into())
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn stored_bytes(_: &Connection, path: &Path) -> Result<u64> {
     Ok(fs::metadata(resolve(path)?).map(|m| m.len()).unwrap_or(0))
-}
-#[cfg(target_arch = "wasm32")]
-fn stored_bytes(conn: &Connection, _: &Path) -> Result<u64> {
-    Ok((one(conn, "PRAGMA page_count")? * one(conn, "PRAGMA page_size")?) as u64)
 }
 
 #[cfg(test)]

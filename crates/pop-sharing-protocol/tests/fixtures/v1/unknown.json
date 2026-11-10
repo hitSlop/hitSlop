@@ -1,11 +1,5 @@
 {
   "phase": "futurePhase",
-  "control": {
-    "type": "futureControl"
-  },
-  "event": {
-    "type": "futureEvent"
-  },
   "frames": [
     "ff",
     "020200",
@@ -25,31 +19,9 @@
       }
     },
     {
-      "type": "SharingEvent",
-      "name": "sync without its phase",
-      "input": {
-        "type": "sync",
-        "status": "Synced"
-      }
-    },
-    {
-      "type": "SharingControl",
-      "name": "join without an invitation",
-      "input": {
-        "type": "joinInvitation"
-      }
-    },
-    {
       "type": "OpenRoom",
       "name": "open without its seed hash",
       "input": {}
-    },
-    {
-      "type": "ConnectionPlan",
-      "name": "connection without its size",
-      "input": {
-        "document": "00000000-0000-4000-8000-000000000001"
-      }
     }
   ]
 }

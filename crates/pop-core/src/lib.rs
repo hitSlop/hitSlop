@@ -34,7 +34,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
-pub use wire::browser as browser_wire;
 pub use wire::build;
 pub use wire::engine;
 pub use wire::engine::{EngineReply, EngineRequest, EngineSuccess};

@@ -6,9 +6,7 @@ use crate::{
     wire::{self, OutcomeCode, PageRequest},
 };
 use serde_json::value::RawValue;
-#[cfg(not(target_arch = "wasm32"))]
 mod native;
-#[cfg(not(target_arch = "wasm32"))]
 pub use native::*;
 pub type Result<T> = std::result::Result<T, Failure>;
 fn invalid(message: impl Into<String>) -> Failure {

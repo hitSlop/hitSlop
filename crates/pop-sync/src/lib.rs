@@ -1,4 +1,4 @@
-//! I/O-free connection scheduling and maintenance shared by native and browser drivers.
+//! I/O-free connection scheduling and maintenance shared by native drivers.
 pub mod budget;
 pub mod maintenance;
 use pop_sharing_protocol::limits;

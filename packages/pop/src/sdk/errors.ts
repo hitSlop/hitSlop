@@ -48,7 +48,7 @@ export function refuse(message: string): never {
 
 const speechBrand = Symbol.for(SpeechErrorBrand);
 /** Why speech is unavailable: the app did not declare `speech` (`notDeclared`); this host
- * has no speech service, as in `pop dev`, a browser copy or an export (`host`); the OS
+ * has no speech service, as in `pop dev` or an export (`host`); the OS
  * cannot transcribe now (`system`); the provider cannot decode the recording's format
  * (`format`); the locale has no on-device recognizer, and pop
  * never sends a recording off the device instead (`locale`); or the person declined

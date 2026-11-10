@@ -1,7 +1,7 @@
 use crate::support;
 use pop_runtime::{
     Origin, file,
-    owner::{Event, Failure, FailureKind, Owner, Reply, Request},
+    owner::{Event, Failure, FailureKind, Owner, Reply, Request, SyncConnection},
     store::{Mode, Store},
 };
 use serde_json::{Value, json};
@@ -1002,7 +1002,7 @@ fn sync_input_budget_recovers_and_old_connections_cannot_detach_the_replacement(
 /// holds of the owners' latest sync statuses (and whatever else it reads).
 fn pump(
     relay: &mut support::relay::Relay,
-    owners: [(&Owner, &mpsc::Receiver<pop_runtime::owner::SyncEvent>); 2],
+    owners: [(&SyncConnection, &mpsc::Receiver<pop_runtime::owner::SyncEvent>); 2],
     joined: &mut [bool; 2],
     status: &mut [Option<pop_runtime::sync::Status>; 2],
     done: impl Fn(&[Option<pop_runtime::sync::Status>; 2]) -> bool,
@@ -1018,10 +1018,10 @@ fn pump(
                         let (replies, stored) = relay.reply(&bytes);
                         for reply in replies {
                             joined[i] |= matches!(reply, Frame::Welcome { .. });
-                            owners[i].0.sync_frame(reply.encode());
+                            owners[i].0.frame(reply.encode());
                         }
                         if !stored.is_empty() && joined[1 - i] {
-                            owners[1 - i].0.sync_frame(Frame::Records(stored).encode());
+                            owners[1 - i].0.frame(Frame::Records(stored).encode());
                         }
                     }
                     SyncEvent::Status { status: s } => status[i] = Some(s),
@@ -1049,7 +1049,7 @@ fn owners_of_a_shared_document_sync_through_their_hooks() {
     let (dir, path) = fixture();
     let (a, _a_events) = open(&path, Mode::Document);
     let (sink, unshared) = sync_sink();
-    a.sync_attach(sink);
+    a.sync_connection(sink);
     let SyncEvent::Status { status: paused } = unshared.recv_timeout(Duration::from_secs(10)).unwrap() else {
         panic!("an unshared document sends nothing")
     };
@@ -1066,7 +1066,7 @@ fn owners_of_a_shared_document_sync_through_their_hooks() {
     assert_eq!(b.share().unwrap(), Some(share));
 
     let (a_sink, a_sync) = sync_sink();
-    a.sync_attach(a_sink);
+    let a_connection = a.sync_connection(a_sink);
     let SyncEvent::Send { bytes: hello } = a_sync.recv_timeout(Duration::from_secs(10)).unwrap() else {
         panic!("a Hello first")
     };
@@ -1079,12 +1079,12 @@ fn owners_of_a_shared_document_sync_through_their_hooks() {
     let (replies, _) = relay.reply(&hello);
     for reply in replies {
         joined[0] |= matches!(reply, Frame::Welcome { .. });
-        a.sync_frame(reply.encode());
+        a_connection.frame(reply.encode());
     }
     let (b_sink, b_sync) = sync_sink();
-    b.sync_attach(b_sink);
+    let b_connection = b.sync_connection(b_sink);
     let synced = |status: &[Option<Status>; 2]| status.iter().all(|s| s == &Some(Status::Synced));
-    let owners = [(&a, &a_sync), (&b, &b_sync)];
+    let owners = [(&a_connection, &a_sync), (&b_connection, &b_sync)];
     pump(&mut relay, owners, &mut joined, &mut status, synced);
     let title = |owner: &Owner| state(owner)["value"]["title"].clone();
     call(&a, set("From A")).unwrap();

@@ -42,40 +42,6 @@ pub struct RoomInfo {
     /// Whether retained updates have reached the size at which a member may compact.
     pub compact: bool,
 }
-/// What a browser copy joins: the invitation's document, checked against its metadata,
-/// and the seed's declared size. Routes are `/v1/documents/{document}/...`.
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-pub struct ConnectionPlan {
-    pub document: String,
-    pub size: u32,
-}
-/// How the trusted host opens a browser copy: through its invitation, or as a local copy
-/// that no longer syncs.
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-pub enum SharingControl {
-    JoinInvitation { invitation: String },
-    OpenLocal,
-}
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-pub enum SharingEvent {
-    IdentityAttention {
-        message: String,
-    },
-    ResourcesReady,
-    Files {
-        status: String,
-    },
-    /// `status` is for people. `phase` is what a host routes on.
-    Sync {
-        status: String,
-        phase: SyncPhase,
-    },
-}
 /// Where a replica stands with its room, apart from the words shown for it.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -89,12 +55,6 @@ pub enum SyncPhase {
     Paused,
     /// The room no longer exists; the local copy is all that remains.
     Ended,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-pub struct ResourceGrant {
-    pub app: String,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -130,7 +90,7 @@ pub struct Invitation {
 }
 impl Invitation {
     pub fn validate(&self) -> Result<(), String> {
-        if !crate::valid_room(&self.room) || !crate::resources::hash_id(&self.capability) {
+        if !crate::valid_document_id(&self.room) || !crate::resources::hash_id(&self.capability) {
             return Err("Sharing link is no longer valid".into());
         }
         Ok(())
@@ -170,19 +130,6 @@ mod tests {
             format!("{}/join#{}", crate::TRUSTED_ORIGIN, "a".repeat(100)),
         ] {
             assert!(Invitation::parse(&invalid).is_err());
-        }
-    }
-    #[test]
-    fn authored_origins_require_one_exact_canonical_copy_uuid() {
-        let copy = "00000000-0000-4000-8000-000000000001";
-        assert!(crate::is_authored_origin(&format!("https://{copy}.{}", crate::AUTHORED_DOMAIN)));
-        for origin in [
-            "https://dotslop.com",
-            "https://other.dotslop.com",
-            "https://00000000-0000-4000-8000-000000000001.dotslop.com.attacker.example",
-            "http://00000000-0000-4000-8000-000000000001.dotslop.com",
-        ] {
-            assert!(!crate::is_authored_origin(origin));
         }
     }
 }
