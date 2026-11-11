@@ -163,10 +163,6 @@ runs:
         if [ "$WASM_C" = true ] || { [ "$NEXTEST" = true ] && [ "$RUNNER_OS" = Linux ]; }; then
           rustup target add wasm32-unknown-unknown
         fi
-        if [ "${{ runner.os }}" != macOS ] && { [ "$WASM_C" = true ] || [ "$NEXTEST" = true ]; }; then
-          sudo apt-get update
-          sudo apt-get install -y clang llvm
-        fi
         if [ "$WASM_C" = true ]; then
           echo "POP_WASM_BINDGEN=$(command -v wasm-bindgen)" >> "$GITHUB_ENV"
         fi
