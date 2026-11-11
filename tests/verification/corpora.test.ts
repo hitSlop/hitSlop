@@ -11,6 +11,9 @@ import { copyCorpusDocument, releases, type Release } from "../../scripts/compat
 import { resolveWriter, verifyPackedWriter } from "../../scripts/compat/writers";
 import { ApplicationId } from "../../packages/pop/src/schema/constants";
 
+// These tests supply their own candidates; an ambient one from a release run must not join them.
+delete process.env.POP_COMPAT_CANDIDATE;
+
 test("corpus discovery permits a missing optional directory but surfaces filesystem errors", async () => {
   const root = await mkdtemp(join(tmpdir(), "pop-corpus-discovery-"));
   try {
