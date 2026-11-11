@@ -64,6 +64,8 @@ public struct LibrarySyncAttention {
   public var closeAccountDocuments: (@MainActor ([String]) async throws -> Void)?
   public var concealAccountDocuments: (@MainActor ([String], Bool) -> Void)?
   public var tokenProvider: (@MainActor () async throws -> String)?
+  // Suspended work must never publish a snapshot from a departing account.
+  private var accountEpoch: UInt64 = 0
   private var accountActive = true
   private var native: NativeLibrary?
   private var pendingAccount: String?
@@ -100,7 +102,7 @@ public struct LibrarySyncAttention {
         "library", isDirectory: true)
     }
     return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("pop/CloudDocuments", isDirectory: true)
+      .appendingPathComponent("pop/Library", isDirectory: true)
   }
   public func start() {
     guard task == nil else { return }
@@ -115,6 +117,10 @@ public struct LibrarySyncAttention {
   public func setAccount(_ account: String, external: Bool = false) async throws {
     guard let native else { throw PopFailure("The local library is unavailable.") }
     if isReady && accountIdentity == account { return }
+    accountEpoch &+= 1
+    let epoch = accountEpoch
+    let wasReady = isReady
+    isReady = false
     pendingAccount = external ? account : nil
     syncTask?.cancel()
     syncTask = nil
@@ -122,7 +128,6 @@ public struct LibrarySyncAttention {
     syncAgain = false
     let cloudPaths = Array(Set(entries.filter { $0.accountBound }.map(\.path) + concealedPaths))
     if external {
-      isReady = false
       concealedPaths = cloudPaths
       concealAccountDocuments?(cloudPaths, true)
       entries.removeAll { $0.accountBound }
@@ -132,11 +137,20 @@ public struct LibrarySyncAttention {
     }
     if accountIdentity != account {
       do { try await closeAccountDocuments?(cloudPaths) } catch {
-        if external { concealAccountDocuments?(cloudPaths, true) }
+        guard epoch == accountEpoch else { throw CancellationError() }
+        if external { concealAccountDocuments?(cloudPaths, true) } else { isReady = wasReady }
         throw error
       }
     }
-    try await PopPreparation.run(on: Self.queue) { try native.setAccount(account: account.isEmpty ? nil : account) }
+    guard epoch == accountEpoch else { throw CancellationError() }
+    do {
+      try await PopPreparation.run(on: Self.queue) { try native.setAccount(account: account.isEmpty ? nil : account) }
+    } catch {
+      guard epoch == accountEpoch else { throw CancellationError() }
+      if !external { isReady = wasReady }
+      throw error
+    }
+    guard epoch == accountEpoch else { throw CancellationError() }
     native.setAccountActive(active: accountActive)
     accountIdentity = account
     pendingAccount = nil
@@ -145,12 +159,14 @@ public struct LibrarySyncAttention {
     concealedPaths = []
     lastError = nil
     await refresh()
+    guard epoch == accountEpoch else { throw CancellationError() }
   }
   private nonisolated static let queue = DispatchQueue(label: "click.dotpop.library", qos: .utility)
   public func connectAccount(_ account: String) async throws {
     try await setAccount(account, external: true)
   }
   public func reportAccountError(_ error: Error, account: String) {
+    guard !(error is CancellationError), account == (pendingAccount ?? accountIdentity) else { return }
     lastError = libraryMessage(error)
     status = "Sync needs attention"
   }
@@ -178,11 +194,13 @@ public struct LibrarySyncAttention {
   }
   public func refresh() async {
     guard isReady, let native else { return }
+    let epoch = accountEpoch
     do {
       let (loaded, accountPaths) = try await PopPreparation.run(on: Self.queue) {
         try native.reconcile()
         return (try native.entries(), try native.accountPaths())
       }
+      guard epoch == accountEpoch, isReady else { return }
       accountBoundPaths = Set(accountPaths.map { URL(fileURLWithPath: $0).standardizedFileURL.path })
       watcher?.refresh()
       entries = loaded
@@ -201,17 +219,24 @@ public struct LibrarySyncAttention {
           ? "Sync needs attention"
           : pending > 0
             ? "Saved here · waiting to sync" : accountIdentity.isEmpty ? "Saved on this device" : "Sync across devices"
-    } catch { lastError = libraryMessage(error) }
+    } catch {
+      guard epoch == accountEpoch, isReady else { return }
+      lastError = libraryMessage(error)
+    }
   }
   private func requiredToken() async throws -> String {
     guard isReady, !accountIdentity.isEmpty, let tokenProvider else {
       throw PopFailure("Sign in to sync across devices.")
     }
-    return try await tokenProvider()
+    let epoch = accountEpoch
+    let token = try await tokenProvider()
+    guard epoch == accountEpoch, isReady else { throw CancellationError() }
+    return token
   }
   public func syncNow() async {
     if let pendingAccount {
       do { try await setAccount(pendingAccount, external: !isReady) } catch {
+        guard !(error is CancellationError), self.pendingAccount == pendingAccount else { return }
         lastError = libraryMessage(error)
         return
       }
@@ -221,12 +246,14 @@ public struct LibrarySyncAttention {
       await syncTask.value
       return
     }
-    guard let native, !accountIdentity.isEmpty else {
+    guard isReady, let native, !accountIdentity.isEmpty else {
       await refresh()
       return
     }
+    let epoch = accountEpoch
     syncAgain = true
     let work = Task {
+      guard epoch == accountEpoch else { return }
       isSyncing = true
       while syncAgain && !Task.isCancelled {
         syncAgain = false
@@ -235,16 +262,17 @@ public struct LibrarySyncAttention {
           let account = accountIdentity
           let token = try await requiredToken()
           try Task.checkCancellation()
+          guard epoch == accountEpoch else { return }
           try await PopPreparation.run(on: Self.queue) { try native.sync(account: account, token: token) }
         } catch { failure = libraryMessage(error) }
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled, epoch == accountEpoch else { return }
         lastError = failure
       }
       await refresh()
     }
     syncTask = work
     await work.value
-    if !work.isCancelled { syncTask = nil }
+    if !work.isCancelled, epoch == accountEpoch { syncTask = nil }
   }
   public func activated(_ active: Bool) {
     accountActive = active

@@ -125,9 +125,8 @@ enum PhoneClosing: Equatable {
   private var backgroundID: UIBackgroundTaskIdentifier = .invalid
   private var backgroundSave: Task<Void, Never>?
   private var refreshTask: Task<Void, Never>?
-  private static let recentsKey = "click.dotpop.phone.recents.openedAt"
-  private let folder = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-    .appendingPathComponent("Documents", isDirectory: true)
+  private static let recentsKey = "click.dotpop.library.recents.openedAt"
+  private let folder = PopLibrary.managedFolder.appendingPathComponent("documents", isDirectory: true)
 
   init() {
     openedAt = UserDefaults.standard.dictionary(forKey: Self.recentsKey) as? [String: Double] ?? [:]
@@ -286,13 +285,10 @@ enum PhoneClosing: Equatable {
     Task { do { try await session.saveAccepted() } catch { message = error.localizedDescription } }
   }
   private func refresh() {
-    let local = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-    documents = Array(
-      Set(
-        [folder, local].flatMap {
-          (try? FileManager.default.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? []
-        })
-    ).filter { $0.pathExtension == "pop" && !PopLibrary.shared.accountBoundPaths.contains($0.standardizedFileURL.path) }
+    documents = ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
+      .filter {
+        $0.pathExtension == "pop" && !PopLibrary.shared.accountBoundPaths.contains($0.standardizedFileURL.path)
+      }
       .sorted { $0.lastPathComponent < $1.lastPathComponent }
     let paths = Set(documents + PopLibrary.shared.visibleEntries.map { URL(fileURLWithPath: $0.path) })
     refreshTask?.cancel()
@@ -655,7 +651,7 @@ enum PhoneClosing: Equatable {
   func saveUnsharedCopy() {
     guard let session else { return }
     perform {
-      let directory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+      let directory = self.folder
       try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
       let name = session.file.url.deletingPathExtension().lastPathComponent
       let target = directory.appendingPathComponent("\(name) copy \(UUID().uuidString.prefix(8)).pop")

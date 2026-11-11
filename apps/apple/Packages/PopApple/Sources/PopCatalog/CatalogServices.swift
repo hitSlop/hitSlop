@@ -157,13 +157,8 @@ import PopHost
   }
 
   static func systemRecentDocuments() -> [URL] {
-    guard RecentDocumentHistory.usesSystemRecents else { return [] }
-    #if DEBUG
-      // Debug has its own history and must not seed it with the release app's list.
-      return []
-    #else
-      return NSDocumentController.shared.recentDocumentURLs
-    #endif
+    // Navigation starts with this library's history, independent of the system list.
+    return []
   }
 
   private func destination(for entry: CatalogEntry) async throws -> URL? {

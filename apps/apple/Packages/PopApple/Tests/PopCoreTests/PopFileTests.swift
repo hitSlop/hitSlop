@@ -165,7 +165,13 @@ private func writeSkin(to url: URL, width: Int, height: Int) throws {
   let activity = NSUserActivity(activityType: NSUserActivityTypeBrowsingWeb)
   activity.webpageURL = try #require(URL(string: link))
   #expect(try SharingLinks.incomingLink(#require(activity.webpageURL)) == link)
-  for value in ["https://share.dotpop.click/join", "https://share.dotpop.click/join#"] {
+  #expect(
+    try SharingLinks.incomingLink(
+      #require(URL(string: link.replacingOccurrences(of: "https://share.dotpop.click/join", with: "dotpop://join"))))
+      == link)
+  for value in [
+    "https://share.dotpop.click/join", "https://share.dotpop.click/join#", "dotpop://join", "dotpop://join#",
+  ] {
     do {
       _ = try SharingLinks.incomingLink(#require(URL(string: value)))
       Issue.record("A missing capability must be explained")

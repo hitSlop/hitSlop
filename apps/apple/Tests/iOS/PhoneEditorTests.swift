@@ -441,8 +441,7 @@ final class PhoneEditorTests: XCTestCase {
     add(report)
     // Prepare the app container for the subsequent UI test using the same minimal
     // infrastructure fixture. No fixture or launch argument ships in the preview app.
-    let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("Documents", isDirectory: true)
+    let support = PopLibrary.managedFolder.appendingPathComponent("documents", isDirectory: true)
     let seed = support.appendingPathComponent("Editor fixture with icon.pop")
     // A fresh copy every run: neither an earlier run's edits nor a file an earlier build
     // wrote carries over into the UI tests.

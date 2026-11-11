@@ -17,7 +17,7 @@ struct RecentDocumentHistory: Sendable {
   }
 
   static func location(in support: URL, development: Bool) -> URL {
-    support.appendingPathComponent("pop/Recents", isDirectory: true)
+    support.appendingPathComponent("pop/Library/Recents", isDirectory: true)
       .appendingPathComponent(development ? "Debug.json" : "Release.json")
   }
 

@@ -125,6 +125,10 @@ private struct AppSettingsView: View {
       guard url.scheme == "dotpop" else { continue }
       // Only an active ASWebAuthenticationSession may consume Apple credentials.
       if url.host == "auth" { continue }
+      if url.host == "join" {
+        openSharingLink(url)
+        continue
+      }
       if url.host == "widgets" {
         showCatalog()
         continue
@@ -140,6 +144,9 @@ private struct AppSettingsView: View {
     guard userActivity.activityType == NSUserActivityTypeBrowsingWeb,
       let url = userActivity.webpageURL
     else { return false }
+    return openSharingLink(url)
+  }
+  @discardableResult private func openSharingLink(_ url: URL) -> Bool {
     do {
       guard let link = try SharingLinks.incomingLink(url) else { return false }
       showCatalog()
