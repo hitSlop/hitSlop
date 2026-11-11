@@ -110,14 +110,12 @@ pub enum Background {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
 pub struct ThemeInput {
     pub token: String,
     pub color: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
 pub struct CommandInput {
     pub name: String,
@@ -126,7 +124,6 @@ pub struct CommandInput {
     pub args: Value,
 }
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
 pub struct Views {
     pub preview: bool,
@@ -138,7 +135,7 @@ pub struct Views {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "app.generated.ts"))]
 pub struct WidgetOptions {
     #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]

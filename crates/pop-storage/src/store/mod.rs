@@ -139,14 +139,9 @@ impl Store {
     /// length-delimited. Two files hold the same app exactly when their digests match;
     /// document state and artwork are not part of it. A shared document's relay admits only
     /// replicas whose digest matches its room's.
-    pub fn app_digest(&self) -> Result<[u8; 32]> {
+    pub fn app_digest(&self) -> Result<pop_contracts::AppDigest> {
         self.check(false)?;
         self.read(rows::app_digest)
-    }
-
-    /// Typed identity of the exact embedded app, using the existing digest encoding.
-    pub fn app_revision_id(&self) -> Result<pop_contracts::AppRevisionId> {
-        self.app_digest().map(pop_contracts::AppRevisionId::from_bytes)
     }
 
     /// Opens the document file at `path`. `Document` mode takes the writer lock and checks

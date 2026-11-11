@@ -9,8 +9,8 @@ use pop_contracts::wire::{Batch, Code, Intent, Publication, Reading, STORAGE_BYT
 use serde_json::Value;
 use std::collections::HashSet;
 mod history;
+mod sharing;
 mod template;
-mod updates;
 pub(crate) mod version;
 use history::Run;
 use version::version_token;
@@ -23,18 +23,13 @@ fn subscribe(doc: &LoroDoc, events: &Events) {
     publication::subscribe(doc, events).detach();
 }
 
-/// `doc` with the layout marker and `value`, a validated value of `schema`, committed.
+/// `doc` with `value`, a validated value of `schema`, committed.
 fn filled(doc: LoroDoc, schema: &Node, value: &Value) -> Result<LoroDoc> {
     doc.set_next_commit_message("create");
-    doc.get_map(META).insert("layout", LAYOUT).map_err(engine)?;
     fill(&doc.get_map("data"), schema, value)?;
     doc.commit();
     Ok(doc)
 }
-/// The document layout: how descriptor kinds map to Loro containers
-/// (docs/reference/document-types.md). A compatibility requirement, not a release number,
-/// written into each document's `meta` map when it is created. A build refuses a newer one.
-pub const LAYOUT: i64 = 1;
 const META: &str = "meta";
 /// Where a rebuilt history starts: the canonical decimal ID of the peer whose first
 /// operation is the rebuilt checkpoint's first. Absent from a document's original history.
@@ -72,18 +67,6 @@ fn check_history_root(doc: &LoroDoc, expected: Option<loro::ID>, before: &loro::
         }
     }
     Ok(())
-}
-
-/// The layout marker: this build's, or a newer one it refuses with `requires_update`.
-fn check_layout(doc: &LoroDoc) -> Result<()> {
-    match doc.get_map(META).get("layout") {
-        Some(ValueOrContainer::Value(loro::LoroValue::I64(LAYOUT))) => Ok(()),
-        Some(ValueOrContainer::Value(loro::LoroValue::I64(layout))) if layout > LAYOUT => Err(err(
-            Code::RequiresUpdate,
-            format!("This document uses layout {layout}; this pop reads layout {LAYOUT}"),
-        )),
-        _ => Err(err(Code::InvalidBytes, "Document has no supported layout")),
-    }
 }
 
 /// Who made a change: the person, in the page or in the window's own controls (the theme
@@ -238,7 +221,6 @@ impl Document {
         }
         let doc = LoroDoc::new();
         imported(doc.import(checkpoint)).map_err(&core)?;
-        check_layout(&doc).map_err(&core)?;
         let trimmed = doc.shallow_since_vv();
         let root = history_root(&doc).map_err(&core)?;
         // One import per update measured faster than Loro's `import_batch` here.
@@ -251,16 +233,10 @@ impl Document {
             }
             Ok(())
         })?;
-        check_layout(&doc).map_err(&core)?;
         Self::from_doc(doc, app.clone(), true).map_err(core)
     }
     pub fn version(&self) -> String {
         version_token(&self.doc.oplog_frontiers())
-    }
-    /// Canonical relay frontier of accepted visible state, as the seed route sends it;
-    /// unintegrated operations are excluded.
-    pub fn wire_history(&self) -> Vec<(String, u32)> {
-        pop_contracts::relay::frame::version_pairs(self.doc.state_vv().iter().map(|(&peer, &end)| (peer, end as u32)))
     }
     /// The application value: the stored value, each counter and number as it reads.
     pub(crate) fn projected(&self) -> Value {
@@ -404,7 +380,10 @@ impl Document {
                     (run, continues)
                 }
             };
-            self.group(run, continues);
+            if let Err(error) = self.group(run, continues) {
+                self.abort(&before)?;
+                return Err(error);
+            }
         }
         self.doc.commit();
         let published = self.publish_or_abort(&before)?;
@@ -543,77 +522,6 @@ impl Document {
     pub fn current_history_checkpoint(&self) -> Result<Vec<u8>> {
         self.doc.commit();
         self.doc.export(ExportMode::shallow_snapshot(&self.doc.oplog_frontiers())).map_err(engine)
-    }
-
-    /// Every operation this replica holds, by peer.
-    pub(crate) fn version_vector(&self) -> loro::VersionVector {
-        self.doc.oplog_vv()
-    }
-    /// The operations this replica holds past `version`, as one Loro update.
-    pub(crate) fn updates_since(&self, version: &loro::VersionVector) -> Result<Vec<u8>> {
-        self.doc.export(ExportMode::updates(version)).map_err(engine)
-    }
-    /// Opaque room base: retained operations, never a shallow snapshot. Seed state is
-    /// already present in every room replica; snapshots would leave pending imports.
-    pub fn base(&self, frontier: &loro::VersionVector) -> Result<Vec<u8>> {
-        let start = self.base_start();
-        if !frontier.includes_vv(&start) || !self.doc.oplog_vv().includes_vv(frontier) {
-            return Err(err(Code::MissingDependencies, "The base frontier is outside retained history"));
-        }
-        let bytes = if self.doc.oplog_vv() == *frontier {
-            self.doc.export(ExportMode::updates(&start))
-        } else {
-            self.doc.export(ExportMode::updates_in_range(frontier.sub_iter(&start).collect::<Vec<_>>()))
-        }
-        .map_err(engine)?;
-        let meta = LoroDoc::decode_import_blob_meta(&bytes, false).map_err(engine)?;
-        if meta.mode != loro::EncodedBlobMode::Updates
-            || meta.partial_end_vv != *frontier
-            || !start.includes_vv(&meta.partial_start_vv)
-        {
-            return Err(err(Code::InvalidBytes, "The base does not cover its declared history"));
-        }
-        if bytes.len() > pop_contracts::relay::limits::BASE_BYTES {
-            return Err(err(Code::TooLarge, "This document has outgrown sharing"));
-        }
-        Ok(bytes)
-    }
-    pub fn base_start(&self) -> loro::VersionVector {
-        self.doc.shallow_since_vv().to_vv()
-    }
-    /// Changes other replicas made, as Loro updates from a relay: imported, checked
-    /// against the app as a saved document is, and published like an edit. An update
-    /// whose dependencies have not arrived waits inside Loro until they do. A change the
-    /// app cannot accept is refused and leaves the document as it was, though this
-    /// session's undo starts over. `None` when the updates held nothing new.
-    pub fn import_remote(&mut self, updates: &[&[u8]]) -> Result<Option<Applied>> {
-        self.intact()?;
-        let before = self.doc.state_frontiers();
-        let version = self.doc.oplog_vv();
-        let root = history_root(&self.doc)?;
-        let imported = updates
-            .iter()
-            .try_for_each(|bytes| self.doc.import(bytes).map(drop))
-            .map_err(|e| err(Code::InvalidBytes, e))
-            .and_then(|()| check_layout(&self.doc))
-            .and_then(|()| check_history_root(&self.doc, root, &version))
-            .and_then(|()| acceptable(&self.doc, &self.app));
-        if let Err(error) = imported {
-            self.abort(&before)?;
-            return Err(error);
-        }
-        if self.doc.oplog_vv() == version {
-            return Ok(None);
-        }
-        // Published even when nothing visible changed, so the page's version moves on.
-        let published = match self.publish_with(true) {
-            Ok(published) => published,
-            Err(error) => {
-                self.abort(&before)?;
-                return Err(error);
-            }
-        };
-        Ok(Some(Self::applied(self.sequence, vec![], published, None)))
     }
 }
 /// Whether `doc` holds what `app` accepts: checked whenever state arrives from outside

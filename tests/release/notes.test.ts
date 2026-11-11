@@ -75,10 +75,10 @@ test("release publication uses the reviewed source and the project's Sparkle pin
     await writeReleaseNotes(output, root);
     expect(await readFile(join(output, "release-notes.md"), "utf8")).toBe(github);
     expect(github).not.toContain("first supported release");
-    // The first lineage-2 release says which earlier documents it refuses.
+    // The first release states the compatibility promise.
     await writeFile(join(root, "apps/apple/project.yml"), project.replace("7.2.0", "2.0.0"));
     await writeFile(join(root, "docs/releases/2.0.0.md"), source.replace("7.2.0", "2.0.0"));
-    expect((await loadReleaseNotes(root)).github).toContain("including pop 1.x .pop documents and hitSlop .slop documents, are unsupported");
+    expect((await loadReleaseNotes(root)).github).toContain("Documents written by this release remain supported by future pop versions.");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

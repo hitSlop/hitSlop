@@ -134,10 +134,10 @@ impl From<&app::AppDefinition> for AppDefinition {
     fn from(app: &app::AppDefinition) -> Self {
         Self {
             metadata: app.metadata().clone(),
-            window: app.window().clone(),
-            theme: app.theme().to_vec(),
+            window: app.window(),
+            theme: app.theme(),
             views: app.views(),
-            capabilities: app.capabilities().to_vec(),
+            capabilities: app.capabilities(),
             descriptor_json: app.document_json().into(),
         }
     }

@@ -7,7 +7,7 @@
 //! Hello carrying the document's version, and the relay's answer says what to send. A lost
 //! acknowledgement, a dropped socket or a crash heals with the next Hello.
 use pop_contracts::relay::{
-    SyncPhase,
+    PauseKind, SyncPhase,
     frame::{Ack, ErrorCode, Frame, PROTOCOL, Permission, Record, Span, Version},
 };
 
@@ -16,22 +16,6 @@ use loro::VersionVector;
 use pop_contracts::wire::Code;
 use serde::{Deserialize, Serialize};
 
-/// Stable recovery choices shared by every transport and UI.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(export_to = "sharing.generated.ts"))]
-pub enum PauseKind {
-    RoomFull,
-    /// Folding cannot make the room fit, or one retained change cannot be relayed.
-    /// Local edits keep saving; the person can save an unshared copy.
-    Outgrown,
-    NeedsUpdate,
-    Refused,
-    MissingHistory,
-    FilesFull,
-    Ended,
-}
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", ts(export_to = "sharing.generated.ts"))]
@@ -109,7 +93,7 @@ pub struct Step {
 
 /// One owner's sync state, in memory only.
 pub struct Session {
-    app_digest: [u8; 32],
+    app_digest: pop_contracts::AppDigest,
     status: Status,
     /// Set by the relay's Welcome: what it holds, as far as this connection knows. Records
     /// received and acknowledged pushes add to it.
@@ -125,7 +109,7 @@ pub struct Session {
 impl Session {
     /// A session for a document whose app definition hashes to `app_digest`: a relay
     /// admits only replicas of the app its room was created with.
-    pub fn new(app_digest: [u8; 32]) -> Self {
+    pub fn new(app_digest: pop_contracts::AppDigest) -> Self {
         Self {
             app_digest,
             status: Status::Offline,

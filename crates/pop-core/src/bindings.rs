@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 
 pub fn constants() -> Vec<(&'static str, Value)> {
     vec![
-        ("DocumentLineage", json!(pop_contracts::lineage::DOCUMENT_LINEAGE)),
+        ("ApplicationId", json!(pop_contracts::format::APPLICATION_ID)),
         ("CompactLayoutWidth", json!(pop_contracts::wire::page::COMPACT_LAYOUT_WIDTH)),
         ("NativeResourcePolicy", json!(pop_contracts::policy::NATIVE_RESOURCE_POLICY)),
         // The CLI substitutes its loopback origin; all policy directives live here.

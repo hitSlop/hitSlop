@@ -528,7 +528,7 @@ final class PhoneEditorTests: XCTestCase {
     let sources = try FileManager.default.contentsOfDirectory(at: fixtures, includingPropertiesForKeys: nil).filter {
       $0.lastPathComponent.hasPrefix("released-") && $0.pathExtension == "pop"
     }
-    // Lineage 2 has no published corpus until its first release freezes one.
+    // No published corpus exists until the first release freezes one.
     try XCTSkipIf(sources.isEmpty, "No released compatibility documents are published yet")
     let folder = try outputFolder()
     for source in sources {

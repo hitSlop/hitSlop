@@ -1,6 +1,7 @@
 //! Persistent cloud document synchronization under one Firebase identity.
 use crate::{attachments, cloud, journal, local, transport};
 use pop_contracts::hex;
+use pop_contracts::relay::SyncPhase;
 use pop_runtime::owner::{Owner, Reply, Request};
 use pop_sharing_protocol::http::{Invitation, RoomInfo};
 use pop_storage::store::{Mode, Share, Store};
@@ -35,7 +36,7 @@ pub(crate) fn retry_busy(
     let deadline = Instant::now() + std::time::Duration::from_secs(2);
     loop {
         match request(owner, build()) {
-            Err(transport::HttpFailure::Busy(_)) if Instant::now() < deadline => {
+            Err(transport::HttpFailure { kind: PauseKind::Busy, .. }) if Instant::now() < deadline => {
                 transport::pause(std::time::Duration::from_millis(25))?
             }
             result => return result,
@@ -139,7 +140,7 @@ pub(crate) fn stage(owner: &Owner) -> Result<Seed> {
             path: path.clone(),
             version: document.wire_history(),
             owner_version: document.version(),
-            app: hex(&store.app_digest().map_err(fail)?),
+            app: hex(store.app_digest().map_err(fail)?.as_bytes()),
             hash: hex(&Sha256::digest(std::fs::read(&path).map_err(fail)?)),
         };
         store.close().map_err(fail)?;
@@ -153,18 +154,10 @@ pub(crate) fn stage(owner: &Owner) -> Result<Seed> {
     result
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Phase {
-    Offline,
-    Syncing,
-    Synced,
-    Paused,
-    Ended,
-}
-use pop_core::sync::PauseKind;
+use pop_contracts::relay::PauseKind;
 pub struct ClientStatus {
     pub pause_kind: Option<PauseKind>,
-    pub phase: Phase,
+    pub phase: SyncPhase,
     pub detail: String,
 }
 pub struct Client {
@@ -248,7 +241,7 @@ impl Client {
             .lock()
             .unwrap()
             .as_ref()
-            .map_or((Phase::Offline, "Offline".into(), None), |connection| connection.status());
+            .map_or((SyncPhase::Offline, "Offline".into(), None), |connection| connection.status());
         ClientStatus { phase, detail, pause_kind }
     }
 }

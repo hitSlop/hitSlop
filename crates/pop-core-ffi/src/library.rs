@@ -4,11 +4,10 @@ use core::{Entry, Issue};
 use pop_cloud as core;
 use pop_sharing_protocol::document::{AccessState, DocumentRole};
 
-/// The document lineage this build reads and writes. Swift scopes per-account flags to it so a
-/// new lineage starts them fresh.
+/// The application ID identifying pop documents.
 #[uniffi::export]
-pub fn document_lineage() -> u32 {
-    pop_contracts::lineage::DOCUMENT_LINEAGE
+pub fn application_id() -> u32 {
+    pop_contracts::format::APPLICATION_ID
 }
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]

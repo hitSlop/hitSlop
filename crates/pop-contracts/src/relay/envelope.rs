@@ -28,7 +28,11 @@ mod tests {
     fn transport_uses_the_shared_frame_codec() {
         let record = Record { spans: vec![Span { peer: 7, start: 1, end: 2 }], bytes: vec![12, 13] };
         let frames = [
-            Frame::Hello { protocol: 1, app_digest: [3; 32], version: [(7, 2)].into_iter().collect() },
+            Frame::Hello {
+                protocol: 1,
+                app_digest: crate::AppDigest::from_bytes([3; 32]),
+                version: [(7, 2)].into_iter().collect(),
+            },
             Frame::Welcome { permission: Permission::Write, version: [(7, 2)].into_iter().collect() },
             Frame::Records(vec![record.clone()]),
             Frame::CaughtUp,

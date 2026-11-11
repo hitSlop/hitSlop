@@ -78,9 +78,6 @@ pub(super) fn open(root: &Path) -> Result<Connection> {
             message: "This local index requires a newer pop; existing files are retained".into(),
         });
     }
-    if version != 0 && version != INDEX_VERSION {
-        return Err(failed("This local index was made by an older version of pop and can't be opened"));
-    }
     db.execute_batch(
         "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
             CREATE TABLE IF NOT EXISTS documents(account TEXT NOT NULL,id TEXT NOT NULL,title TEXT NOT NULL,template TEXT NOT NULL,path TEXT NOT NULL,version TEXT NOT NULL DEFAULT '',role TEXT,revision INTEGER NOT NULL DEFAULT 0,deleted INTEGER NOT NULL DEFAULT 0,problem TEXT,pending_enable INTEGER NOT NULL DEFAULT 0,artwork_version TEXT NOT NULL DEFAULT '',artwork_digest TEXT NOT NULL DEFAULT '',file_stamp TEXT NOT NULL DEFAULT '',listed INTEGER NOT NULL DEFAULT 0,sharing_enabled INTEGER,opened INTEGER NOT NULL DEFAULT 1,PRIMARY KEY(account,id));

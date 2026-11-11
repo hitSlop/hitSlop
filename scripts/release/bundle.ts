@@ -11,7 +11,7 @@ import { verifyPackedWriter } from "../compat/writers";
 import { enginePlatforms } from "../build/core";
 import { projectVersion } from "./preflight";
 import { validateRecord, verifyArtifacts, type ReleaseRecord } from "./record";
-import { DocumentLineage } from "../../packages/pop/src/schema/constants";
+import { ApplicationId } from "../../packages/pop/src/schema/constants";
 import { exec, run } from "../../packages/pop/src/cli/process";
 
 const { version, build, tag } = await projectVersion();
@@ -52,7 +52,7 @@ for (const line of (await readFile(join(output, "SHA256SUMS"), "utf8")).trim().s
   if (hash && file && file !== "release-record.json") hashes[file] = hash;
 }
 for (const file of retained) hashes[file] = await fileDigest(join(output, file));
-const record: ReleaseRecord = { documentLineage: DocumentLineage, commit, run: process.env.GITHUB_RUN_ID!, attempt: process.env.GITHUB_RUN_ATTEMPT!, tag, macVersion: version, macBuild: build,
+const record: ReleaseRecord = { applicationId: ApplicationId, commit, run: process.env.GITHUB_RUN_ID!, attempt: process.env.GITHUB_RUN_ATTEMPT!, tag, macVersion: version, macBuild: build,
   npmIntegrity: "sha512-" + createHash("sha512").update(await readFile(cliPackage)).digest("base64"),
   corpus: { file: corpusFile, sha256: hashes[corpusFile]! }, qualified: receipt.inventory, artifacts: hashes };
 validateRecord(record, tag, commit);

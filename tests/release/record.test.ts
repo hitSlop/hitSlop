@@ -5,10 +5,10 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { sha256 } from "../../scripts/lib/artifacts";
 import { stableTag } from "../../scripts/lib/release-assets";
-import { DocumentLineage } from "../../packages/pop/src/schema/constants";
+import { ApplicationId } from "../../packages/pop/src/schema/constants";
 import { advancesBuild, appcastBuild, assertQualified, legacyAppcast, validateApproval, validateCandidate, validatePublication, preservesLatest, validateRecord, verifyArtifacts, type ReleaseRecord } from "../../scripts/release/record";
 
-test("pop release tags do not include the preserved hitSlop lineage", () => {
+test("pop release tags do not include the unrelated release tags", () => {
   expect(stableTag.test("pop-v1.0.0")).toBe(true);
   expect(stableTag.test("v1.0.0")).toBe(false);
   expect(stableTag.test("pop-v01.0.0")).toBe(false);
@@ -79,11 +79,11 @@ test("qualification compares exact historical hashes, including disappeared rele
 });
 
 test("only the successful candidate job on the dispatch commit can publish", () => {
-  const record = { documentLineage: DocumentLineage, commit: "c".repeat(40), run: "123", attempt: "1" } as ReleaseRecord;
+  const record = { applicationId: ApplicationId, commit: "c".repeat(40), run: "123", attempt: "1" } as ReleaseRecord;
   const workflow = { id: 123, head_sha: "c".repeat(40), event: "workflow_dispatch", path: ".github/workflows/macos-release.yml" };
   const jobs = [{ name: "Build and test candidate", conclusion: "success" }];
   validateCandidate(record, workflow, jobs);
-  expect(() => validateCandidate({ ...record, documentLineage: undefined }, workflow, jobs)).toThrow("unsupported document lineage");
+  expect(() => validateCandidate({ ...record, applicationId: undefined }, workflow, jobs)).toThrow("unsupported application ID");
   for (const changed of [{ id: 456 }, { head_sha: "master-after-candidate" }, { event: "push" }, { path: "other.yml" }])
     expect(() => validateCandidate(record, { ...workflow, ...changed }, jobs)).toThrow("identity mismatch");
   for (const conclusion of ["failure", "cancelled", null])

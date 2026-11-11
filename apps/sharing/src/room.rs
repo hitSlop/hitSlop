@@ -498,8 +498,8 @@ impl CloudDocument {
             let _ = ws.close(Some(close), Some(message));
         }
     }
-    fn hello(&self, ws: &WebSocket, protocol: u8, app: &[u8], vv: Version) -> Result<()> {
-        if protocol != PROTOCOL || self.text("app")?.as_deref() != Some(&hex(app)) {
+    fn hello(&self, ws: &WebSocket, protocol: u8, app: &pop_contracts::AppDigest, vv: Version) -> Result<()> {
+        if protocol != PROTOCOL || self.text("app")?.as_deref() != Some(&hex(app.as_bytes())) {
             return Err(fail("Different app or protocol"));
         }
         self.send(ws, Frame::Welcome { permission: Permission::Write, version: self.heads()? })?;
@@ -649,7 +649,7 @@ impl CloudDocument {
                     return Err(refused(ErrorCode::Protocol, "Different app or protocol"));
                 }
                 let expected_app = self.text("app")?.ok_or_else(|| fail("Missing app"))?;
-                if expected_app != hex(&app_digest) {
+                if expected_app != hex(app_digest.as_bytes()) {
                     return Err(refused(ErrorCode::App, "Different app or protocol"));
                 }
                 self.hello(ws, protocol, &app_digest, version)?;

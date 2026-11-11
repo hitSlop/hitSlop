@@ -25,7 +25,7 @@ fn frame_json(frame: &Frame) -> Value {
     };
     match frame {
         Frame::Hello { protocol, app_digest, version: v } => {
-            json!({"type": "hello", "protocol": protocol, "appDigest": hex(app_digest), "version": version(v)})
+            json!({"type": "hello", "protocol": protocol, "appDigest": hex(app_digest.as_bytes()), "version": version(v)})
         }
         Frame::Welcome { permission, version: v } => json!({
             "type": "welcome",
@@ -47,7 +47,7 @@ fn golden() -> Vec<(&'static str, Frame)> {
             "hello",
             Frame::Hello {
                 protocol: 1,
-                app_digest: std::array::from_fn(|i| i as u8),
+                app_digest: pop_contracts::AppDigest::from_bytes(std::array::from_fn(|i| i as u8)),
                 version: [(1, 5), (300, 128), (u64::MAX, i32::MAX as u32)].into(),
             },
         ),

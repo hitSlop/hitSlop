@@ -1,6 +1,6 @@
 //! Entries as callers see them: index rows joined with file and connection state.
 use super::*;
-use crate::client::Phase;
+use pop_contracts::relay::SyncPhase;
 
 impl Library {
     pub(super) fn row(&self, inner: &Inner, id: &str) -> Result<Entry> {
@@ -27,7 +27,7 @@ impl Library {
             (None, None)
         };
         let client_phase = client.map(|client| client.status().phase);
-        let client_synced = client_phase == Some(Phase::Synced);
+        let client_synced = client_phase == Some(SyncPhase::Synced);
         if client_synced && let Some(confirmed) = &confirmed {
             version = confirmed.clone();
         }
@@ -36,7 +36,7 @@ impl Library {
                 || downloaded
                     && (confirmed.as_deref() != Some(&version)
                         || (!client_synced && stamp.as_deref() != Some(&row.file_stamp))
-                        || client_phase.is_some_and(|phase| phase != Phase::Synced)));
+                        || client_phase.is_some_and(|phase| phase != SyncPhase::Synced)));
         let asset_revision = crate::local::asset_revision(&version, &row.artwork_version, &row.artwork_digest);
         let artwork_version = if row.artwork_version == version { row.artwork_version } else { String::new() };
         Ok(Entry {

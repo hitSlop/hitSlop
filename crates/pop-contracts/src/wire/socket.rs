@@ -75,24 +75,19 @@ pub enum HelloSuccess {
     Hello {
         #[serde(rename = "ok")]
         _ok: super::engine::True,
-        #[serde(rename = "documentLineage")]
-        document_lineage: u32,
+        #[serde(rename = "applicationId")]
+        application_id: u32,
     },
 }
 
 impl HelloSuccess {
-    /// A protocol-compatible owner must also belong to this product's document lineage;
-    /// an owner of any other lineage never receives a payload.
-    pub fn check_lineage(&self) -> Result<(), Error> {
-        let Self::Hello { document_lineage, .. } = self;
-        match document_lineage.cmp(&crate::lineage::DOCUMENT_LINEAGE) {
-            std::cmp::Ordering::Equal => Ok(()),
-            std::cmp::Ordering::Greater => {
-                Err(err(Code::RequiresUpdate, "This live document needs a newer pop CLI; update pop"))
-            }
-            std::cmp::Ordering::Less => {
-                Err(err(Code::InvalidRequest, "This live document belongs to an unsupported older pop lineage"))
-            }
+    /// Verify the owner identifies a pop document before sending a payload.
+    pub fn check_application_id(&self) -> Result<(), Error> {
+        let Self::Hello { application_id, .. } = self;
+        if *application_id == crate::format::APPLICATION_ID {
+            Ok(())
+        } else {
+            Err(err(Code::InvalidRequest, "This is not a pop document"))
         }
     }
 }

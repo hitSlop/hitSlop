@@ -108,12 +108,12 @@ enum AccountDeletionOutcome: Equatable {
 
 /// This device's account flags. Firebase keeps an identity in the Keychain; the retained flag
 /// outlives its loss, so a missing identity is refused rather than replaced by a different
-/// anonymous UID. Keys name the document lineage, so another lineage starts with its own.
+/// anonymous UID. Keys are scoped to the document application ID.
 struct SharingAccountDefaults {
   var defaults: UserDefaults = .standard
-  private static let prefix = "click.dotpop.sharing.lineage\(documentLineage())."
+  private static let prefix = "click.dotpop.sharing.application\(applicationId())."
   private static let retainedKey = prefix + "signedIn"
-  /// This device has held an identity in this lineage's Auth.
+  /// This device has held an identity in Auth.
   var identityRetained: Bool {
     get { defaults.bool(forKey: Self.retainedKey) }
     nonmutating set {

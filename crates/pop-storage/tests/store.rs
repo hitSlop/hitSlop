@@ -245,7 +245,7 @@ fn close(store: Store, doc: &mut Document) -> Option<bool> {
     store.close().unwrap();
     job.map(|job| job.is_checkpoint())
 }
-/// One editing session of `count` large edits, retaining its source lineage for refusal checks.
+/// One editing session of `count` large edits, retaining its source file for refusal checks.
 fn session(path: &Path, seed: &mut u64, count: usize) -> (Document, String) {
     let (store, mut doc) = open(path);
     set_title(&mut doc, &noise(seed, 32 * 1024));
@@ -288,7 +288,7 @@ fn closing_a_large_document_keeps_no_history_and_compaction_trims_to_now() {
     assert!(
         !doc.history_version().includes(&first.history_version())
             && !doc.history_version().includes(&second.history_version()),
-        "close discards the previous physical lineages"
+        "close discards the previous physical files"
     );
     assert_eq!(doc.value(), second.value(), "close preserves values and row IDs");
     assert_eq!(doc.theme_state().unwrap().effective, second.theme_state().unwrap().effective);

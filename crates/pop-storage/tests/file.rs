@@ -18,14 +18,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use support::{App, ApplyJson, registry_folder, write_app};
 
-/// Markers restart at 1, so a file an older product wrote can hold this build's tables and
-/// markers. Only its SQLite application ID tells it apart: it is refused before anything
-/// else is read, and no open, snapshot or import writes a byte of it.
+/// Foreign application IDs are refused without modifying or importing their files.
 #[test]
-fn old_product_documents_are_refused_without_writing_or_importing() {
-    // The released pop lineage (0x504F5000), hitSlop's "HSLP", none at all, and a stranger.
+fn foreign_documents_are_refused_without_writing_or_importing() {
     for (application_id, message) in [
-        (0x504F_5000_i64, "made by an older version of pop"),
+        (0x504F_5000_i64, "not a pop document"),
+        (pop_contracts::format::APPLICATION_ID as i64 + 1, "not a pop document"),
         (0x4853_4C50, "not a pop document"),
         (0, "not a pop document"),
         (1, "not a pop document"),
@@ -34,7 +32,7 @@ fn old_product_documents_are_refused_without_writing_or_importing() {
         let path = document(dir.path());
         Connection::open(&path).unwrap().pragma_update(None, "application_id", application_id).unwrap();
         let before = fs::read(&path).unwrap();
-        let refusal = file::open(&path, true).err().expect("old product bytes must not look like a new document");
+        let refusal = file::open(&path, true).err().expect("foreign bytes must not look like a pop document");
         assert!(refusal.to_string().contains(message), "{application_id:#x}: {refusal}");
         for mode in [Mode::Document, Mode::Snapshot] {
             assert!(Store::open(&path, mode).is_err(), "{application_id:#x}");
@@ -375,12 +373,11 @@ fn app_digest_changes_with_embedded_app_content() {
 }
 
 #[test]
-fn app_revision_identity_excludes_saved_state_and_tracks_embedded_app_changes() {
+fn app_digest_excludes_saved_state_and_tracks_embedded_app_changes() {
     let dir = tempfile::tempdir().unwrap();
     let path = document(dir.path());
     let store = Store::open(&path, Mode::Document).unwrap();
-    let original = store.app_revision_id().unwrap();
-    assert_eq!(original.as_bytes(), &store.app_digest().unwrap(), "the existing digest encoding stays unchanged");
+    let original = store.app_digest().unwrap();
     let mut state = store.document().unwrap();
     state.apply_json(
         r##"{"intents":[{"type":"set","path":["title"],"value":"State only"},{"type":"setTheme","values":{"accent":"#abcdef"}}]}"##,
@@ -389,10 +386,10 @@ fn app_revision_identity_excludes_saved_state_and_tracks_embedded_app_changes() 
     store.write(&store.job(&mut state).unwrap().unwrap()).unwrap();
     store.set_artwork(&[(Artwork::Icon, &png(512, 512, 6))]).unwrap();
     store.put_attachment(b"attachment only").unwrap();
-    assert_eq!(store.app_revision_id().unwrap(), original);
+    assert_eq!(store.app_digest().unwrap(), original);
     store.close().unwrap();
     let reopened = Store::open(&path, Mode::Snapshot).unwrap();
-    assert_eq!(reopened.app_revision_id().unwrap(), original);
+    assert_eq!(reopened.app_digest().unwrap(), original);
     reopened.close().unwrap();
 
     for change in [
@@ -403,7 +400,7 @@ fn app_revision_identity_excludes_saved_state_and_tracks_embedded_app_changes() 
         fs::copy(&path, &changed).unwrap();
         raw(&changed).execute_batch(change).unwrap();
         let updated = Store::open(&changed, Mode::Snapshot).unwrap();
-        assert_ne!(updated.app_revision_id().unwrap(), original, "{change}");
+        assert_ne!(updated.app_digest().unwrap(), original, "{change}");
         updated.close().unwrap();
     }
 }
@@ -1752,20 +1749,15 @@ fn streaming_attachment_verification_preserves_large_iso_brand_headers() {
 fn creation_refuses_invalid_template_state_without_publishing_or_repairing_it() {
     use loro::{ExportMode, LoroDoc};
     let wrong_value = LoroDoc::new();
-    wrong_value.get_map("meta").insert("layout", pop_core::LAYOUT).unwrap();
     wrong_value.get_map("data").insert("title", 7).unwrap();
-    let newer_layout = LoroDoc::new();
-    newer_layout.get_map("meta").insert("layout", pop_core::LAYOUT + 1).unwrap();
-    newer_layout.get_map("data").insert("title", "Initial").unwrap();
     let dependent = LoroDoc::new();
-    dependent.get_map("meta").insert("layout", pop_core::LAYOUT).unwrap();
+    dependent.get_map("theme").insert("accent", "#000000").unwrap();
     dependent.commit();
     let base = dependent.oplog_vv();
     dependent.get_map("data").insert("title", "Initial").unwrap();
     for checkpoint in [
         vec![0, 0, 0],
         wrong_value.export(ExportMode::Snapshot).unwrap(),
-        newer_layout.export(ExportMode::Snapshot).unwrap(),
         dependent.export(ExportMode::updates(&base)).unwrap(),
     ] {
         let dir = tempfile::tempdir().unwrap();

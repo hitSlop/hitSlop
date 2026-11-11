@@ -22,7 +22,7 @@ use pop_contracts::wire;
 
 pub use descriptor::validate;
 use descriptor::{Node, is_scalar, loro_scalar, unwrap_optional, valid_key};
-pub use document::{AppSpec, Applied, Document, HistoryVersion, LAYOUT, Origin, TextEdit};
+pub use document::{AppSpec, Applied, Document, HistoryVersion, Origin, TextEdit};
 use execute::{put, resolve};
 use identity::application_id;
 use loro::{

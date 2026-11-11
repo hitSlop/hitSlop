@@ -115,7 +115,7 @@ public struct LiveCollaborationSection: View {
         case .needsUpdate:
           caption("This shared document needs a newer pop.")
           if let onUpdate { Button("Update pop", action: onUpdate) }
-        case .missingHistory, .refused:
+        case .missingHistory, .refused, .conflict, .signIn, .failed, .busy:
           caption(model.status?.detail ?? "This copy could not sync. Save an unshared copy to keep editing.")
         case .ended:
           caption("Live collaboration ended. You keep your copy.")

@@ -244,7 +244,7 @@ pub fn inspect(path: &Path) -> Result<pop_contracts::wire::engine::InspectInfo> 
         metadata: opened.app.metadata().clone(),
         window: opened.app.page_window(),
         views: opened.app.views(),
-        capabilities: opened.app.capabilities().to_vec(),
+        capabilities: opened.app.capabilities(),
         assets: list("SELECT key, size FROM assets ORDER BY key")?,
         artwork: list("SELECT name, length(png) FROM artwork ORDER BY name")?,
         defaults: opened.app.spec().theme_tokens().iter().cloned().collect(),
@@ -259,7 +259,7 @@ pub fn inspect(path: &Path) -> Result<pop_contracts::wire::engine::InspectInfo> 
             conn.query_row("SELECT coalesce(sum(length(bytes)),0) FROM assets", [], |r| r.get(0))
                 .map_err(sqlite("inspect"))?,
         )?,
-        app_digest: crate::hex(&rows::app_digest(&conn)?),
+        app_digest: crate::hex(rows::app_digest(&conn)?.as_bytes()),
         live: crate::registry::discovery(path)?.is_some(),
     })
 }

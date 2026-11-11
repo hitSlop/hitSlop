@@ -1,6 +1,7 @@
 use super::*;
 use crate::resolution;
 use crate::resolution::ResolvedRoom;
+use pop_contracts::relay::PauseKind;
 use pop_sharing_protocol::http::RoomPhase;
 pub(crate) fn fixture_source() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/checklist/document")
@@ -49,7 +50,7 @@ fn journal_contention_is_retryable_instead_of_a_terminal_refusal() {
     let journal = test_journal(&owner, &key, true);
     let _held = journal.transaction().unwrap();
     let error = journal.transaction().err().expect("another transaction holds the journal");
-    assert!(matches!(journal::local(error), transport::HttpFailure::Busy(_)));
+    assert!(matches!(journal::local(error), transport::HttpFailure { kind: PauseKind::Busy, .. }));
 }
 
 #[test]
@@ -297,7 +298,7 @@ fn initial_download_hydrates_without_records_and_failed_download_never_publishes
     server.join().unwrap();
     let downloaded = Store::open(&destination, Mode::Snapshot).unwrap();
     assert_eq!(downloaded.app().document_uuid, owner.app().document_uuid);
-    assert_eq!(hex(&downloaded.app_digest().unwrap()), seed.app);
+    assert_eq!(hex(downloaded.app_digest().unwrap().as_bytes()), seed.app);
     for (item, bytes) in inventory.iter().zip(blobs) {
         assert_eq!(downloaded.attachment(&item.hash).unwrap(), bytes);
     }

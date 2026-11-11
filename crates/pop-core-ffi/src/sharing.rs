@@ -1,8 +1,9 @@
 //! Cloud connection status and explicit invitation capability boundaries; the library owns
 //! native connections.
 use super::*;
-use pop_cloud::{Client, ClientStatus, Phase};
-use pop_core::sync::PauseKind;
+use pop_cloud::{Client, ClientStatus};
+use pop_contracts::relay::PauseKind;
+use pop_contracts::relay::SyncPhase;
 use pop_sharing_protocol::document::AccessState;
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum SharingError {
@@ -13,7 +14,7 @@ fn failure(message: String) -> SharingError {
     SharingError::Failed { message }
 }
 #[uniffi::remote(Enum)]
-pub enum Phase {
+pub enum SyncPhase {
     Offline,
     Syncing,
     Synced,
@@ -29,11 +30,15 @@ pub enum PauseKind {
     MissingHistory,
     FilesFull,
     Ended,
+    Conflict,
+    SignIn,
+    Failed,
+    Busy,
 }
 #[uniffi::remote(Record)]
 pub struct ClientStatus {
     pub pause_kind: Option<PauseKind>,
-    pub phase: Phase,
+    pub phase: SyncPhase,
     pub detail: String,
 }
 #[uniffi::remote(Record)]

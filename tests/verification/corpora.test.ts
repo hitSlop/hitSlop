@@ -9,7 +9,7 @@ import { corpusFiles, verifyCorpus } from "../../scripts/compat/integrity";
 import { publishedHistory, resolveCorpora, verifyHistory, verifyResolvedCorpora, type HistoricalRelease } from "../../scripts/compat/corpora";
 import { copyCorpusDocument, releases, type Release } from "../../scripts/compat/corpus";
 import { resolveWriter, verifyPackedWriter } from "../../scripts/compat/writers";
-import { DocumentLineage } from "../../packages/pop/src/schema/constants";
+import { ApplicationId } from "../../packages/pop/src/schema/constants";
 
 test("corpus discovery permits a missing optional directory but surfaces filesystem errors", async () => {
   const root = await mkdtemp(join(tmpdir(), "pop-corpus-discovery-"));
@@ -32,7 +32,7 @@ async function fixture(root: string, version = "2.0.0", id = 1) {
   }
   await writeFile(join(directory, "acceptance/vector.json"), "{}");
   const release: Release = { release: version, frozen: true, commit: "c".repeat(40), captured: "2026-10-15",
-    markers: { documentLineage: DocumentLineage, packageFormat: 1, runtimeABI: 1, storage: 1, layout: 1, protocol: 1 },
+    markers: { applicationId: ApplicationId, packageFormat: 1, runtimeABI: 1, storage: 1, protocol: 1 },
     producer: { coreBuildID: "core" }, files: await corpusFiles(directory), storageSchemas: { "crates/pop-storage/src/file/storage-1.sql": await fileDigest(join(repository, "crates/pop-storage/src/file/storage-1.sql")) },
     limits: [{ name: "example", value: "1", kind: "Max" }], templates: {}, templateAppDigests: {},
     writer: { version, platform: "darwin-arm64", sha256: "a".repeat(64), buildId: "core" }, toolchain: {}, clock: 1,
@@ -46,7 +46,7 @@ async function fixture(root: string, version = "2.0.0", id = 1) {
   artifacts[`compat-corpus-${version}.tar.gz`] = sha256(bytes);
   const entry: HistoricalRelease = { release: { id, tag_name: `pop-v${version}`, draft: false, prerelease: false, immutable: true,
     assets: [{ id, name: "release-record.json" }, { id: id + 1, name: `compat-corpus-${version}.tar.gz` }, { id: id + 2, name: `hitslop-pop-${version}.tgz` }] },
-    record: { documentLineage: DocumentLineage, commit: release.commit, tag: `pop-v${version}`, macVersion: version, macBuild: "1", run: "1", attempt: "1", npmIntegrity: "sha512-" + "a".repeat(86) + "==", qualified: {},
+    record: { applicationId: ApplicationId, commit: release.commit, tag: `pop-v${version}`, macVersion: version, macBuild: "1", run: "1", attempt: "1", npmIntegrity: "sha512-" + "a".repeat(86) + "==", qualified: {},
       corpus: { file: `compat-corpus-${version}.tar.gz`, sha256: sha256(bytes) }, artifacts } };
   return { entry, bytes, directory };
 }
@@ -111,32 +111,15 @@ test("drafts do not break PR replay; published history must be immutable and tra
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-// The repository keeps its hitSlop releases and the pop 1.x releases of the first lineage.
-test("releases before document lineage 2 are skipped without downloading their records", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pop-lineage-"));
-  try {
-    const { entry } = await fixture(root);
-    // No assets: reading either release's record would throw.
-    const hitslop = { ...entry.release, id: 98, tag_name: "v1.0.0", assets: [] };
-    const lineage1 = { ...entry.release, id: 99, tag_name: "pop-v1.4.1", assets: [] };
-    const download = async (id: number) => {
-      expect(id).toBe(1);
-      return Buffer.from(JSON.stringify(entry.record));
-    };
-    expect(await publishedHistory({ required: {}, list: async () => [hitslop, lineage1], download })).toEqual([]);
-    expect(await publishedHistory({ required: {}, list: async () => [hitslop, lineage1, entry.release], download })).toEqual([entry]);
-  } finally { await rm(root, { recursive: true, force: true }); }
-});
-
-test("a supported release without the current document lineage fails qualification", async () => {
-  const root = await mkdtemp(join(tmpdir(), "pop-document-lineage-"));
+test("a supported release without the current application ID fails qualification", async () => {
+  const root = await mkdtemp(join(tmpdir(), "pop-application-id-"));
   try {
     const { entry } = await fixture(root);
     const history = (record: object) => publishedHistory({ required: {}, list: async () => [entry.release],
       download: async () => Buffer.from(JSON.stringify(record)) });
-    await expect(history({ ...entry.record, documentLineage: undefined })).rejects.toThrow("must declare document lineage");
-    await expect(history({ ...entry.record, documentLineage: DocumentLineage - 1 })).rejects.toThrow("must declare document lineage");
-    await expect(history({ ...entry.record, documentLineage: DocumentLineage + 1 })).rejects.toThrow("newer release tooling");
+    await expect(history({ ...entry.record, applicationId: undefined })).rejects.toThrow("must declare application ID");
+    await expect(history({ ...entry.record, applicationId: ApplicationId - 1 })).rejects.toThrow("must declare application ID");
+    await expect(history({ ...entry.record, applicationId: ApplicationId + 1 })).rejects.toThrow("must declare application ID");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

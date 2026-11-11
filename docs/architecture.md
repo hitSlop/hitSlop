@@ -112,8 +112,8 @@ attachment and command-program paths cannot become script sources.
 The CLI's engine forwards to a live owner or acquires the writer lock. Its command
 protocol is exact, with no old CLI adapters. Owner socket operations carry `{protocol, request}` around the engine
 request type and return the same typed successes and failures. Protocol refusal precedes
-payload interpretation; hello preflight and transport limits still apply. Stored `packageFormat`, `runtimeABI`, SQLite storage version and Loro layout
-remain independent; [compatibility](engineering-contract.md#compatibility) and the
+payload interpretation; hello preflight and transport limits still apply. Stored `packageFormat` (including its Loro container layout), `runtimeABI` and the SQLite
+storage version remain independent; [compatibility](engineering-contract.md#compatibility) and the
 [corpus](testing.md#compatibility-corpus) define the released-file guarantee.
 
 ## Crates

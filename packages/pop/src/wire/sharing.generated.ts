@@ -47,7 +47,7 @@ export type Pause = { kind: PauseKind, reason: string, };
 /**
  * Stable recovery choices shared by every transport and UI.
  */
-export type PauseKind = "roomFull" | "outgrown" | "needsUpdate" | "refused" | "missingHistory" | "filesFull" | "ended";
+export type PauseKind = "roomFull" | "outgrown" | "needsUpdate" | "refused" | "missingHistory" | "filesFull" | "ended" | "conflict" | "signIn" | "failed" | "busy";
 
 /**
  * A document's seed and app, read by any member. Access and the invitation secret are

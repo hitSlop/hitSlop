@@ -62,12 +62,6 @@ pub(super) fn one(conn: &Connection, sql: &str) -> Result<i64> {
 /// this build reads from one it is too old for.
 pub(super) fn markers(conn: &Connection) -> Result<()> {
     let application_id = one(conn, "PRAGMA application_id")?;
-    if application_id & !0xff == 0x504F_5000 && application_id > APPLICATION_ID {
-        return Err(requires_update("This document belongs to a newer pop document lineage"));
-    }
-    if application_id == 0x504F_5000 {
-        return Err(invalid("This document was made by an older version of pop and can't be opened"));
-    }
     if application_id != APPLICATION_ID {
         return Err(invalid("This is not a pop document"));
     }

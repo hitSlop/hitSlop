@@ -48,9 +48,7 @@ pub fn delete_document(path: &std::path::Path) -> crate::store::Result<()> {
     std::fs::remove_file(path).map_err(crate::error::failed)
 }
 
-// A product lineage is distinct from the schema version. Old files with the same
-// schema must never be accepted as new-lineage documents or rewritten on open.
-pub(crate) const APPLICATION_ID: i64 = 0x504F_5000 | pop_contracts::lineage::DOCUMENT_LINEAGE as i64;
+pub(crate) const APPLICATION_ID: i64 = pop_contracts::format::APPLICATION_ID as i64;
 /// These tables. A compatibility requirement, not a release number: a build refuses a
 /// newer one with `requires_update`.
 pub(crate) const STORAGE_VERSION: i64 = 1;

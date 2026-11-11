@@ -30,11 +30,10 @@ export type Release = {
   captured: string;
   /** The compatibility markers the entry's build wrote. */
   markers: {
-    documentLineage: number;
+    applicationId: number;
     packageFormat: number;
     runtimeABI: number;
     storage: number;
-    layout: number;
     protocol: number;
   };
   producer: { coreBuildID: string; runner?: Record<string, string> };

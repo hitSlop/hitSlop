@@ -1,6 +1,7 @@
 //! Persistent cloud document control, independent from invitation access.
 use crate::client::*;
 use crate::{attachments, journal, transport};
+use pop_contracts::relay::PauseKind;
 use pop_runtime::owner::Owner;
 use pop_sharing_protocol::document::{AccessState, JoinDocument, UpdateDocument};
 use pop_sharing_protocol::http::{CreateRoom, Invitation, OpenRoom, RoomPhase};
@@ -41,7 +42,7 @@ pub fn ready_document_metadata(
     RoomKey::identity(document, token)?;
     match transport::room_control(pop_sharing_protocol::TRUSTED_ORIGIN, document, "GET", "metadata", token, &[]) {
         Ok(bytes) => decode(&bytes).map(Some),
-        Err(transport::HttpFailure::Conflict) => Ok(None),
+        Err(transport::HttpFailure { kind: PauseKind::Conflict, .. }) => Ok(None),
         Err(error) => Err(error.into()),
     }
 }

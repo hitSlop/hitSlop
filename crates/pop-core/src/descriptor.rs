@@ -3,22 +3,30 @@ use crate::wire::present_option as present;
 
 // The descriptor is authored data, never executable application code. Parsed, two
 // descriptors compare by meaning: key order and number spelling never matter.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "descriptor.generated.ts"))]
 #[serde(tag = "kind", rename_all = "lowercase", deny_unknown_fields)]
 pub enum Node {
-    // Empty struct variants, not unit variants: serde ignores unknown fields on unit
-    // variants of an internally tagged enum, which would accept `{"kind":"text","x":1}`.
-    Text {},
+    Text {
+        #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+    },
     /// Scalars may declare the `default` an object field takes when a write omits it.
     Boolean {
+        #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
         #[serde(default, deserialize_with = "present")]
         default: Option<bool>,
     },
     /// A safe-integer total; concurrent increments add up (a Loro counter).
-    Counter {},
+    Counter {
+        #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
+    },
     /// Last writer wins. Length bounds count Unicode code points.
     String {
+        #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
         #[serde(default, rename = "minLength", deserialize_with = "present")]
         min_length: Option<u64>,
         #[serde(default, rename = "maxLength", deserialize_with = "present")]
@@ -28,6 +36,8 @@ pub enum Node {
     },
     /// A finite f64. Integral values project as JSON integers.
     Number {
+        #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
         #[serde(default, deserialize_with = "present")]
         min: Option<f64>,
         #[serde(default, deserialize_with = "present")]
@@ -37,6 +47,8 @@ pub enum Node {
     },
     /// A safe integer (±2^53−1), stored as i64.
     Integer {
+        #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
         #[serde(default, deserialize_with = "present")]
         min: Option<i64>,
         #[serde(default, deserialize_with = "present")]
@@ -45,23 +57,33 @@ pub enum Node {
         default: Option<i64>,
     },
     Enum {
+        #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
         values: Vec<String>,
         #[serde(default, deserialize_with = "present")]
         default: Option<String>,
     },
     /// Absent until set; `clear` removes it.
     Optional {
+        #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
         inner: Box<Node>,
     },
     Object {
+        #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
         properties: BTreeMap<String, Node>,
     },
     /// Rows (object items with `$id`) or plain scalar elements addressed by index.
     List {
+        #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
         item: Box<Node>,
     },
     /// Entries by string key; each entry behaves like an optional field.
     Record {
+        #[serde(default, deserialize_with = "present", skip_serializing_if = "Option::is_none")]
+        description: Option<String>,
         value: Box<Node>,
     },
 }
@@ -83,7 +105,7 @@ pub(super) fn loro_scalar(node: &Node, value: &Value) -> loro::LoroValue {
 /// The value kind under an optional wrapper.
 pub(super) fn unwrap_optional(node: &Node) -> &Node {
     match node {
-        Node::Optional { inner } => inner,
+        Node::Optional { inner, .. } => inner,
         node => node,
     }
 }
@@ -99,7 +121,7 @@ pub(super) fn is_scalar(node: &Node) -> bool {
 /// The scalar's declared default, as JSON.
 fn declared_default(node: &Node) -> Option<Value> {
     match node {
-        Node::Boolean { default } => default.map(Value::from),
+        Node::Boolean { default, .. } => default.map(Value::from),
         Node::String { default, .. } | Node::Enum { default, .. } => default.clone().map(Value::from),
         Node::Number { default, .. } => default.map(|n| json!(n)),
         Node::Integer { default, .. } => default.map(Value::from),
@@ -127,7 +149,7 @@ impl Node {
             return Err(err(Code::TooLarge, "Descriptor depth"));
         }
         match self {
-            Self::Object { properties } => {
+            Self::Object { properties, .. } => {
                 if properties.len() > crate::wire::DESCRIPTOR_FIELDS {
                     return Err(err(Code::TooLarge, "Descriptor fields"));
                 }
@@ -141,14 +163,14 @@ impl Node {
                     node.check(depth + 1)?;
                 }
             }
-            Self::List { item } => {
+            Self::List { item, .. } => {
                 if !matches!(**item, Self::Object { .. }) && !is_scalar(item) {
                     return Err(err(Code::InvalidSchema, "Lists contain object rows or scalars"));
                 }
                 fields_only(item)?;
                 item.check(depth + 1)?;
             }
-            Self::Record { value } => {
+            Self::Record { value, .. } => {
                 if !matches!(**value, Self::Object { .. }) && !is_scalar(value) {
                     return Err(err(Code::InvalidSchema, "Record values are scalars or objects"));
                 }
@@ -188,10 +210,10 @@ impl Node {
                     return Err(err(Code::InvalidSchema, "Enum needs 1–1024 unique values"));
                 }
             }
-            Self::Optional { inner } => {
+            Self::Optional { inner, .. } => {
                 // Optional lists, records and counters are not implemented; no pop
                 // needs them.
-                if !is_scalar(inner) && !matches!(**inner, Self::Object { .. } | Self::Text {}) {
+                if !is_scalar(inner) && !matches!(**inner, Self::Object { .. } | Self::Text { .. }) {
                     return Err(err(Code::InvalidSchema, "Optional holds a scalar, text or an object"));
                 }
                 if declared_default(inner).is_some() {
@@ -199,7 +221,7 @@ impl Node {
                 }
                 inner.check(depth + 1)?;
             }
-            Self::Text {} | Self::Boolean { .. } | Self::Counter {} => {}
+            Self::Text { .. } | Self::Boolean { .. } | Self::Counter { .. } => {}
         }
         if let Some(default) = declared_default(self) {
             check::scalar(self, &default)
@@ -212,11 +234,11 @@ impl Node {
     /// defaults. Optional fields stay absent.
     pub(super) fn default_value(&self) -> Option<Value> {
         match self {
-            Self::Text {} => Some(json!("")),
+            Self::Text { .. } => Some(json!("")),
             Self::List { .. } => Some(json!([])),
             Self::Record { .. } => Some(json!({})),
             Self::Object { .. } if self.omittable() => Some(json!({})),
-            Self::Counter {} => Some(json!(0)),
+            Self::Counter { .. } => Some(json!(0)),
             Self::Object { .. } | Self::Optional { .. } => None,
             scalar => declared_default(scalar),
         }
@@ -226,7 +248,7 @@ impl Node {
     pub(super) fn omittable(&self) -> bool {
         match self {
             Self::Optional { .. } => true,
-            Self::Object { properties } => properties.values().all(Self::omittable),
+            Self::Object { properties, .. } => properties.values().all(Self::omittable),
             node => node.default_value().is_some(),
         }
     }
@@ -234,7 +256,7 @@ impl Node {
     /// default stays missing, so validation names it.
     pub(super) fn fill_defaults(&self, value: &mut Value) {
         match self {
-            Self::Object { properties } => {
+            Self::Object { properties, .. } => {
                 let Some(map) = value.as_object_mut() else { return };
                 for (key, node) in properties {
                     if !map.contains_key(key)
@@ -247,9 +269,11 @@ impl Node {
                     }
                 }
             }
-            Self::Optional { inner } => inner.fill_defaults(value),
-            Self::List { item } => value.as_array_mut().into_iter().flatten().for_each(|row| item.fill_defaults(row)),
-            Self::Record { value: entry } => {
+            Self::Optional { inner, .. } => inner.fill_defaults(value),
+            Self::List { item, .. } => {
+                value.as_array_mut().into_iter().flatten().for_each(|row| item.fill_defaults(row))
+            }
+            Self::Record { value: entry, .. } => {
                 value.as_object_mut().into_iter().flat_map(|map| map.values_mut()).for_each(|v| entry.fill_defaults(v))
             }
             _ => {}
@@ -265,11 +289,11 @@ impl Node {
         match self {
             // Writes and stored values share one scalar rule.
             scalar if is_scalar(scalar) => check::scalar(scalar, value),
-            Self::Text {} if value.is_string() => Ok(()),
-            Self::Counter {} if value.as_i64().is_some_and(safe) => Ok(()),
+            Self::Text { .. } if value.is_string() => Ok(()),
+            Self::Counter { .. } if value.as_i64().is_some_and(safe) => Ok(()),
             // `null` is never a value: an optional is set or absent.
-            Self::Optional { inner } => inner.validate(value, false),
-            Self::Object { properties } => {
+            Self::Optional { inner, .. } => inner.validate(value, false),
+            Self::Object { properties, .. } => {
                 let map = value.as_object().ok_or_else(|| err(Code::TypeMismatch, "Expected object"))?;
                 if let Some(key) = map.keys().find(|k| !(properties.contains_key(*k) || (row && *k == "$id"))) {
                     return Err(err(Code::TypeMismatch, "Unknown property").at(key));
@@ -288,14 +312,14 @@ impl Node {
                 }
                 Ok(())
             }
-            Self::List { item } if is_scalar(item) => {
+            Self::List { item, .. } if is_scalar(item) => {
                 let list = value.as_array().ok_or_else(|| err(Code::TypeMismatch, "Expected list"))?;
                 if list.len() > MAX_SCALAR_LIST {
                     return Err(err(Code::TooLarge, "List is too long"));
                 }
                 list.iter().enumerate().try_for_each(|(i, element)| item.validate(element, false).map_err(|e| e.at(i)))
             }
-            Self::Record { value: entry } => {
+            Self::Record { value: entry, .. } => {
                 let map = value.as_object().ok_or_else(|| err(Code::TypeMismatch, "Expected record"))?;
                 for (key, value) in map {
                     if !valid_key(key) {
@@ -305,7 +329,7 @@ impl Node {
                 }
                 Ok(())
             }
-            Self::List { item } => {
+            Self::List { item, .. } => {
                 let list = value.as_array().ok_or_else(|| err(Code::TypeMismatch, "Expected list"))?;
                 let mut ids = BTreeSet::new();
                 for (i, value) in list.iter().enumerate() {
@@ -334,22 +358,19 @@ fn fields_only(node: &Node) -> Result<()> {
 
 /// The longest description, in UTF-16 units.
 use crate::wire::DESCRIPTOR_DESCRIPTION as DESCRIPTION;
-/// Checks a node's `description` and its children's, then removes them. Descriptions tell
-/// people and agents what a field means; they stay in the stored descriptor and never
-/// change what the descriptor means, so two that differ only in descriptions compare equal.
-fn strip_descriptions(node: &mut Value) -> Result<()> {
-    let Some(map) = node.as_object_mut() else { return Ok(()) };
-    if let Some(description) = map.remove("description")
+fn check_descriptions(node: &Value) -> Result<()> {
+    let Some(map) = node.as_object() else { return Ok(()) };
+    if let Some(description) = map.get("description")
         && !description.as_str().is_some_and(|d| !d.is_empty() && utf16_len(d) <= DESCRIPTION)
     {
         return Err(err(Code::InvalidSchema, "A description is 1–500 characters"));
     }
-    if let Some(Value::Object(properties)) = map.get_mut("properties") {
-        properties.values_mut().try_for_each(strip_descriptions)?;
+    if let Some(Value::Object(properties)) = map.get("properties") {
+        properties.values().try_for_each(check_descriptions)?;
     }
     for child in ["item", "value", "inner"] {
-        if let Some(child) = map.get_mut(child) {
-            strip_descriptions(child)?;
+        if let Some(child) = map.get(child) {
+            check_descriptions(child)?;
         }
     }
     Ok(())
@@ -361,8 +382,8 @@ pub(super) fn descriptor(s: &str) -> Result<Node> {
 pub(super) fn declared(node: &Node) -> Option<Value> {
     declared_default(node)
 }
-pub(super) fn descriptor_value(mut root: Value) -> Result<Node> {
-    strip_descriptions(&mut root)?;
+pub(super) fn descriptor_value(root: Value) -> Result<Node> {
+    check_descriptions(&root)?;
     let root: Node = serde_json::from_value(root).map_err(|e| err(Code::InvalidRequest, e))?;
     if !matches!(root, Node::Object { .. }) {
         return Err(err(Code::InvalidSchema, "Expected object descriptor root"));
@@ -382,4 +403,58 @@ pub(crate) fn checked(schema: &str, initial: &str) -> Result<Node> {
     schema.fill_defaults(&mut initial);
     schema.validate(&initial, false)?;
     Ok(schema)
+}
+
+impl Node {
+    pub fn description(&self) -> Option<&str> {
+        match self {
+            Self::Text { description, .. }
+            | Self::Boolean { description, .. }
+            | Self::Counter { description, .. }
+            | Self::String { description, .. }
+            | Self::Number { description, .. }
+            | Self::Integer { description, .. }
+            | Self::Enum { description, .. }
+            | Self::Optional { description, .. }
+            | Self::Object { description, .. }
+            | Self::List { description, .. }
+            | Self::Record { description, .. } => description.as_deref(),
+        }
+    }
+}
+
+// Descriptions are discovery metadata, not part of schema equality at mount.
+impl PartialEq for Node {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Text { .. }, Self::Text { .. }) => true,
+            (Self::Boolean { default: default_a, .. }, Self::Boolean { default: default_b, .. }) => {
+                default_a == default_b
+            }
+            (Self::Counter { .. }, Self::Counter { .. }) => true,
+            (
+                Self::String { min_length: min_length_a, max_length: max_length_a, default: default_a, .. },
+                Self::String { min_length: min_length_b, max_length: max_length_b, default: default_b, .. },
+            ) => min_length_a == min_length_b && max_length_a == max_length_b && default_a == default_b,
+            (
+                Self::Number { min: min_a, max: max_a, default: default_a, .. },
+                Self::Number { min: min_b, max: max_b, default: default_b, .. },
+            ) => min_a == min_b && max_a == max_b && default_a == default_b,
+            (
+                Self::Integer { min: min_a, max: max_a, default: default_a, .. },
+                Self::Integer { min: min_b, max: max_b, default: default_b, .. },
+            ) => min_a == min_b && max_a == max_b && default_a == default_b,
+            (
+                Self::Enum { values: values_a, default: default_a, .. },
+                Self::Enum { values: values_b, default: default_b, .. },
+            ) => values_a == values_b && default_a == default_b,
+            (Self::Optional { inner: inner_a, .. }, Self::Optional { inner: inner_b, .. }) => inner_a == inner_b,
+            (Self::Object { properties: properties_a, .. }, Self::Object { properties: properties_b, .. }) => {
+                properties_a == properties_b
+            }
+            (Self::List { item: item_a, .. }, Self::List { item: item_b, .. }) => item_a == item_b,
+            (Self::Record { value: value_a, .. }, Self::Record { value: value_b, .. }) => value_a == value_b,
+            _ => false,
+        }
+    }
 }

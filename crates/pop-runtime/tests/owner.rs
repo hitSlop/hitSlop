@@ -1105,9 +1105,9 @@ fn discard_waits_for_membership_outcome_without_retracting_shared_edits() {
 // owner keeps accepting and saving edits, and pushes none of them.
 #[test]
 fn an_outgrown_shared_document_keeps_editing_and_saving_without_pushing() {
+    use pop_contracts::relay::PauseKind;
     use pop_contracts::relay::frame::Frame;
     use pop_contracts::relay::frame::Permission;
-    use pop_core::sync::PauseKind;
     use pop_core::sync::Status;
     use pop_runtime::owner::SyncEvent;
     let (_dir, path) = fixture();

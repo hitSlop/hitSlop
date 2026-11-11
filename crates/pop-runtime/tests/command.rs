@@ -362,11 +362,11 @@ fn peer_reply(hello: Value, response: &str) -> (String, usize) {
 }
 
 #[test]
-fn live_owner_lineage_is_checked_before_any_document_payload_is_sent() {
-    let current = pop_contracts::lineage::DOCUMENT_LINEAGE;
+fn live_owner_application_id_is_checked_before_any_document_payload_is_sent() {
+    let current = pop_contracts::format::APPLICATION_ID;
     for (hello, reason) in [
-        (json!({"ok":true,"method":"hello","documentLineage":current - 1}), "invalid_request"),
-        (json!({"ok":true,"method":"hello","documentLineage":current + 1}), "requires_update"),
+        (json!({"ok":true,"method":"hello","applicationId":current - 1}), "invalid_request"),
+        (json!({"ok":true,"method":"hello","applicationId":current + 1}), "invalid_request"),
     ] {
         // The real owner holds the writer lease and publishes a fake peer discovery.
         // An unsafe client would transmit the batch and receive this success response.
@@ -376,9 +376,9 @@ fn live_owner_lineage_is_checked_before_any_document_payload_is_sent() {
         assert_eq!(refusal["code"], "rejected");
         assert_eq!(refusal["reason"], reason);
     }
-    // A hello that does not state its lineage proves nothing: it is refused, payload unsent.
+    // A hello that does not state its application ID proves nothing: it is refused, payload unsent.
     let (answer, commands) = peer_reply(json!({"ok":true,"method":"hello"}), r#"{"ok":true,"method":"batch"}"#);
-    assert_eq!(commands, 0, "an owner of unproven lineage received a document payload");
+    assert_eq!(commands, 0, "an owner of unproven identity received a document payload");
     assert_eq!(checked(answer)["ok"], false);
 }
 
@@ -387,7 +387,7 @@ fn peer_outcomes_are_forwarded_unchanged_without_disk_changes() {
     for code in ["rejected", "owner_replaced", "closing", "save_failed", "unknown_outcome"] {
         let refusal = json!({"ok":false,"error":"Peer refusal","code":code}).to_string();
         let (answer, commands) = peer_reply(
-            json!({"ok":true,"method":"hello","documentLineage":pop_contracts::lineage::DOCUMENT_LINEAGE}),
+            json!({"ok":true,"method":"hello","applicationId":pop_contracts::format::APPLICATION_ID}),
             &refusal,
         );
         assert_eq!(answer, refusal);
@@ -403,7 +403,7 @@ fn peer_outcomes_are_forwarded_unchanged_without_disk_changes() {
 fn peer_hello_reply_accepts_unknown_members() {
     let response = r#"{ "method": "batch", "ok": true }"#;
     let (answer, commands) = peer_reply(
-        json!({"ok":true,"method":"hello","documentLineage":pop_contracts::lineage::DOCUMENT_LINEAGE,"features":[]}),
+        json!({"ok":true,"method":"hello","applicationId":pop_contracts::format::APPLICATION_ID,"features":[]}),
         response,
     );
     assert_eq!(answer, response);
@@ -413,10 +413,8 @@ fn peer_hello_reply_accepts_unknown_members() {
 #[test]
 fn peer_unfamiliar_outcome_is_forwarded_byte_for_byte() {
     let response = r#"{ "ok": false, "code": "future_outcome", "error": "Future peer message" }"#;
-    let (answer, commands) = peer_reply(
-        json!({"ok":true,"method":"hello","documentLineage":pop_contracts::lineage::DOCUMENT_LINEAGE}),
-        response,
-    );
+    let (answer, commands) =
+        peer_reply(json!({"ok":true,"method":"hello","applicationId":pop_contracts::format::APPLICATION_ID}), response);
     assert_eq!(answer, response);
     assert_eq!(commands, 1);
 }
@@ -433,7 +431,7 @@ fn a_lost_mutation_reply_is_unknown_and_is_never_replayed() {
         writeln!(
             hello,
             "{}",
-            json!({"ok":true,"method":"hello","documentLineage":pop_contracts::lineage::DOCUMENT_LINEAGE})
+            json!({"ok":true,"method":"hello","applicationId":pop_contracts::format::APPLICATION_ID})
         )
         .unwrap();
         drop(hello);

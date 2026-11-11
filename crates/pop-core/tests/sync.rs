@@ -12,7 +12,7 @@ use support::generate::intent;
 use support::relay::Relay;
 use support::{ApplyJson, View, app, fixture, next, workload};
 
-const APP: [u8; 32] = [7; 32];
+const APP: pop_contracts::AppDigest = pop_contracts::AppDigest::from_bytes([7; 32]);
 
 // --- Replicas through the relay, with faults ---------------------------------------------
 
@@ -366,7 +366,7 @@ fn quota_waits_for_compaction() {
     let Frame::Push { id, .. } = Frame::decode(&session.push(&doc).unwrap()).unwrap() else { panic!() };
     session.receive(&mut doc, &Frame::Ack { id, status: Ack::Quota }.encode());
     assert!(
-        matches!(session.status(), Status::Paused { kind: pop_core::sync::PauseKind::RoomFull, .. }),
+        matches!(session.status(), Status::Paused { kind: pop_contracts::relay::PauseKind::RoomFull, .. }),
         "{:?}",
         session.status()
     );
@@ -484,8 +484,8 @@ fn shallow_seed_base_is_applied_by_a_joiner() {
 
 #[test]
 fn relay_error_codes_choose_recovery_actions() {
+    use pop_contracts::relay::PauseKind;
     use pop_contracts::relay::frame::ErrorCode;
-    use pop_core::sync::PauseKind;
     let origin = Document::create(&app(SCHEMA), r#"{"title":"Seed","done":false}"#).unwrap();
     for (code, kind) in [
         (ErrorCode::Protocol.into(), PauseKind::NeedsUpdate),
@@ -556,16 +556,16 @@ fn read_only_offline_and_terminally_paused_sessions_cannot_compact() {
     session.receive(&mut doc, &Frame::Welcome { permission: Permission::Read, version: vv }.encode());
     session.receive(&mut doc, &Frame::CaughtUp.encode());
     assert!(base_of(&session, &doc).is_none());
-    session.pause(pop_core::sync::PauseKind::Refused, "refused".into());
+    session.pause(pop_contracts::relay::PauseKind::Refused, "refused".into());
     assert!(base_of(&session, &doc).is_none());
 }
 
 // Hosts route on the phase and the pause, never on the status's debug text.
 #[test]
 fn status_gives_hosts_a_phase_and_a_pause() {
+    use pop_contracts::relay::PauseKind;
     use pop_contracts::relay::SyncPhase;
     use pop_core::sync::Pause;
-    use pop_core::sync::PauseKind;
     let phases = [
         (Status::Offline, SyncPhase::Offline),
         (Status::Syncing, SyncPhase::Syncing),
@@ -659,7 +659,7 @@ fn unrelayable_retained_history_pauses_outgrown_and_keeps_local_editing() {
         version: version(&origin).iter().map(|(&p, &n)| (p, n as u32)).collect(),
     };
     assert!(session.receive(&mut source, &welcome.encode()).send.is_empty());
-    assert!(matches!(session.status(), Status::Paused { kind: pop_core::sync::PauseKind::Outgrown, .. }));
+    assert!(matches!(session.status(), Status::Paused { kind: pop_contracts::relay::PauseKind::Outgrown, .. }));
     source.apply_json(r#"{"intents":[{"type":"set","path":["done"],"value":true}]}"#, Origin::Page).unwrap();
     assert_eq!(support::value(&source)["done"], true, "an outgrown copy keeps editing locally");
     assert!(session.push(&source).is_none(), "an outgrown copy pushes nothing");

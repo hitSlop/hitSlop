@@ -122,7 +122,7 @@ pub fn call(path: &Path, input: &str) -> Result<String> {
             return Ok(response);
         }
     };
-    hello.check_lineage().map_err(Failure::from)?;
+    hello.check_application_id().map_err(Failure::from)?;
     if input.len() > command::MAX_REQUEST_BYTES {
         return Err(Failure::rejected(Code::InvalidRequest, "Oversized socket request"));
     }

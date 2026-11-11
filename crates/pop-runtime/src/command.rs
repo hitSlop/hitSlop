@@ -64,7 +64,7 @@ fn page_config(owner: &Owner) -> Result<wire::page::PageSuccess> {
         ok: wire::engine::True,
         runtime_abi: app.runtime_abi,
         style: app.style,
-        window: app.app.window().clone(),
+        window: app.app.window(),
         descriptor: raw(app.app.document_json().into())?,
     })
 }
@@ -204,15 +204,7 @@ fn page_validated(
             ),
             Err(_) => return reply(page_failure(invalid("Invalid attachment bytes"), false)),
         },
-        request @ (PageRequest::Config {}
-        | PageRequest::HostEnvironment {}
-        | PageRequest::HapticsPlay { .. }
-        | PageRequest::WindowResize { .. }
-        | PageRequest::Ready {}
-        | PageRequest::PageRecovered {}
-        | PageRequest::Failed { .. }
-        | PageRequest::PageError { .. }
-        | PageRequest::SpeechTranscribe { .. }) => {
+        request => {
             // serde's growing output buffer can retain up to twice its encoded size.
             // Config carries the accepted descriptor, not just the tiny input request;
             // charge it before cloning or serializing any response data. The allowance
@@ -223,7 +215,7 @@ fn page_validated(
                     .app
                     .document_json()
                     .len()
-                    .saturating_add(owner::serialized_size(owner.app().app.window()))
+                    .saturating_add(owner::serialized_size(&owner.app().app.window()))
                     .saturating_add(512)
                     .saturating_mul(2)
             } else {
@@ -235,31 +227,13 @@ fn page_validated(
                 bytes,
                 || match request {
                     PageRequest::Config {} => page_config(owner).map(page_success),
-                    PageRequest::HostEnvironment {} => Ok(PageDispatch::Host { action: HostAction::Environment }),
-                    PageRequest::HapticsPlay { feedback } => {
-                        Ok(PageDispatch::Host { action: HostAction::HapticsPlay { feedback } })
+                    request => {
+                        let mut action = request.into_host().expect("document requests routed above");
+                        if let HostAction::SpeechTranscribe { locale: Some(locale), .. } = &mut action {
+                            *locale = locale.replace('_', "-");
+                        }
+                        Ok(PageDispatch::Host { action })
                     }
-                    PageRequest::WindowResize { width, height } => {
-                        Ok(PageDispatch::Host { action: HostAction::WindowResize { width, height } })
-                    }
-                    PageRequest::Ready {} => Ok(PageDispatch::Host { action: HostAction::Ready }),
-                    PageRequest::PageRecovered {} => Ok(PageDispatch::Host { action: HostAction::PageRecovered }),
-                    PageRequest::Failed { error } => Ok(PageDispatch::Host { action: HostAction::Failed { error } }),
-                    PageRequest::PageError { kind, error } => {
-                        Ok(PageDispatch::Host { action: HostAction::PageError { kind, error } })
-                    }
-                    PageRequest::SpeechTranscribe { attachment, locale } => Ok(PageDispatch::Host {
-                        action: HostAction::SpeechTranscribe {
-                            attachment,
-                            locale: locale.map(|locale| locale.replace('_', "-")),
-                        },
-                    }),
-                    PageRequest::Open {}
-                    | PageRequest::Apply { .. }
-                    | PageRequest::Flush {}
-                    | PageRequest::Undo {}
-                    | PageRequest::Redo {}
-                    | PageRequest::AttachmentsPut { .. } => unreachable!("document requests routed above"),
                 },
                 reply,
             );

@@ -1,5 +1,6 @@
 //! One account feed, with fresh snapshots after reconnect and bounded callback delivery.
 use super::*;
+use pop_contracts::relay::PauseKind;
 use pop_sharing_protocol::library::{AccountEntry, LibraryFrame, SOCKET_PROTOCOL};
 use std::sync::{
     Condvar,
@@ -181,12 +182,14 @@ async fn run(
                     }
                     Message::Pong(_) => continue,
                     Message::Close(Some(close)) if u16::from(close.code) == 4401 => {
-                        return Err(HttpFailure::Paused(pop_core::sync::Pause {
+                        return Err(HttpFailure::from(pop_core::sync::Pause {
                             kind: PauseKind::Refused,
                             reason: "Refresh your account identity".into(),
                         }));
                     }
-                    Message::Close(Some(close)) if u16::from(close.code) == 1008 => return Err(HttpFailure::Ended),
+                    Message::Close(Some(close)) if u16::from(close.code) == 1008 => {
+                        return Err(HttpFailure::new(PauseKind::Ended, PauseKind::Ended.message(410)));
+                    }
                     _ => return Err(HttpFailure::from("Invalid library message")),
                 };
                 let frame = LibraryFrame::decode(&bytes).map_err(|e| HttpFailure::from(e.to_string()))?;
@@ -224,18 +227,17 @@ async fn run(
         }
         if let Err(error) = &outcome {
             let message = match error {
-                HttpFailure::Ended => "The cloud account was deleted".into(),
-                HttpFailure::Paused(pause) => pause.reason.clone(),
-                HttpFailure::Other(message) | HttpFailure::Busy(message) => message.clone(),
-                HttpFailure::Conflict => "The cloud library is busy".into(),
+                HttpFailure { kind: PauseKind::Ended, .. } => "The cloud account was deleted".into(),
+                HttpFailure { kind: PauseKind::Conflict, .. } => "The cloud library is busy".into(),
+                error => error.reason.clone(),
             };
             ready.0.lock().unwrap().error = Some(message);
         }
-        if matches!(outcome, Err(HttpFailure::Ended | HttpFailure::Paused(_))) {
+        if matches!(outcome, Err(ref error) if error.kind.pauses()) {
             tokio::select! {
                 _ = cancel.cancelled() => break,
                 _ = identity.changed() => continue,
-                _ = wake.notified(), if !matches!(outcome, Err(HttpFailure::Ended)) => continue,
+                _ = wake.notified(), if !matches!(outcome, Err(HttpFailure { kind: PauseKind::Ended, .. })) => continue,
             }
         }
         tokio::select! {

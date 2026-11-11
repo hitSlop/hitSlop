@@ -41,12 +41,12 @@ impl Arguments {
 
 /// Only a flat object of scalars (optionally absent) crosses the command boundary.
 fn subset(node: &Node) -> Result<()> {
-    let Node::Object { properties } = node else {
+    let Node::Object { properties, .. } = node else {
         return Err(err(Code::InvalidSchema, "Command arguments must be an object"));
     };
     for (name, node) in properties {
         let scalar = match node {
-            Node::Optional { inner } => inner,
+            Node::Optional { inner, .. } => inner,
             node => node,
         };
         if !is_scalar(scalar) {
@@ -83,8 +83,8 @@ fn project(node: &Node, source: &Value) -> Value {
             json!({"type":"integer","minimum":min.unwrap_or(-MAX_SAFE),"maximum":max.unwrap_or(MAX_SAFE)})
         }
         Node::Enum { values, .. } => json!({"type":"string","enum":values}),
-        Node::Optional { inner } => project(inner, &source["inner"]),
-        Node::Object { properties } => {
+        Node::Optional { inner, .. } => project(inner, &source["inner"]),
+        Node::Object { properties, .. } => {
             let mut required = vec![];
             let mut projected = serde_json::Map::new();
             for (key, child) in properties {
@@ -108,4 +108,10 @@ fn project(node: &Node, source: &Value) -> Value {
         schema["description"] = description.clone();
     }
     schema
+}
+
+impl serde::Serialize for Arguments {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> std::result::Result<S::Ok, S::Error> {
+        self.descriptor.serialize(serializer)
+    }
 }

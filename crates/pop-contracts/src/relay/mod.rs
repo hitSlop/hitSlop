@@ -23,3 +23,56 @@ pub enum SyncPhase {
 
 #[cfg(test)]
 mod tests;
+
+/// Stable recovery choices shared by every transport and UI.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
+#[cfg_attr(feature = "ts", ts(export_to = "sharing.generated.ts"))]
+pub enum PauseKind {
+    RoomFull,
+    /// Folding cannot make the room fit, or one retained change cannot be relayed.
+    /// Local edits keep saving; the person can save an unshared copy.
+    Outgrown,
+    NeedsUpdate,
+    Refused,
+    MissingHistory,
+    FilesFull,
+    Ended,
+    Conflict,
+    SignIn,
+    Failed,
+    Busy,
+}
+
+impl PauseKind {
+    /// Whether synchronization waits for a person rather than retrying.
+    pub fn pauses(self) -> bool {
+        matches!(
+            self,
+            Self::RoomFull
+                | Self::Outgrown
+                | Self::NeedsUpdate
+                | Self::Refused
+                | Self::MissingHistory
+                | Self::FilesFull
+                | Self::Ended
+        )
+    }
+
+    /// What to tell a person when the relay gave no message.
+    pub fn message(self, status: u16) -> String {
+        match self {
+            Self::Ended => "Sharing ended".into(),
+            Self::NeedsUpdate => "Update pop to keep sharing".into(),
+            Self::Outgrown => "This document has outgrown sharing".into(),
+            Self::FilesFull => "Attachments are full".into(),
+            Self::SignIn => "Sign in to your sharing account first".into(),
+            Self::Conflict => "Sharing was busy. Try again.".into(),
+            Self::RoomFull => "Making room…".into(),
+            Self::MissingHistory => "The shared document is missing history; this copy keeps its own".into(),
+            Self::Busy => "Sharing is busy".into(),
+            Self::Refused | Self::Failed => format!("Sharing service refused this request ({status})"),
+        }
+    }
+}

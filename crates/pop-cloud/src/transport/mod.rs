@@ -3,12 +3,13 @@ use crate::client::*;
 use crate::{attachments, journal};
 use futures_util::{SinkExt, StreamExt};
 use pop_contracts::hex;
+use pop_contracts::relay::PauseKind;
+use pop_contracts::relay::SyncPhase;
 use pop_contracts::relay::envelope;
 use pop_contracts::relay::frame::{Frame, MAX_FRAME};
-use pop_core::sync::PauseKind;
 use pop_runtime::owner::{Owner, Reply, Request, SyncConnection, SyncEvent};
 use pop_sharing_protocol::failure;
-use pop_sharing_protocol::failure::{Outcome, Route};
+use pop_sharing_protocol::failure::Route;
 use sha2::{Digest, Sha256};
 use std::cell::RefCell;
 use std::collections::VecDeque;
@@ -50,7 +51,7 @@ fn network() -> TransportResult<&'static Network> {
             Ok(Network { runtime, http })
         })
         .as_ref()
-        .map_err(|error| HttpFailure::Other(error.clone()))
+        .map_err(|error| HttpFailure::new(PauseKind::Failed, error.clone()))
 }
 thread_local! {
     // Context for bounded blocking-pool effects. The async supervisor owns
@@ -124,7 +125,7 @@ pub(crate) fn pause(duration: Duration) -> TransportResult<()> {
     })
 }
 fn unconfirmed_owner() -> HttpFailure {
-    HttpFailure::Paused(pop_core::sync::Pause {
+    HttpFailure::from(pop_core::sync::Pause {
         kind: PauseKind::Refused,
         reason: "The owner result could not be confirmed; sharing is paused".into(),
     })
@@ -179,7 +180,7 @@ async fn upgrade_at(url: &str, capability: &str, protocol: &str) -> TransportRes
     let status = response.status().as_u16();
     if status != 101 {
         if status == 401 && protocol == pop_sharing_protocol::library::SOCKET_PROTOCOL {
-            return Err(HttpFailure::Paused(pop_core::sync::Pause {
+            return Err(HttpFailure::from(pop_core::sync::Pause {
                 kind: PauseKind::Refused,
                 reason: "Refresh your account identity".into(),
             }));
@@ -277,13 +278,19 @@ pub(crate) fn http_typed(
     )
 }
 #[derive(Debug)]
-pub(crate) enum HttpFailure {
-    Ended,
-    /// Another writer got there first, or creation is unfinished.
-    Conflict,
-    Busy(String),
-    Paused(pop_core::sync::Pause),
-    Other(String),
+pub(crate) struct HttpFailure {
+    pub(crate) kind: PauseKind,
+    pub(crate) reason: String,
+}
+impl HttpFailure {
+    pub(crate) fn new(kind: PauseKind, reason: String) -> Self {
+        Self { kind, reason }
+    }
+}
+impl From<pop_core::sync::Pause> for HttpFailure {
+    fn from(pause: pop_core::sync::Pause) -> Self {
+        Self::new(pause.kind, pause.reason)
+    }
 }
 impl From<pop_contracts::Error> for HttpFailure {
     fn from(error: pop_contracts::Error) -> Self {
@@ -309,18 +316,20 @@ fn owner_effect(request: &Request) -> OwnerEffect {
 fn owner_failure(error: pop_runtime::owner::Failure, effect: OwnerEffect) -> HttpFailure {
     let kind = match error.reason {
         Some(pop_contracts::wire::Code::StaleBase) if error.kind == pop_runtime::owner::FailureKind::Rejected => {
-            return HttpFailure::Conflict;
+            return HttpFailure::new(PauseKind::Conflict, PauseKind::Conflict.message(409));
         }
         Some(pop_contracts::wire::Code::RequiresUpdate) => PauseKind::NeedsUpdate,
         Some(pop_contracts::wire::Code::MissingDependencies) => PauseKind::MissingHistory,
         Some(pop_contracts::wire::Code::TooLarge) if matches!(effect, OwnerEffect::Attachment) => PauseKind::FilesFull,
         Some(_) => PauseKind::Refused,
-        None if error.kind == pop_runtime::owner::FailureKind::Busy => return HttpFailure::Busy(error.message),
+        None if error.kind == pop_runtime::owner::FailureKind::Busy => {
+            return HttpFailure::new(PauseKind::Busy, error.message);
+        }
         // Full also represents local disk exhaustion, not just format capacity.
         // Other local failures can leave accepted work unconfirmed: never replay it.
         None => PauseKind::Refused,
     };
-    HttpFailure::Paused(pop_core::sync::Pause { kind, reason: error.message })
+    HttpFailure::from(pop_core::sync::Pause { kind, reason: error.message })
 }
 impl From<pop_storage::store::Error> for HttpFailure {
     fn from(error: pop_storage::store::Error) -> Self {
@@ -329,41 +338,30 @@ impl From<pop_storage::store::Error> for HttpFailure {
 }
 impl From<HttpFailure> for String {
     fn from(value: HttpFailure) -> Self {
-        match value {
-            HttpFailure::Ended => "Sharing ended".into(),
-            HttpFailure::Other(message) | HttpFailure::Busy(message) => message,
-            HttpFailure::Paused(pause) => pause.reason,
-            HttpFailure::Conflict => Outcome::Conflict.message(409),
-        }
+        value.reason
     }
 }
 impl From<&str> for HttpFailure {
     fn from(value: &str) -> Self {
-        Self::Other(value.into())
+        Self::new(PauseKind::Failed, value.into())
     }
 }
 impl From<String> for HttpFailure {
     fn from(value: String) -> Self {
-        Self::Other(value)
+        Self::new(PauseKind::Failed, value)
     }
 }
 /// What a refused response means, for HTTP requests and the socket handshake alike.
 /// `body` is the relay's `ApiFailure` JSON when it sent one.
 pub(crate) fn refusal(status: u16, body: &[u8], route: Route) -> HttpFailure {
     let body = serde_json::from_slice::<pop_sharing_protocol::http::ApiFailure>(body).ok();
-    let paused = |kind, reason| HttpFailure::Paused(pop_core::sync::Pause { kind, reason });
-    let outcome = failure::classify(status, body.as_ref().map(|b| b.code.as_str()), route);
-    match outcome {
-        Outcome::NeedsUpdate => {
-            paused(PauseKind::NeedsUpdate, body.map_or_else(|| outcome.message(status), |b| b.message))
-        }
-        Outcome::Ended => HttpFailure::Ended,
-        Outcome::Conflict => HttpFailure::Conflict,
-        Outcome::Refused => paused(PauseKind::Refused, outcome.message(status)),
-        Outcome::Outgrown => paused(PauseKind::Outgrown, outcome.message(status)),
-        Outcome::FilesFull => paused(PauseKind::FilesFull, outcome.message(status)),
-        Outcome::SignIn | Outcome::Failed => HttpFailure::Other(outcome.message(status)),
-    }
+    let kind = failure::classify(status, body.as_ref().map(|b| b.code.as_str()), route);
+    let reason = if kind == PauseKind::NeedsUpdate {
+        body.map_or_else(|| kind.message(status), |b| b.message)
+    } else {
+        kind.message(status)
+    };
+    HttpFailure::new(kind, reason)
 }
 pub(crate) fn http_request(
     method: &str,
@@ -409,7 +407,7 @@ fn http_request_authorized(
         if !matches!(status, 200 | 204) {
             let bytes = response_body(response, pop_sharing_protocol::CONTROL_BYTES as u64).await.unwrap_or_default();
             return match refusal(status, &bytes, Route::of(&url)) {
-                HttpFailure::Ended if method == reqwest::Method::DELETE => Ok(Vec::new()),
+                HttpFailure { kind: PauseKind::Ended, .. } if method == reqwest::Method::DELETE => Ok(Vec::new()),
                 failure => Err(failure),
             };
         }
@@ -485,18 +483,18 @@ impl Queue {
     }
 }
 struct Status {
-    value: Mutex<(Phase, String, Option<PauseKind>)>,
+    value: Mutex<(SyncPhase, String, Option<PauseKind>)>,
     notice: Notice,
     cancellation: CancellationToken,
 }
 impl Status {
-    fn set(&self, phase: Phase, detail: String) {
+    fn set(&self, phase: SyncPhase, detail: String) {
         self.update(phase, detail, None);
     }
     fn paused(&self, kind: PauseKind, reason: String) {
-        self.update(Phase::Paused, reason, Some(kind));
+        self.update(SyncPhase::Paused, reason, Some(kind));
     }
-    fn update(&self, phase: Phase, detail: String, kind: Option<PauseKind>) {
+    fn update(&self, phase: SyncPhase, detail: String, kind: Option<PauseKind>) {
         if self.cancellation.is_cancelled() {
             return;
         }
@@ -622,11 +620,11 @@ mod tests {
             let message = format!("local failure {kind:?} {reason:?}");
             let failure = Failure { kind, reason, message: message.clone(), op_index: None, path: vec![] };
             match (HttpFailure::from(failure), expected) {
-                (HttpFailure::Paused(pause), Some(expected)) => {
+                (pause, Some(expected)) if pause.kind.pauses() => {
                     assert_eq!(pause.kind, expected, "{kind:?} {reason:?}");
                     assert_eq!(pause.reason, message);
                 }
-                (HttpFailure::Busy(_), None) => {}
+                (HttpFailure { kind: PauseKind::Busy, .. }, None) => {}
                 (actual, expected) => panic!("{kind:?} {reason:?}: expected {expected:?}, received {actual:?}"),
             }
         }
@@ -640,7 +638,7 @@ mod tests {
                 wait_reply(&reply, Duration::ZERO).unwrap_err()
             };
             assert!(
-                matches!(failure, HttpFailure::Paused(pop_core::sync::Pause { kind: PauseKind::Refused, .. })),
+                matches!(failure, HttpFailure { kind: PauseKind::Refused, .. }),
                 "an unconfirmed owner result must not be automatically replayed: {failure:?}"
             );
         }
@@ -653,7 +651,7 @@ mod tests {
         };
         assert!(matches!(
             owner_failure(attachment, OwnerEffect::Attachment),
-            HttpFailure::Paused(pop_core::sync::Pause { kind: PauseKind::FilesFull, .. })
+            HttpFailure { kind: PauseKind::FilesFull, .. }
         ));
         let stale = Failure {
             kind: FailureKind::Rejected,
@@ -662,7 +660,7 @@ mod tests {
             op_index: None,
             path: vec![],
         };
-        assert!(matches!(HttpFailure::from(stale), HttpFailure::Conflict));
+        assert!(matches!(HttpFailure::from(stale), HttpFailure { kind: PauseKind::Conflict, .. }));
     }
 
     fn upgrade_refusal(headers: &str, body: &[u8], status: u16) -> HttpFailure {
@@ -712,9 +710,8 @@ mod tests {
             (String::new(), body.as_slice()),
             ("Transfer-Encoding: chunked\r\n".into(), chunked.as_bytes()),
         ] {
-            let HttpFailure::Paused(pause) = upgrade_refusal(&headers, bytes, 400) else {
-                panic!("a permanent upgrade refusal must pause");
-            };
+            let pause = upgrade_refusal(&headers, bytes, 400);
+            assert!(pause.kind.pauses());
             assert_eq!(pause.kind, PauseKind::NeedsUpdate);
             assert_eq!(pause.reason, "Update pop to keep sharing");
         }
@@ -733,19 +730,21 @@ mod tests {
             ("Transfer-Encoding: chunked\r\n".into(), b"invalid\r\n".to_vec()),
             ("Transfer-Encoding: chunked\r\n".into(), b"0\r\n".to_vec()),
         ] {
-            let HttpFailure::Paused(pause) = upgrade_refusal(&headers, &body, 400) else {
-                panic!("a permanent upgrade refusal must pause");
-            };
+            let pause = upgrade_refusal(&headers, &body, 400);
+            assert!(pause.kind.pauses());
             assert_eq!(pause.kind, PauseKind::Refused, "{headers}");
         }
         for status in [429, 503] {
-            assert!(matches!(upgrade_refusal("Content-Length: 20\r\n", b"short", status), HttpFailure::Other(_)));
+            assert!(matches!(
+                upgrade_refusal("Content-Length: 20\r\n", b"short", status),
+                HttpFailure { kind: PauseKind::Failed, .. }
+            ));
         }
     }
 
     /// Exercise the actual socket loop and HTTP attachment barrier over loopback.
     #[allow(clippy::result_large_err, reason = "tungstenite fixes the handshake callback error type")]
-    fn local_connection(close: CloseCode) -> (bool, Phase, Option<PauseKind>) {
+    fn local_connection(close: CloseCode) -> (bool, SyncPhase, Option<PauseKind>) {
         let (_dir, owner) = crate::client::tests::fixture();
         request(&owner, Request::Share { share: Share { endpoint: pop_sharing_protocol::TRUSTED_ORIGIN.into() } })
             .unwrap();
@@ -888,7 +887,7 @@ mod tests {
             }
         });
         let status = Status {
-            value: Mutex::new((Phase::Offline, String::new(), None)),
+            value: Mutex::new((SyncPhase::Offline, String::new(), None)),
             notice: Arc::default(),
             cancellation: CancellationToken::new(),
         };
@@ -911,7 +910,7 @@ mod tests {
         for code in [CloseCode::Error, CloseCode::Again] {
             let (terminal, phase, kind) = local_connection(code);
             assert!(!terminal);
-            assert_ne!(phase, Phase::Paused);
+            assert_ne!(phase, SyncPhase::Paused);
             assert_eq!(kind, None);
         }
     }
@@ -919,7 +918,7 @@ mod tests {
     /// Answer the socket upgrade with `answer` (or hang up) and report what `connected` made of it.
     fn handshake(
         answer: Option<(u16, &'static str)>,
-    ) -> (std::result::Result<bool, HttpFailure>, Phase, Option<PauseKind>) {
+    ) -> (std::result::Result<bool, HttpFailure>, SyncPhase, Option<PauseKind>) {
         let (_dir, owner) = crate::client::tests::fixture();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let key = RoomKey {
@@ -949,7 +948,7 @@ mod tests {
             }
         });
         let status = Status {
-            value: Mutex::new((Phase::Offline, String::new(), None)),
+            value: Mutex::new((SyncPhase::Offline, String::new(), None)),
             notice: Arc::default(),
             cancellation: CancellationToken::new(),
         };
@@ -976,18 +975,21 @@ mod tests {
         ] {
             let (result, phase, paused) = handshake(Some((code, body)));
             assert!(matches!(result, Ok(true)), "{code} is terminal: {result:?}");
-            assert_eq!((phase, paused), (Phase::Paused, Some(kind)), "{code}");
+            assert_eq!((phase, paused), (SyncPhase::Paused, Some(kind)), "{code}");
         }
         let (result, phase, paused) = handshake(Some((410, "")));
         assert!(matches!(result, Ok(true)));
-        assert_eq!((phase, paused), (Phase::Ended, None));
+        assert_eq!((phase, paused), (SyncPhase::Ended, None));
     }
     #[test]
     fn transient_handshake_failures_stay_retryable() {
         for answer in [Some((503, "")), Some((429, "")), None] {
             let (result, phase, paused) = handshake(answer);
-            assert!(matches!(result, Err(HttpFailure::Other(_))), "{answer:?} retries: {result:?}");
-            assert_ne!(phase, Phase::Paused);
+            assert!(
+                matches!(result, Err(HttpFailure { kind: PauseKind::Failed, .. })),
+                "{answer:?} retries: {result:?}"
+            );
+            assert_ne!(phase, SyncPhase::Paused);
             assert_eq!(paused, None);
         }
     }

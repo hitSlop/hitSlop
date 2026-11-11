@@ -28,7 +28,7 @@ import {
   EngineProtocol,
   PackageFormat,
   RuntimeABI,
-  DocumentLineage,
+  ApplicationId,
 } from "../../packages/pop/src/schema/constants";
 import {
   documentEngine,
@@ -498,17 +498,12 @@ print(String(data: try JSONSerialization.data(withJSONObject: ["pages": pages]),
     commit,
     captured: new Date().toISOString(),
     markers: {
-      documentLineage: DocumentLineage,
+      applicationId: ApplicationId,
       packageFormat: PackageFormat,
       runtimeABI: RuntimeABI,
       storage: Number(
         (await readFile(join(repository, "crates/pop-storage/src/file/mod.rs"), "utf8")).match(
           /const STORAGE_VERSION: i64 = (\d+);/,
-        )![1],
-      ),
-      layout: Number(
-        (await readFile(join(repository, "crates/pop-core/src/document/mod.rs"), "utf8")).match(
-          /pub const LAYOUT: i64 = (\d+);/,
         )![1],
       ),
       protocol: EngineProtocol.version,

@@ -75,53 +75,153 @@ pub enum HapticNotification {
     Error,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(tag = "method", deny_unknown_fields, rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
-pub enum PageRequest {
-    Open {},
-    Apply {
-        batch: super::Batch,
-    },
-    Flush {},
-    Undo {},
-    Redo {},
-    Config {},
-    #[serde(rename = "host.environment")]
-    HostEnvironment {},
-    #[serde(rename = "haptics.play")]
-    HapticsPlay {
-        feedback: HapticFeedback,
-    },
-    #[serde(rename = "attachments.put")]
-    AttachmentsPut {
-        bytes: String,
-    },
-    #[serde(rename = "window.resize")]
-    WindowResize {
-        width: u32,
-        height: u32,
-    },
-    /// Transcribes a recording the page already stored as an attachment, by its ID, so the
-    /// recording never travels through the page request again. Absent `locale` means the
-    /// person's own.
-    #[serde(rename = "speech.transcribe")]
-    SpeechTranscribe {
-        attachment: String,
-        #[serde(default)]
-        #[cfg_attr(feature = "ts", ts(optional))]
-        locale: Option<String>,
-    },
-    Ready {},
-    PageRecovered {},
-    Failed {
-        error: String,
-    },
-    PageError {
-        kind: PageErrorKind,
-        error: String,
-    },
+// Host request, action, reply and success variants share one operation registry.
+macro_rules! page_operations {
+    (
+        requests { $($request_extra:tt)* }
+        successes { $($success_extra:tt)* }
+        operations {
+            $( $request:ident => $action:ident
+                $( { $( $(#[$field_meta:meta])* $field:ident: $ty:ty ),* $(,)? } )?
+                ; $method:literal
+                => $reply:ident $( { $( $result:ident: $result_ty:ty ),* $(,)? } )? ;
+            )*
+        }
+    ) => {
+        #[derive(Debug, Serialize, Deserialize)]
+        #[serde(tag = "method", deny_unknown_fields, rename_all = "camelCase")]
+        #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
+        pub enum PageRequest {
+            $($request_extra)*
+            $(
+                #[serde(rename = $method)]
+                $request { $( $( $(#[$field_meta])* $field: $ty, )* )? },
+            )*
+        }
+
+        /// Host-only operations. These cross UniFFI; document payloads do not.
+        #[derive(Debug)]
+        pub enum HostAction {
+            $( $action $( { $( $field: $ty, )* } )?, )*
+        }
+
+        #[derive(Debug, Serialize)]
+        #[serde(tag = "method", rename_all = "camelCase", rename_all_fields = "camelCase")]
+        #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "page.generated.ts"))]
+        pub enum PageSuccess {
+            $($success_extra)*
+            $(
+                #[serde(rename = $method)]
+                $request { ok: True, $( $( $result: $result_ty, )* )? },
+            )*
+        }
+
+        /// Native results use the same serializer as owner results.
+        pub enum HostReply {
+            $( $reply $( { $( $result: $result_ty, )* } )?, )*
+        }
+
+        impl PageRequest {
+            /// Separate a host action after admission and capability checks.
+            pub fn into_host(self) -> std::result::Result<HostAction, Self> {
+                match self {
+                    $( Self::$request { $( $( $field, )* )? } =>
+                        Ok(HostAction::$action $( { $( $field, )* } )?), )*
+                    request => Err(request),
+                }
+            }
+        }
+        impl HostReply {
+            fn success(self) -> PageSuccess {
+                match self {
+                    $( Self::$reply $( { $( $result, )* } )? =>
+                        PageSuccess::$request { ok: True, $( $( $result, )* )? }, )*
+                }
+            }
+        }
+    };
 }
+
+page_operations! {
+    requests {
+        Open {},
+        Apply {
+            batch: super::Batch,
+        },
+        Flush {},
+        Undo {},
+        Redo {},
+        Config {},
+
+        #[serde(rename = "attachments.put")]
+        AttachmentsPut {
+            bytes: String,
+        },
+
+    }
+    successes {
+        Open {
+            ok: True,
+            state: String,
+        },
+        Apply {
+            ok: True,
+            sequence: u64,
+            ids: Vec<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            selection_start: Option<usize>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            selection_end: Option<usize>,
+        },
+        Flush {
+            ok: True,
+        },
+        Undo {
+            ok: True,
+            sequence: u64,
+        },
+        Redo {
+            ok: True,
+            sequence: u64,
+        },
+        Config {
+            ok: True,
+            #[serde(rename = "runtimeABI")]
+            runtime_abi: u64,
+            style: bool,
+            window: crate::app::WindowDefinition,
+            #[cfg_attr(feature = "ts", ts(type = "object"))]
+            descriptor: Box<serde_json::value::RawValue>,
+        },
+
+        #[serde(rename = "attachments.put")]
+        AttachmentsPut {
+            ok: True,
+            id: String,
+            byte_length: u64,
+            mime_type: String,
+        },
+
+    }
+    operations {
+        HostEnvironment => Environment; "host.environment"
+            => Environment { environment: HostEnvironment };
+        HapticsPlay => HapticsPlay { feedback: HapticFeedback }; "haptics.play" => HapticsPlay;
+        WindowResize => WindowResize { width: u32, height: u32 }; "window.resize"
+            => WindowResize { width: f64, height: f64 };
+        SpeechTranscribe => SpeechTranscribe {
+            attachment: String,
+            #[serde(default)]
+            #[cfg_attr(feature = "ts", ts(optional))]
+            locale: Option<String>,
+        }; "speech.transcribe" => SpeechTranscribe { outcome: SpeechOutcome };
+        Ready => Ready; "ready" => Ready;
+        PageRecovered => PageRecovered; "pageRecovered" => PageRecovered;
+        Failed => Failed { error: String }; "failed" => Failed;
+        PageError => PageError { kind: PageErrorKind, error: String }; "pageError" => PageError;
+    }
+}
+
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "page.generated.ts"))]
@@ -133,20 +233,7 @@ impl PageRequest {
     pub fn requires(&self) -> Option<Capability> {
         match self {
             Self::SpeechTranscribe { .. } => Some(Capability::Speech),
-            Self::Open {}
-            | Self::Apply { .. }
-            | Self::Flush {}
-            | Self::Undo {}
-            | Self::Redo {}
-            | Self::Config {}
-            | Self::HostEnvironment {}
-            | Self::HapticsPlay { .. }
-            | Self::AttachmentsPut { .. }
-            | Self::WindowResize { .. }
-            | Self::Ready {}
-            | Self::PageRecovered {}
-            | Self::Failed { .. }
-            | Self::PageError { .. } => None,
+            _ => None,
         }
     }
     pub fn decode(input: &str) -> Result<Self> {
@@ -173,125 +260,12 @@ impl PageRequest {
             Self::SpeechTranscribe { attachment, locale } => {
                 super::valid_attachment_id(attachment) && locale.as_deref().is_none_or(super::valid_speech_locale)
             }
-            Self::Open {}
-            | Self::Flush {}
-            | Self::Undo {}
-            | Self::Redo {}
-            | Self::Config {}
-            | Self::HostEnvironment {}
-            | Self::HapticsPlay { .. }
-            | Self::Ready {}
-            | Self::PageRecovered {} => true,
+            _ => true,
         };
         if valid { Ok(()) } else { Err(err(Code::InvalidRequest, "Invalid page request")) }
     }
 }
 
-/// Host-only operations. These cross UniFFI; document payloads do not.
-#[derive(Debug)]
-pub enum HostAction {
-    Environment,
-    HapticsPlay {
-        feedback: HapticFeedback,
-    },
-    WindowResize {
-        width: u32,
-        height: u32,
-    },
-    /// The app declared `speech` and this page may use it. The host reads the recording
-    /// through the owner's resource reader, which verifies it before the provider decodes it.
-    SpeechTranscribe {
-        attachment: String,
-        locale: Option<String>,
-    },
-    Ready,
-    PageRecovered,
-    Failed {
-        error: String,
-    },
-    PageError {
-        kind: PageErrorKind,
-        error: String,
-    },
-}
-
-#[derive(Debug, Serialize)]
-#[serde(tag = "method", rename_all = "camelCase", rename_all_fields = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "page.generated.ts"))]
-pub enum PageSuccess {
-    Open {
-        ok: True,
-        state: String,
-    },
-    Apply {
-        ok: True,
-        sequence: u64,
-        ids: Vec<String>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        selection_start: Option<usize>,
-        #[serde(skip_serializing_if = "Option::is_none")]
-        selection_end: Option<usize>,
-    },
-    Flush {
-        ok: True,
-    },
-    Undo {
-        ok: True,
-        sequence: u64,
-    },
-    Redo {
-        ok: True,
-        sequence: u64,
-    },
-    Config {
-        ok: True,
-        #[serde(rename = "runtimeABI")]
-        runtime_abi: u64,
-        style: bool,
-        window: crate::app::WindowDefinition,
-        #[cfg_attr(feature = "ts", ts(type = "object"))]
-        descriptor: Box<serde_json::value::RawValue>,
-    },
-    #[serde(rename = "host.environment")]
-    HostEnvironment {
-        ok: True,
-        environment: HostEnvironment,
-    },
-    #[serde(rename = "haptics.play")]
-    HapticsPlay {
-        ok: True,
-    },
-    #[serde(rename = "attachments.put")]
-    AttachmentsPut {
-        ok: True,
-        id: String,
-        byte_length: u64,
-        mime_type: String,
-    },
-    #[serde(rename = "window.resize")]
-    WindowResize {
-        ok: True,
-        width: f64,
-        height: f64,
-    },
-    #[serde(rename = "speech.transcribe")]
-    SpeechTranscribe {
-        ok: True,
-        outcome: SpeechOutcome,
-    },
-    Ready {
-        ok: True,
-    },
-    PageRecovered {
-        ok: True,
-    },
-    Failed {
-        ok: True,
-    },
-    PageError {
-        ok: True,
-    },
-}
 /// What a transcription came to. Everything but `transcribed` reaches the author as a
 /// `SpeechError` with the same `code`; the page request itself still succeeded.
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -362,27 +336,10 @@ impl SpeechOutcome {
         }
     }
 }
-/// Native results use the same serializer as owner results.
-pub enum HostReply {
-    Environment { environment: HostEnvironment },
-    HapticsPlay,
-    WindowResize { width: f64, height: f64 },
-    SpeechTranscribe { outcome: SpeechOutcome },
-    Ready,
-    PageRecovered,
-    Failed,
-    PageError,
-}
 impl HostReply {
     pub fn to_json(self) -> String {
-        let ok = True;
-        crate::encode(&match self {
-            Self::Environment { environment } => PageSuccess::HostEnvironment { ok, environment },
-            Self::HapticsPlay => PageSuccess::HapticsPlay { ok },
-            Self::WindowResize { width, height } if width.is_finite() && height.is_finite() => {
-                PageSuccess::WindowResize { ok, width, height }
-            }
-            Self::WindowResize { .. } => {
+        let reply = match self {
+            Self::WindowResize { width, height } if !width.is_finite() || !height.is_finite() => {
                 return crate::encode(&super::engine::Failure {
                     ok: super::engine::False,
                     error: "Invalid window dimensions".into(),
@@ -391,12 +348,10 @@ impl HostReply {
                     op_index: None,
                 });
             }
-            Self::SpeechTranscribe { outcome } => PageSuccess::SpeechTranscribe { ok, outcome: outcome.bounded() },
-            Self::Ready => PageSuccess::Ready { ok },
-            Self::PageRecovered => PageSuccess::PageRecovered { ok },
-            Self::Failed => PageSuccess::Failed { ok },
-            Self::PageError => PageSuccess::PageError { ok },
-        })
+            Self::SpeechTranscribe { outcome } => Self::SpeechTranscribe { outcome: outcome.bounded() },
+            reply => reply,
+        };
+        crate::encode(&reply.success())
     }
 }
 

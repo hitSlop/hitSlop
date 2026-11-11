@@ -1,5 +1,5 @@
 // Generated from pop-core's contracts. Do not edit.
-export const DocumentLineage = 2 as const;
+export const ApplicationId = 1347375106 as const;
 export const CompactLayoutWidth = 640 as const;
 export const NativeResourcePolicy = "default-src 'none'; script-src pop://app/__shell__/ pop://app/assets/ 'wasm-unsafe-eval'; connect-src pop: https: blob:; media-src pop: https: blob:; frame-src https:; style-src pop://app/__shell__/ pop://app/assets/ 'unsafe-inline'; img-src pop: data: https: blob:; font-src pop://app/assets/ data:" as const;
 export const PreviewResourcePolicy = "default-src 'none'; script-src {origin}/__shell__/ {origin}/__app__/ {origin}/__preview__/native.js 'wasm-unsafe-eval'; connect-src 'self' ws://127.0.0.1:* https: blob:; media-src 'self' https: blob:; frame-src https:; style-src {origin}/__app__/ 'unsafe-inline'; img-src 'self' data: https: blob:; font-src 'self' data:" as const;

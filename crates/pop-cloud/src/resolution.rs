@@ -79,7 +79,7 @@ pub fn resolve(document: &str, token: &str) -> Result<Option<ResolvedRoom>> {
     let seed = PrivateSeed::write(&bytes)?;
     let store = Store::open(&seed.path, Mode::Snapshot).map_err(fail)?;
     if store.app().document_uuid.as_deref() != Some(info.document.as_str())
-        || Some(hex(store.app_revision_id().map_err(fail)?.as_bytes())) != info.app
+        || Some(hex(store.app_digest().map_err(fail)?.as_bytes())) != info.app
     {
         return Err("Resolved seed document/app mismatch".into());
     }

@@ -1,6 +1,8 @@
 //! Event-driven native driver. Blocking effects have a separate bounded pool;
 //! they never occupy the socket runtime or its DNS blocking threads.
 use super::*;
+use pop_contracts::relay::PauseKind;
+use pop_contracts::relay::SyncPhase;
 use pop_contracts::relay::frame::ErrorCode;
 use pop_sharing_protocol::supervisor::budget::{BudgetDecision, PushBudget};
 use pop_sharing_protocol::supervisor::maintenance::{FullState, MaintenanceAction, Step};
@@ -30,10 +32,10 @@ fn blocking_pool() -> TransportResult<&'static BlockingPool> {
         Ok(BlockingPool { runtime, slots: Arc::new(Semaphore::new(2)) })
     })
     .as_ref()
-    .map_err(|error| HttpFailure::Other(error.clone()))
+    .map_err(|error| HttpFailure::new(PauseKind::Failed, error.clone()))
 }
 fn stopped() -> HttpFailure {
-    HttpFailure::Other("Sharing stopped".into())
+    HttpFailure::new(PauseKind::Failed, "Sharing stopped".into())
 }
 async fn cancelled<T>(
     cancel: &CancellationToken,
@@ -125,7 +127,7 @@ impl Connection {
     pub fn start(owner: Arc<Owner>, key: RoomKey, notice: Notice, journal: Arc<journal::Journal>) -> Self {
         let cancellation = CancellationToken::new();
         let status = Arc::new(Status {
-            value: Mutex::new((Phase::Offline, "Connecting".into(), None)),
+            value: Mutex::new((SyncPhase::Offline, "Connecting".into(), None)),
             notice,
             cancellation: cancellation.clone(),
         });
@@ -149,7 +151,7 @@ impl Connection {
         }
         Self { cancellation, identity, live, status, running }
     }
-    pub fn status(&self) -> (Phase, String, Option<PauseKind>) {
+    pub fn status(&self) -> (SyncPhase, String, Option<PauseKind>) {
         self.status.value.lock().unwrap().clone()
     }
     pub fn is_running(&self) -> bool {
@@ -185,16 +187,16 @@ async fn supervise(operations: Operations, status: Arc<Status>, live: Live) {
         }
         match attempt {
             Ok(true) => break,
-            Ok(false) => status.set(Phase::Offline, "Offline; reconnecting".into()),
-            Err(HttpFailure::Ended) => {
-                status.set(Phase::Ended, "Ended".into());
+            Ok(false) => status.set(SyncPhase::Offline, "Offline; reconnecting".into()),
+            Err(HttpFailure { kind: PauseKind::Ended, .. }) => {
+                status.set(SyncPhase::Ended, "Ended".into());
                 break;
             }
-            Err(HttpFailure::Paused(pause)) => {
+            Err(pause) if pause.kind.pauses() => {
                 status.paused(pause.kind, pause.reason);
                 break;
             }
-            Err(error) => status.set(Phase::Offline, format!("Offline; reconnecting: {}", String::from(error))),
+            Err(error) => status.set(SyncPhase::Offline, format!("Offline; reconnecting: {}", String::from(error))),
         }
         let Action::RetryAfter { milliseconds } = supervisor.step(SupervisorEvent::Retry) else {
             break;
@@ -262,10 +264,7 @@ fn full_state(waiting: bool, retried: bool) -> FullState {
 }
 /// Folding cannot make the room fit: a terminal pause; local edits keep saving.
 fn outgrown() -> HttpFailure {
-    HttpFailure::Paused(pop_core::sync::Pause {
-        kind: PauseKind::Outgrown,
-        reason: failure::Outcome::Outgrown.message(413),
-    })
+    HttpFailure::from(pop_core::sync::Pause { kind: PauseKind::Outgrown, reason: PauseKind::Outgrown.message(413) })
 }
 
 struct AttemptCancellation(CancellationToken);
@@ -315,7 +314,7 @@ impl SocketPump {
     }
     fn interrupt(&self, reason: &'static str) -> HttpFailure {
         self.cancel.cancel();
-        HttpFailure::Other(reason.into())
+        HttpFailure::new(PauseKind::Failed, reason.into())
     }
     async fn effect<T>(&mut self, work: impl Future<Output = TransportResult<T>>) -> TransportResult<T> {
         tokio::pin!(work);
@@ -347,7 +346,7 @@ impl SocketPump {
                         Ok(frame) => frame,
                         Err(error) => {
                             self.cancel.cancel();
-                            return Err(HttpFailure::Paused(pop_core::sync::Pause {
+                            return Err(HttpFailure::from(pop_core::sync::Pause {
                                 kind: PauseKind::Refused,
                                 reason: error.to_string(),
                             }));
@@ -356,13 +355,13 @@ impl SocketPump {
                     if let Frame::Error { code, message } = frame {
                         self.cancel.cancel();
                         return Err(match ErrorCode::try_from(code) {
-                            Ok(ErrorCode::Ended) => HttpFailure::Ended,
-                            Ok(ErrorCode::Protocol) => HttpFailure::Paused(pop_core::sync::Pause {
+                            Ok(ErrorCode::Ended) => HttpFailure::new(PauseKind::Ended, PauseKind::Ended.message(410)),
+                            Ok(ErrorCode::Protocol) => HttpFailure::from(pop_core::sync::Pause {
                                 kind: PauseKind::NeedsUpdate,
                                 reason: message,
                             }),
                             Ok(ErrorCode::App | ErrorCode::Malformed) | Err(_) => {
-                                HttpFailure::Paused(pop_core::sync::Pause { kind: PauseKind::Refused, reason: message })
+                                HttpFailure::from(pop_core::sync::Pause { kind: PauseKind::Refused, reason: message })
                             }
                         });
                     }
@@ -399,7 +398,11 @@ async fn connected(
     let _scope = AttemptCancellation(cancel.clone());
     let result = connected_attempt(&attempt, status, live, supervisor, retried_full).await;
     match result {
-        Err(HttpFailure::Other(_)) if cancel.is_cancelled() && !operations.cancel.is_cancelled() => Ok(false),
+        Err(HttpFailure { kind: PauseKind::Failed, .. })
+            if cancel.is_cancelled() && !operations.cancel.is_cancelled() =>
+        {
+            Ok(false)
+        }
         result => result,
     }
 }
@@ -415,8 +418,8 @@ async fn connected_attempt(
         Ok(socket) => socket,
         Err(error) => {
             match error {
-                HttpFailure::Ended => status.set(Phase::Ended, "Ended".into()),
-                HttpFailure::Paused(pause) => status.paused(pause.kind, pause.reason),
+                HttpFailure { kind: PauseKind::Ended, .. } => status.set(SyncPhase::Ended, "Ended".into()),
+                pause if pause.kind.pauses() => status.paused(pause.kind, pause.reason),
                 error => return Err(error),
             }
             return Ok(true);
@@ -452,7 +455,7 @@ async fn connected_attempt(
         .await?;
     let start = Instant::now();
     let mut schedule = Schedule::new(0);
-    let mut core_status = (Phase::Syncing, "Syncing".to_owned());
+    let mut core_status = (SyncPhase::Syncing, "Syncing".to_owned());
     let mut waiting = false;
     let mut push_budget = PushBudget::new(0);
     let mut delayed_push: Option<(u64, Vec<u8>)> = None;
@@ -494,7 +497,7 @@ async fn connected_attempt(
                                     .map_err(|_| unconfirmed_owner())?.map_err(|_| unconfirmed_owner())
                             })).await?;
                             let base = match base {
-                                Err(pause) => return Err(HttpFailure::Paused(pause)),
+                                Err(pause) => return Err(HttpFailure::from(pause)),
                                 Ok(pop_core::sync::BaseRead::Pending) => {
                                     if let MaintenanceAction::RetryBase { milliseconds } = maintenance::decide(full, Step::BaseUnavailable, 0) {
                                         schedule.compact_after(now, milliseconds);
@@ -516,7 +519,7 @@ async fn connected_attempt(
                                         *retried_full = true; return Ok(false);
                                     }
                                 }
-                                Err(HttpFailure::Conflict) => return Ok(false),
+                                Err(HttpFailure { kind: PauseKind::Conflict, .. }) => return Ok(false),
                                 Err(error) => return Err(error),
                             }
                         }
@@ -556,14 +559,9 @@ async fn connected_attempt(
                                     })).await?;
                                     if confirmed { *retried_full = false; waiting = false; }
                                 }
-                                let phase = match reported {
-                                    pop_core::sync::Status::Offline => Phase::Offline,
-                                    pop_core::sync::Status::Syncing => Phase::Syncing,
-                                    pop_core::sync::Status::Synced => Phase::Synced,
-                                    pop_core::sync::Status::Paused { .. } => Phase::Paused,
-                                };
+                                let phase = reported.state().phase;
                                 core_status = (phase, format!("{reported:?}"));
-                                if !waiting { status.set(core_status.0.clone(), core_status.1.clone()); }
+                                if !waiting { status.set(core_status.0, core_status.1.clone()); }
                             }
                             SyncEvent::Send { bytes } => {
                                 let frame = Frame::decode(&bytes).map_err(fail)?;
@@ -581,7 +579,7 @@ async fn connected_attempt(
                                         BudgetDecision::TooLarge => return Err(outgrown()),
                                         BudgetDecision::Ready => sent_push = Some(id),
                                     }
-                                    status.set(Phase::Syncing, "Syncing files".into());
+                                    status.set(SyncPhase::Syncing, "Syncing files".into());
                                     let result = pump.effect(operations.call(move |operation| {
                                         let result = attachments::upload_blobs(&operation.owner, &operation.key, &mut uploaded);
                                         Ok((uploaded, result))
@@ -596,7 +594,7 @@ async fn connected_attempt(
                     }
                 }
                 Input::Socket(Some(Ok(Message::Binary(bytes)))) => {
-                    let frame = envelope::decode(&bytes).map_err(|error| HttpFailure::Paused(pop_core::sync::Pause {
+                    let frame = envelope::decode(&bytes).map_err(|error| HttpFailure::from(pop_core::sync::Pause {
                         kind: PauseKind::Refused, reason: fail(error),
                     }))?;
                     trace_frame(&frame, true);
@@ -607,10 +605,10 @@ async fn connected_attempt(
                         sent_push = None;
                     }
                     if matches!(&frame, Frame::Error { code, .. } if ErrorCode::try_from(*code) == Ok(ErrorCode::Ended)) {
-                        status.set(Phase::Ended, "Ended".into()); return Ok(true);
+                        status.set(SyncPhase::Ended, "Ended".into()); return Ok(true);
                     }
                     if matches!(frame, Frame::Records(_)) {
-                        status.set(Phase::Syncing, "Receiving files".into());
+                        status.set(SyncPhase::Syncing, "Receiving files".into());
                         uploaded = pump.effect(operations.call(move |operation| {
                             attachments::download_blobs(&operation.owner, &operation.key, &mut uploaded)?;
                             Ok(uploaded)
@@ -618,7 +616,7 @@ async fn connected_attempt(
                     }
                     if !admission.frame(frame.encode()) { return Ok(false); }
                     pump.effect(operations.request(Request::State)).await?;
-                    if !waiting { status.set(core_status.0.clone(), core_status.1.clone()); }
+                    if !waiting { status.set(core_status.0, core_status.1.clone()); }
                 }
                 Input::Socket(Some(Ok(Message::Close(_)))) | Input::Socket(Some(Err(_))) | Input::Socket(None) => return Ok(false),
                 Input::Socket(Some(Ok(_))) => {},
@@ -631,7 +629,11 @@ async fn connected_attempt(
     let _ = tokio::time::timeout(Duration::from_millis(100), pump.socket.close(None)).await;
     trace("socket_detached");
     match result {
-        Err(HttpFailure::Paused(pause)) => {
+        Err(HttpFailure { kind: PauseKind::Ended, .. }) => {
+            status.set(SyncPhase::Ended, "Ended".into());
+            Ok(true)
+        }
+        Err(pause) if pause.kind.pauses() => {
             status.paused(pause.kind, pause.reason);
             Ok(true)
         }
@@ -685,7 +687,7 @@ mod tests {
         let notices = Arc::new(AtomicUsize::new(0));
         let counted = notices.clone();
         let status = Arc::new(Status {
-            value: Mutex::new((Phase::Offline, "Connecting".into(), None)),
+            value: Mutex::new((SyncPhase::Offline, "Connecting".into(), None)),
             notice: Arc::new(Mutex::new(Some(Arc::new(move || {
                 counted.fetch_add(1, Ordering::SeqCst);
             })))),
@@ -700,7 +702,7 @@ mod tests {
                 blocking(&cancelled, identity, move || {
                     entered.send(()).unwrap();
                     finish.recv().unwrap();
-                    status.set(Phase::Synced, "Late result".into());
+                    status.set(SyncPhase::Synced, "Late result".into());
                     finished.send(()).unwrap();
                     Ok(())
                 })
@@ -781,7 +783,7 @@ mod tests {
         let operation = Operations { owner: owner.clone(), key, journal, cancel: cancel.clone(), identity };
         network().unwrap().runtime.spawn(async move {
             let status = Status {
-                value: Mutex::new((Phase::Offline, String::new(), None)),
+                value: Mutex::new((SyncPhase::Offline, String::new(), None)),
                 notice: Arc::default(),
                 cancellation: cancel,
             };

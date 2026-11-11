@@ -30,7 +30,15 @@ fn finite(values: &[f64]) -> Result<()> {
 pub fn silhouette(shape: Option<&Value>, width: f64, height: f64) -> Result<Silhouette> {
     let shape = match shape {
         None => Shape::Radius(crate::wire::DEFAULT_WINDOW_RADIUS.into()),
-        Some(value) => Shape::deserialize(value).map_err(|_| invalid())?,
+        Some(value) => {
+            if value
+                .as_object()
+                .is_some_and(|map| map.keys().any(|key| !["path", "viewBox", "fillRule"].contains(&key.as_str())))
+            {
+                return Err(invalid());
+            }
+            Shape::deserialize(value).map_err(|_| invalid())?
+        }
     };
     normalize(shape, width, height)
 }

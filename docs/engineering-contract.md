@@ -17,10 +17,9 @@ Old documents depend on a few public boundaries; everything behind them may chan
 | Boundary | Marker | A later build |
 |---|---|---|
 | Product document lineage | Rust `DOCUMENT_LINEAGE`, encoded in SQLite `application_id`, read first on every open | Refuses an older lineage or another product's file ("made by an older version") and writes nothing; a newer lineage requires an update. The live-owner hello carries the same value, so a new CLI never forwards edits into an old running app. Cloud isolation from the earlier product is by fresh infrastructure names, not code. Release versions remain independent. |
-| The app in a `.pop` file: catalog fields and `definition_json` (window, descriptor, theme, commands, capabilities), plus resource semantics | `app.package_format`, stamped by the engine from the build (1) | Reads every format it has shipped, through one reader per format; refuses a newer one |
+| The app in a `.pop` file: catalog fields and `definition_json` (window, descriptor, theme, commands, capabilities), plus resource semantics and the Loro container layout | `app.package_format`, stamped by the engine from the build (1) | Reads every format it has shipped, through one reader per format; refuses a newer one |
 | App behavior: `ctx`, handles, errors, the command prelude, stored capture programs and host DOM/CSS conventions | `app.runtime_abi`, stamped by the build (1) | Dispatches to the app-facing context adapter for that ABI; refuses a newer one |
-| The file's tables, and the layout every open checks | SQLite `user_version` (storage version, 1) | Migrates forward under the writer lock, in one transaction once a later version exists; refuses a newer one |
-| How descriptor kinds map to Loro containers ([storage layout](reference/document-types.md#storage-layout)) | `meta.layout` in each document (1), written when it is created | Reads and edits the layout it has shipped; refuses a newer one. Opening and saving never change a document's layout |
+| The file's tables, columns and triggers | SQLite `user_version` (storage version, 1) | Migrates forward under the writer lock, in one transaction once a later version exists; refuses a newer one |
 | CLI ↔ document engine ↔ live owner | The command protocol: `--client-protocol N` on `pop-engine`, and `protocol` in every socket request; `--protocol` reports the protocol served | Serves exactly its own protocol, with no adapters for older programs, and refuses any other before touching the document (exit status 2, or `requires_update`), naming the older side to update. The refusal path never changes: `--client-protocol N` first, exit status 2 and one stderr line; the live discovery record's `socket` and `documentPath` fields (other fields are ignored; its location is per platform); newline-delimited framing; `protocol` read before any other check; and the reply `{ok: false, code: "rejected", reason: "requires_update", error}`. Protocol 1 is today's commands, arguments, request and reply JSON (a reply may gain members, which readers ignore), outputs and exit statuses |
 
 ### How documents evolve
@@ -32,11 +31,12 @@ depend on is the host side they call into, the runtime ABI that `sdk/abi.ts` lis
 host change an old app cannot run raises `runtimeABI` and keeps the old behavior for apps
 built at the lower level.
 
-Each marker in the table above has its own mechanism. All four are 1 in lineage 2, and
+The package format, runtime ABI and storage version are all 1 in lineage 2, and
 there are no adapters for older values. When one is first raised, only storage is rewritten:
 SQL migrations move a file forward. A package format is read in place and translated into
-the host model in memory, a runtime ABI keeps its adapter, and a Loro layout is read as it
-is or migrated losslessly. The app inside a document is an author's compiled code, so it
+the host model in memory and implies the Loro container layout; a runtime ABI keeps its
+adapter. Documents have no separate layout marker. Opening checks the `data` and `theme`
+root maps before interpreting state; the optional `meta.historyRoot` causal guard is independent. The app inside a document is an author's compiled code, so it
 is never migrated; moving a document to a newer build of its app is a separate, explicit
 operation ([additive app upgrades](ideas.md#additive-app-upgrades)).
 

@@ -1,9 +1,9 @@
 //! Passive contracts shared across pop runtime boundaries.
 pub mod evaluator;
+pub mod format;
 pub mod identity;
-pub mod lineage;
 pub mod resources;
-pub use identity::AppRevisionId;
+pub use identity::AppDigest;
 
 pub mod app;
 pub mod capture;

@@ -116,7 +116,7 @@ impl Ack {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Frame {
-    Hello { protocol: u8, app_digest: [u8; 32], version: Version },
+    Hello { protocol: u8, app_digest: crate::AppDigest, version: Version },
     Welcome { permission: Permission, version: Version },
     Records(Vec<Record>),
     CaughtUp,
@@ -166,7 +166,7 @@ impl Frame {
             Self::Hello { protocol, app_digest, version } => {
                 out.push(1);
                 out.push(*protocol);
-                out.extend_from_slice(app_digest);
+                out.extend_from_slice(app_digest.as_bytes());
                 put_version(&mut out, version);
             }
             Self::Welcome { permission, version } => {
@@ -288,7 +288,7 @@ impl<'a> Reader<'a> {
         Ok(match self.byte()? {
             1 => Frame::Hello {
                 protocol: self.byte()?,
-                app_digest: self.take(32)?.try_into().expect("32 bytes"),
+                app_digest: crate::AppDigest::from_bytes(self.take(32)?.try_into().expect("32 bytes")),
                 version: self.version()?,
             },
             2 => Frame::Welcome {

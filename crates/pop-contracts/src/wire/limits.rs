@@ -258,7 +258,7 @@ pub fn open_limits() -> Vec<Limit> {
     bound!(ATTACHMENT_NAME_BYTES, Max);
     bound!(SHAPE_PATH, Max);
     bound!(SHAPE_RADIUS, Max);
-    bound!(SHAPE_VIEW_BOX, Max);
+    limits.push(Limit { name: "SHAPE_VIEW_BOX".into(), value: SHAPE_VIEW_BOX.to_bits(), kind: LimitKind::Max });
     bound!(DESCRIPTOR_DEPTH, Max);
     bound!(DESCRIPTOR_FIELDS, Max);
     bound!(ENUM_VALUES, Max);
@@ -276,7 +276,7 @@ pub fn open_limits() -> Vec<Limit> {
     bound!(WEBM_HEADER_BYTES, Max);
     bound!(OPEN_WINDOW_MIN_WIDTH, Min);
     bound!(OPEN_WINDOW_MIN_HEIGHT, Min);
-    bound!(SHAPE_VIEW_BOX_MIN, Min);
+    limits.push(Limit { name: "SHAPE_VIEW_BOX_MIN".into(), value: SHAPE_VIEW_BOX_MIN.to_bits(), kind: LimitKind::Min });
     bound!(CATEGORIES_MIN, Min);
     bound!(STORAGE_ROW_OVERHEAD, Min);
     bound!(ATTACHMENT_ID_LENGTH, Exact);
@@ -324,6 +324,21 @@ pub fn open_limits() -> Vec<Limit> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn floating_open_limits_round_trip_without_losing_precision() {
+        let limits = open_limits();
+        for (name, value) in [
+            ("SHAPE_VIEW_BOX", SHAPE_VIEW_BOX),
+            ("SHAPE_VIEW_BOX_MIN", SHAPE_VIEW_BOX_MIN),
+            ("SHAPE_ARC_MIN_RADIUS", SHAPE_ARC_MIN_RADIUS),
+            ("SHAPE_ARC_MIN_CHORD", SHAPE_ARC_MIN_CHORD),
+            ("SHAPE_ARC_TOLERANCE", SHAPE_ARC_TOLERANCE),
+        ] {
+            let recorded = limits.iter().find(|limit| limit.name == name).unwrap();
+            assert_eq!(f64::from_bits(recorded.value), value, "{name}");
+        }
+    }
 
     #[test]
     fn limit_directions_and_u64_recording_are_lossless() {

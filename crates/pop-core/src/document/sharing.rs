@@ -6,6 +6,81 @@ const CHANGES_PER_BATCH: usize = 128;
 const FRAME_METADATA_BYTES: usize = 4096;
 
 impl Document {
+    /// Canonical relay frontier of accepted visible state, as the seed route sends it;
+    /// unintegrated operations are excluded.
+    pub fn wire_history(&self) -> Vec<(String, u32)> {
+        pop_contracts::relay::frame::version_pairs(self.doc.state_vv().iter().map(|(&peer, &end)| (peer, end as u32)))
+    }
+    /// Every operation this replica holds, by peer.
+    pub(crate) fn version_vector(&self) -> loro::VersionVector {
+        self.doc.oplog_vv()
+    }
+    /// The operations this replica holds past `version`, as one Loro update.
+    pub(crate) fn updates_since(&self, version: &loro::VersionVector) -> Result<Vec<u8>> {
+        self.doc.export(ExportMode::updates(version)).map_err(engine)
+    }
+    /// Opaque room base: retained operations, never a shallow snapshot. Seed state is
+    /// already present in every room replica; snapshots would leave pending imports.
+    pub fn base(&self, frontier: &loro::VersionVector) -> Result<Vec<u8>> {
+        let start = self.base_start();
+        if !frontier.includes_vv(&start) || !self.doc.oplog_vv().includes_vv(frontier) {
+            return Err(err(Code::MissingDependencies, "The base frontier is outside retained history"));
+        }
+        let bytes = if self.doc.oplog_vv() == *frontier {
+            self.doc.export(ExportMode::updates(&start))
+        } else {
+            self.doc.export(ExportMode::updates_in_range(frontier.sub_iter(&start).collect::<Vec<_>>()))
+        }
+        .map_err(engine)?;
+        let meta = LoroDoc::decode_import_blob_meta(&bytes, false).map_err(engine)?;
+        if meta.mode != loro::EncodedBlobMode::Updates
+            || meta.partial_end_vv != *frontier
+            || !start.includes_vv(&meta.partial_start_vv)
+        {
+            return Err(err(Code::InvalidBytes, "The base does not cover its declared history"));
+        }
+        if bytes.len() > pop_contracts::relay::limits::BASE_BYTES {
+            return Err(err(Code::TooLarge, "This document has outgrown sharing"));
+        }
+        Ok(bytes)
+    }
+    pub fn base_start(&self) -> loro::VersionVector {
+        self.doc.shallow_since_vv().to_vv()
+    }
+    /// Changes other replicas made, as Loro updates from a relay: imported, checked
+    /// against the app as a saved document is, and published like an edit. An update
+    /// whose dependencies have not arrived waits inside Loro until they do. A change the
+    /// app cannot accept is refused and leaves the document as it was, though this
+    /// session's undo starts over. `None` when the updates held nothing new.
+    pub fn import_remote(&mut self, updates: &[&[u8]]) -> Result<Option<Applied>> {
+        self.intact()?;
+        let before = self.doc.state_frontiers();
+        let version = self.doc.oplog_vv();
+        let root = history_root(&self.doc)?;
+        let imported = updates
+            .iter()
+            .try_for_each(|bytes| self.doc.import(bytes).map(drop))
+            .map_err(|e| err(Code::InvalidBytes, e))
+            .and_then(|()| check_history_root(&self.doc, root, &version))
+            .and_then(|()| acceptable(&self.doc, &self.app));
+        if let Err(error) = imported {
+            self.abort(&before)?;
+            return Err(error);
+        }
+        if self.doc.oplog_vv() == version {
+            return Ok(None);
+        }
+        // Published even when nothing visible changed, so the page's version moves on.
+        let published = match self.publish_with(true) {
+            Ok(published) => published,
+            Err(error) => {
+                self.abort(&before)?;
+                return Err(error);
+            }
+        };
+        Ok(Some(Self::applied(self.sequence, vec![], published, None)))
+    }
+
     pub(crate) fn bounded_updates(&self, from: &VersionVector) -> Result<Option<(VersionVector, Vec<u8>)>> {
         use pop_contracts::relay::limits::{PUSH_BATCH_BYTES, SOCKET_PUSH_BYTES_PER_MINUTE};
         let local = self.version_vector();

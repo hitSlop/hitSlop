@@ -4,7 +4,7 @@
 use pop_contracts::relay::frame::{Ack, Frame, PROTOCOL, Permission, Record, Span, Version};
 
 pub struct Relay {
-    pub app: [u8; 32],
+    pub app: pop_contracts::AppDigest,
     pub records: Vec<Record>,
     pub heads: Version,
 }

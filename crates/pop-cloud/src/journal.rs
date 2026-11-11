@@ -3,7 +3,7 @@
 use crate::client::*;
 use crate::transport;
 use pop_contracts::hex;
-use pop_core::sync::PauseKind;
+use pop_contracts::relay::PauseKind;
 use pop_runtime::owner::{Owner, Reply, Request};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -216,12 +216,11 @@ pub(crate) fn local(error: impl Into<Error>) -> transport::HttpFailure {
     let error = error.into();
     match error {
         Error::Storage(error) => transport::HttpFailure::from(error),
-        Error::Busy => transport::HttpFailure::Busy(error.to_string()),
-        Error::Io(_) => transport::HttpFailure::Other(error.to_string()),
-        _ => transport::HttpFailure::Paused(pop_core::sync::Pause {
-            kind: PauseKind::Refused,
-            reason: error.to_string(),
-        }),
+        Error::Busy => transport::HttpFailure::new(PauseKind::Busy, error.to_string()),
+        Error::Io(_) => transport::HttpFailure::new(PauseKind::Failed, error.to_string()),
+        _ => {
+            transport::HttpFailure::from(pop_core::sync::Pause { kind: PauseKind::Refused, reason: error.to_string() })
+        }
     }
 }
 fn transaction(journal: &Journal) -> std::result::Result<Transaction<'_>, transport::HttpFailure> {

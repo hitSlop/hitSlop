@@ -21,7 +21,7 @@ fn frame_json(frame: &Frame) -> Value {
     };
     match frame {
         Frame::Hello { protocol, app_digest, version: v } => {
-            json!({"type": "hello", "protocol": protocol, "appDigest": hex(app_digest), "version": version(v)})
+            json!({"type": "hello", "protocol": protocol, "appDigest": hex(app_digest.as_bytes()), "version": version(v)})
         }
         Frame::Welcome { permission, version: v } => json!({
             "type": "welcome",

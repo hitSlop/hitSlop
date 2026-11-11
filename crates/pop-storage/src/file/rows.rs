@@ -188,7 +188,7 @@ pub(super) fn put_asset(
 /// bytes: empty for null, i64 big-endian for integers, IEEE-754 bits big-endian for
 /// reals, or the stored text/blob bytes. Each table ends with 0xfd. Fetch SQL and
 /// physical column order are not encoded; no document state or metadata is included.
-pub(crate) fn app_digest(conn: &Connection) -> Result<[u8; 32]> {
+pub(crate) fn app_digest(conn: &Connection) -> Result<pop_contracts::AppDigest> {
     use sha2::{Digest, Sha256};
     let mut digest = Sha256::new();
     digest.update(b"pop-app-1");
@@ -236,7 +236,7 @@ pub(crate) fn app_digest(conn: &Connection) -> Result<[u8; 32]> {
         }
         digest.update([0xfd]);
     }
-    Ok(digest.finalize().into())
+    Ok(pop_contracts::AppDigest::from_bytes(digest.finalize().into()))
 }
 
 #[cfg(test)]
@@ -258,7 +258,7 @@ mod digest_tests {
     #[test]
     fn app_digest_encoding_has_a_stable_vector() {
         assert_eq!(
-            crate::hex(&app_digest(&fixture()).unwrap()),
+            crate::hex(app_digest(&fixture()).unwrap().as_bytes()),
             "9e994f21579cb37a51d42196ec57305bf4b9b0702daab8121a6ee27724cc9071"
         );
     }

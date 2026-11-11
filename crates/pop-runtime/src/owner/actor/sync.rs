@@ -102,7 +102,7 @@ impl SyncConnection {
                 pop_core::sync::BaseRead::Pending => Ok(None),
                 pop_core::sync::BaseRead::Ready(base) => Ok(Some(base)),
                 pop_core::sync::BaseRead::TooLarge => Err(pop_core::sync::Pause {
-                    kind: pop_core::sync::PauseKind::Outgrown,
+                    kind: pop_contracts::relay::PauseKind::Outgrown,
                     reason: "This document has outgrown sharing".into(),
                 }),
             }))
@@ -122,7 +122,7 @@ impl SyncConnection {
             complete_base(reply, Ok(pop_core::sync::BaseRead::Pending));
         }
     }
-    pub fn pause(&self, kind: pop_core::sync::PauseKind, reason: String) {
+    pub fn pause(&self, kind: pop_contracts::relay::PauseKind, reason: String) {
         let _ = self.sender.send(Message::Sync(SyncMessage::Pause {
             connection: self.connection,
             pause: pop_core::sync::Pause { kind, reason },
@@ -325,7 +325,7 @@ impl Actor {
                 if self.mode != store::Mode::Document || !self.store.is_shared() {
                     self.link.session = None;
                     self.report(Status::Paused {
-                        kind: pop_core::sync::PauseKind::Refused,
+                        kind: pop_contracts::relay::PauseKind::Refused,
                         reason: "This document is not shared".into(),
                     });
                     return;
@@ -336,7 +336,7 @@ impl Actor {
                         Ok(digest) => self.link.session = Some(Session::new(digest)),
                         Err(error) => {
                             self.report(Status::Paused {
-                                kind: pop_core::sync::PauseKind::Refused,
+                                kind: pop_contracts::relay::PauseKind::Refused,
                                 reason: error.to_string(),
                             });
                             return;

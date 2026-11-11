@@ -32,7 +32,7 @@ pub(crate) fn preflight(input: &str) -> Option<String> {
         Ok(()) if input.len() <= 1024 && serde_json::from_str::<wire::socket::Hello>(input).is_ok() => {
             crate::encode(&wire::socket::HelloSuccess::Hello {
                 _ok: True,
-                document_lineage: pop_contracts::lineage::DOCUMENT_LINEAGE,
+                application_id: pop_contracts::format::APPLICATION_ID,
             })
         }
         Ok(()) => failure(invalid("Invalid protocol preflight"), false, false),
@@ -156,16 +156,7 @@ fn dispatch(
                     return Err(unexpected());
                 };
                 let app = &owner.app().app;
-                let schema = serde_json::from_str(app.document_json()).map_err(|e| invalid(e.to_string()))?;
-                EngineSuccess::Describe {
-                    ok: True,
-                    state: pop_core::describe::describe(
-                        app.metadata().clone(),
-                        schema,
-                        reading,
-                        app.command_metadata(),
-                    ),
-                }
+                EngineSuccess::Describe { ok: True, state: pop_core::describe::describe(app, reading) }
             }
             DocumentRequest::Get { .. } => {
                 saving = true;

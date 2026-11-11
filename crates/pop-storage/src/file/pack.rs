@@ -100,7 +100,7 @@ pub fn validate_app(
     input: &str,
     stage: &Path,
 ) -> Result<(pop_contracts::app::WindowDefinition, Vec<pop_contracts::app::Capability>)> {
-    accept(input, stage).map(|build| (build.app.window().clone(), build.app.capabilities().to_vec()))
+    accept(input, stage).map(|build| (build.app.window(), build.app.capabilities()))
 }
 
 pub(super) fn initial_checkpoint(app: &pop_core::AppSpec, initial: &str) -> Result<Vec<u8>> {
