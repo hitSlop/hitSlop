@@ -111,15 +111,15 @@ test("drafts do not break PR replay; published history must be immutable and tra
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-test("a supported release without the current application ID fails qualification", async () => {
+test("a release of another application ID is not this format's history; a newer one needs newer tooling", async () => {
   const root = await mkdtemp(join(tmpdir(), "pop-application-id-"));
   try {
     const { entry } = await fixture(root);
     const history = (record: object) => publishedHistory({ required: {}, list: async () => [entry.release],
       download: async () => Buffer.from(JSON.stringify(record)) });
-    await expect(history({ ...entry.record, applicationId: undefined })).rejects.toThrow("must declare application ID");
-    await expect(history({ ...entry.record, applicationId: ApplicationId - 1 })).rejects.toThrow("must declare application ID");
-    await expect(history({ ...entry.record, applicationId: ApplicationId + 1 })).rejects.toThrow("must declare application ID");
+    expect(await history({ ...entry.record, applicationId: undefined })).toEqual([]);
+    expect(await history({ ...entry.record, applicationId: ApplicationId - 1 })).toEqual([]);
+    await expect(history({ ...entry.record, applicationId: ApplicationId + 1 })).rejects.toThrow("newer release tooling");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 

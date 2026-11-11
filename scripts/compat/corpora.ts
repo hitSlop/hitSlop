@@ -44,9 +44,11 @@ export async function publishedHistory(options: {
   for (const release of all.filter(entry => stableTag.test(entry.tag_name) && !entry.draft && !entry.prerelease)) {
     const bytes = await (options.download ?? assetBytes)(requiredAsset(release, "release-record.json").id);
     const record: ReleaseRecord = JSON.parse(bytes.toString());
+    // A release of another application ID wrote a different format: it is not this history.
+    if (record.applicationId !== undefined && record.applicationId > ApplicationId)
+      throw new Error("Published application ID requires newer release tooling");
+    if (record.applicationId !== ApplicationId) continue;
     validateRecord(record, release.tag_name, record.commit);
-    if (record.applicationId !== ApplicationId)
-      throw new Error(`${release.tag_name}: release record must declare application ID ${ApplicationId}`);
     entries.push({ release, record });
   }
   verifyHistory(entries, options.required ?? requiredHistory);
