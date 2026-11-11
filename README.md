@@ -25,6 +25,10 @@ You and your agent work on the same document. Check something off and your agent
 
 macOS 15.2+ · Apple silicon · Local documents need no account
 
+The current document format begins with 3.0.0. Documents from 2.0.0 cannot be opened
+or converted. From the first public release of this format, newer dotpop keeps its
+released documents openable.
+
 iPhone (iOS 26+) is in TestFlight; App Store release coming soon. It opens, edits and creates pops, includes the Popular templates, and imports from Files. [Availability](https://dotpop.click/docs/availability/) covers sync and live collaboration.
 
 <p align="center">
@@ -103,13 +107,13 @@ so the catalog uses their latest changes.
 
 ## Keep the app. Keep the work.
 
-- Local documents need no account or server. Choose **Sync across devices** when creating a pop to keep it in sync with your iPhone, or keep it on this device. Turn sync on later with **File ▸ Enable Sync Across Devices…**. The iPhone app includes the Popular templates. Keep active files outside iCloud Drive and other synced folders.
+- Local documents need no account or server. Choose **Sync across devices** when creating a pop to keep it in sync with your iPhone, or keep it on this device. Turn sync on later with **File ▸ Enable Sync Across Devices…**. The iPhone app includes the Popular templates. Keep active files outside iCloud Drive and other synced folders. On Mac, **Save Copy and Open** puts a verified copy in `~/pop` and leaves the original where it is.
 - A `.pop` is one SQLite file: the interface, saved data and imported files travel together. Any SQLite tool can open it to look inside; edit it through dotpop or the CLI. Close a document before moving it in Finder.
 - Send a freshly built template so someone can start their own document. They need dotpop; opening the template asks where to save their writable copy. [How to share a pop](apps/landing/src/content/docs/docs/guides/build-and-share.mdx#share-a-template-or-a-document).
 - Export a PNG or PDF to send an invoice, print a recipe, or drop a plan into a message.
 - Use **Share a Copy** to send a saved copy, with its attachments and colors, while you keep working in the original.
 - Add a widget for a pop with a widget view: on your Mac desktop, or for library pops on the iPhone Home Screen in TestFlight. Tap to open it; iPhone widgets also refresh in the background, when iOS allows.
-- Choose **Live collaboration** in the Share popover. The owner signs in with Apple to create the link; anyone with it joins in dotpop on Mac or iPhone, also signing in with Apple. **Stop** ends the link and everyone keeps their copy. [Live sharing](https://dotpop.click/docs/guides/live-sharing/) explains how it works.
+- Choose **Live collaboration** in the Share popover. The owner signs in with Apple to create the link; anyone with it joins in dotpop on Mac or iPhone, also signing in with Apple. Sharing uploads the embedded app, retained history and attachments. **Stop** ends the link and everyone keeps their copy. [Live sharing](https://dotpop.click/docs/guides/live-sharing/) explains how it works.
 - Design for the phone as well as the desktop: pops can switch to a compact layout on iPhone and play native haptics, which stay silent on Mac. [Make it work on iPhone](https://dotpop.click/docs/guides/mobile/).
 - Pin a pop **Always on Top**, or enter fullscreen in apps that enable it, including Checklist and Hourglass.
 - Finder icons can show what's inside, such as a counter's total.
@@ -161,7 +165,7 @@ Run commands with `bunx @hitslop/pop@1.0.0`, or install it with `bun install -g 
 | Inspect and edit a writable document | `schema`, `get`, `apply`, `batch` |
 | Discover and run an app's actions | `describe DOCUMENT`, then `call DOCUMENT NAME --args JSON` |
 | Move data between documents | `get`, then one `batch` of `insert` operations |
-| Customize and share colors, manage files | `theme get/set/reset/export/import`, `attachments list/import/export` |
+| Customize and share colors, manage files | `theme get/set/reset/export/import`, `attachments list/ref/export` |
 | Export a PNG or PDF | `export DOCUMENT --format FORMAT --output FILE` (`png` or `pdf`) |
 | Install agent guidance | `bun install -g @hitslop/pop`, then `pop skills install`; skills update with the global CLI |
 
@@ -436,7 +440,7 @@ artwork      name (preview | icon), png                                 Quick Lo
 -- populated when you create and edit a document
 document     uuid                                                       the document's identity
 history      seq, bytes                                                 saved Loro state: a snapshot, then the edits saved since
-share        room, endpoint                                             room and endpoint for live sharing; empty when unshared
+share        endpoint                                                   cloud service endpoint; empty when unshared
 attachments  id (SHA-256), media_type, bytes                           files you import
 ```
 

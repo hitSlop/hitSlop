@@ -1,22 +1,20 @@
 # Engineering contract
 
-How the system works is in [architecture](architecture.md). dotpop is document lineage 2;
-nothing written before it is supported, and an older product's file is refused at open
-without edits. SQLite may first recover a crashed transaction's hot journal;
+How the system works is in [architecture](architecture.md). The current format begins
+with 3.0.0. A file with another application ID is refused without edits. SQLite may first recover a crashed transaction's hot journal;
 byte-for-byte preservation of the database and journal is not promised.
 
 ## Compatibility
 
-The compatibility promise starts with the first public document-lineage-2 release; documents written before
-it are unsupported. Every document a released build wrote must open, render, edit, save and reopen in every later
-build, on supported macOS versions. Downgrades are not supported: an older build refuses
+The compatibility promise starts with the first public release of this format, 3.0.0. Every document a released build wrote must open, render, edit, save and reopen in every later
+build, on supported Mac and iPhone systems. Downgrades are not supported: an older build refuses
 newer formats with `requires_update` and writes nothing.
 
 Old documents depend on a few public boundaries; everything behind them may change.
 
 | Boundary | Marker | A later build |
 |---|---|---|
-| Product document lineage | Rust `DOCUMENT_LINEAGE`, encoded in SQLite `application_id`, read first on every open | Refuses an older lineage or another product's file ("made by an older version") and writes nothing; a newer lineage requires an update. The live-owner hello carries the same value, so a new CLI never forwards edits into an old running app. Cloud isolation from the earlier product is by fresh infrastructure names, not code. Release versions remain independent. |
+| Document identity | Rust `APPLICATION_ID` (`0x504F_5003`), encoded in SQLite `application_id`, read first on every open | A mismatch is refused as “This is not a pop document” without writes. The live-owner hello carries the same value. Release history is scoped by application ID. |
 | The app in a `.pop` file: catalog fields and `definition_json` (window, descriptor, theme, commands, capabilities), plus resource semantics and the Loro container layout | `app.package_format`, stamped by the engine from the build (1) | Reads every format it has shipped, through one reader per format; refuses a newer one |
 | App behavior: `ctx`, handles, errors, the command prelude, stored capture programs and host DOM/CSS conventions | `app.runtime_abi`, stamped by the build (1) | Dispatches to the app-facing context adapter for that ABI; refuses a newer one |
 | The file's tables, columns and triggers | SQLite `user_version` (storage version, 1) | Migrates forward under the writer lock, in one transaction once a later version exists; refuses a newer one |
@@ -31,12 +29,12 @@ depend on is the host side they call into, the runtime ABI that `sdk/abi.ts` lis
 host change an old app cannot run raises `runtimeABI` and keeps the old behavior for apps
 built at the lower level.
 
-The package format, runtime ABI and storage version are all 1 in lineage 2, and
+The three markers—package format, runtime ABI and storage version—are all 1, and
 there are no adapters for older values. When one is first raised, only storage is rewritten:
 SQL migrations move a file forward. A package format is read in place and translated into
 the host model in memory and implies the Loro container layout; a runtime ABI keeps its
-adapter. Documents have no separate layout marker. Opening checks the `data` and `theme`
-root maps before interpreting state; the optional `meta.historyRoot` causal guard is independent. The app inside a document is an author's compiled code, so it
+adapter. Saved-state acceptance follows the stored descriptor; the optional
+`meta.historyRoot` causal guard is independent. The app inside a document is an author's compiled code, so it
 is never migrated; moving a document to a newer build of its app is a separate, explicit
 operation ([additive app upgrades](ideas.md#additive-app-upgrades)).
 
@@ -90,8 +88,8 @@ error and issue codes (apps treat unfamiliar ones as outcomes; the CLI reports a
 unrecognized outcome and tells the user to inspect state before retrying; the engine relay
 forwards replies with unfamiliar codes unchanged, and the hello reply may gain members), `--pop-*`,
 `data-pop-root`, the embed relay, and capture program requests and replies.
-The pop sharing `/v1` HTTP/link/socket contract starts from its [2.0.0 baseline fixtures](../crates/pop-sharing-protocol/tests/fixtures/v1/README.md) and the binary frame codec's [fixtures](../crates/pop-contracts/tests/fixtures/relay/README.md). From the first public release it grows only additively: those fixtures remain valid and are never replaced, regenerated or deleted, and a breaking change requires `/v2` while `/v1` continues serving released pop clients. The npm package ships the document engine; the Mac app contains its linked core
-and restricted evaluator. Release acceptance checks that the engine and the app contain
+The pop sharing `/v1` HTTP/link/socket contract starts from its [sharing wire fixtures](../crates/pop-sharing-protocol/tests/fixtures/v1/README.md) and the binary frame codec's [fixtures](../crates/pop-contracts/tests/fixtures/relay/README.md). From the first public release it grows only additively: those fixtures remain valid and are never replaced, regenerated or deleted, and a breaking change requires `/v2` while `/v1` continues serving released pop clients. The npm package ships the document engine; the Mac app contains its linked core
+and bundled `pop-engine`, which starts restricted evaluator children. Release acceptance checks that the engine and the app contain
 the same core build. Loro is pinned exactly and upgraded only with the corpus passing.
 
 Limits governing opening, reading and saving are versioned by their owning marker. The corpus records them, and a build may not make a released bound stricter. Acceptance vectors pin positive decoding behavior.
@@ -157,7 +155,7 @@ How an edit, a save and a close move is in [architecture](architecture.md). The 
 and field identifiers, never SQL query text. An inert schema extension therefore never
 changes an unchanged app's digest.
 
-Rust's `AppRevisionId` is exactly those digest bytes. It is an internal identity; existing
+Rust's `AppDigest` is exactly those digest bytes. It is an internal identity; existing
 wire `appDigest` fields retain their encoding.
 
 A future updater must accept a complete revision, check its runtime requirements and
@@ -202,12 +200,13 @@ durable frontier. Ambiguous write outcomes fence appends until a checkpoint; def
 rolled-back busy/refusal outcomes need not force a full snapshot.
 
 Sharing starts from an immutable snapshot of the creator's saved document, staged without
-touching the live owner or its file (`Request::StageSeed`, `Store::stage_seed`). The wire
+touching the live owner or its file (`Owner::stage_seed`, `Store::stage_seed`). The wire
 seed is a SQLite copy containing the complete embedded app, the same document UUID and
 retained history; attachments are not part of the seed, and neither is artwork. The creator
 uploads every attachment the seed references, from the same snapshot, before Open. Open
-names the seed's SHA-256 and the relay refuses any other seed, but it does not check
-attachments: completeness is the creator's contract, held by the client's upload order. A
+names the seed’s SHA-256, version, app digest and exact attachment hashes. The relay
+verifies every named blob’s presence, recorded size and available R2 checksum, enforces
+the attachment budget and discards unreferenced staging blobs. A
 download becomes ready only after its attachments are verified and persisted. The initial
 seed's 16 MiB bound covers the embedded app, history and SQLite overhead, and is checked
 before the cloud document is created; a document beyond it cannot be shared (large media

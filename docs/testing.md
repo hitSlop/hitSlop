@@ -18,15 +18,15 @@ openable, so its frozen entries never change.
 |---|---|---|
 | Rust semantics | `crates/pop-core/tests`, `bun run verify rust` | Descriptors, validation, atomic batches, row identity, publications equal a fresh snapshot, counters, text merges, byte export/import |
 | Rust storage | `crates/pop-storage/tests/{store,file}.rs` | The file: packing, hostile layouts and rows refused before a value is read, stored values bounded as writes bound them, newer markers, templates never opened as documents, copies never overwriting, the registry lock and discovery, renames and hard links (and saving and reloading once moved back), attachments, artwork written by the writer, ranged asset reads, crash recovery. Saving: storage identity, limits before blob reads, busy and full saves, a failed write never advancing the saved version, snapshots that never write, free-page reclamation, theme overrides, a history that does not start with a snapshot refused. Faults are real and deterministic: another connection holding the database, a moved file, a child process killed mid-commit, after each kind of save and while a save waits, and a save retried after a lost reply |
-| Rust capture | `crates/pop-capture/tests` | Saved-source rendering, independent output failures, image budgets and exclusive export publication |
-| Private library | `crates/pop-library/tests` | Replica installation, identity, merge, receipts and cleanup through the same owner |
+| Rust capture | `crates/pop-runtime/tests/capture.rs` | Saved-source rendering, independent output failures, image budgets and exclusive export publication |
+| Device library | `crates/pop-cloud/tests` | Replica installation, identity, merge, receipts and cleanup through the same owner |
 | File engine | `crates/pop-engine/tests` | `pack` (with the artwork it renders), `inspect` and `schema` as the CLI runs them; a refused build publishes nothing; a closed export that never replaces a file, and `open` refusals |
 | Shell over WASM | `packages/pop/tests/shell`, `bun run verify bun` | Async write timing, snapshot identity, collectors, bindings, barriers, attachments, the shared fixture replay (`fixtures.test.ts`) |
 | Author SDK | `packages/pop/tests/sdk` | Descriptor types, cross-bundle errors, framework-neutral helpers and `EditableText` WebKit behavior |
 | Rust owner and commands | `crates/pop-runtime/tests/{owner,command}.rs` | Ordered admission and publications, autosave, edits during slow persistence, failed-close retention, discard fencing, data/theme undo, live socket routing, deadlines and unknown outcomes |
 | Swift integration | `apps/apple/Packages/PopApple/Tests`, `bun run verify swift` | Native event delivery, save/reopen, failure UI, CLI live and closed paths, WebView bridge, saved-state capture, window lifecycle |
 | WebKit | `*.webkit.test.ts` in `packages/pop/tests` and `tests/webkit/`, `verify webkit` (macOS qualification) | The `pop dev` native-owner preview and `EditableText` in Playwright WebKit, without building Swift |
-| Sharing service | `scripts/sharing/check-accounts.ts` and `check-compaction.ts`, `verify sharing` (explicit qualification; a pull request runs it when sharing code changes) | Real Rust WASM with SQLite Durable Objects/R2: verified identities, persistent UUID/private identity, link joins by signed-in identities, generation-bound members, owner-preserving revocation and leave, registry repair, deletion tombstones and the relay's fold; local certificate substitution only |
+| Sharing service | `scripts/sharing/check-accounts.ts` and `check-compaction.ts`, `verify sharing` (explicit qualification; a pull request runs it when sharing code changes) | Real Rust WASM with SQLite Durable Objects/R2: verified identities, persistent UUID/private identity, link joins by signed-in identities, signed-in members, owner-preserving revocation and leave, revisioned outbox delivery, deletion tombstones and the relay's fold; local certificate substitution only |
 | Engine renders | `tests/native/{render,landing}.native.test.ts`, `packages/pop/tests/cli/build.native.test.ts`, `bun run verify render` | Engine artwork and PNG/PDF exports on macOS and Linux, without Swift |
 | Native tools | Remaining `tests/native`, `bun run verify native` | Engine or host killed mid-edit and corpus replay on macOS |
 | Packed packages | `tests/packed`, `bun run verify packed` | The published npm tarballs installed outside the checkout without Node: SDK types, init, check, build, preview and the getting-started tutorial |
@@ -98,16 +98,16 @@ bun run release:check          # release acceptance, shipped builds, and a retai
 | `compat`, `contracts`, `types` | Frozen corpus integrity; generated Rust contracts; Prettier for `packages/pop/src` (excluding generated files), Oxlint for `packages/pop/src` and `scripts`, TypeScript (the `*.types.ts` type tests in their own project, without the unused-declaration rules), Svelte types for the templates and the SDK's components, and `scripts/ci/hygiene.ts` (no placeholder invitation link in any tracked file, one iPhone download address in the site, README and Swift links, and a landing template catalog that matches the active templates; regenerate it with `bun run build:templates && bun apps/landing/scripts/templates.ts`). Together, concurrently |
 | `tooling` | Verification runner and CI policy tests, without Rust, WASM or native builds |
 | `bun` | SDK, shell and release tests over SDK WASM; up to four isolated file workers |
-| `cli` | CLI integration tests with engine/evaluator and shell; one file worker, 120-second default test deadline |
-| `render` | Engine-only artwork and export tests with engine/evaluator and shell, on macOS or Linux; one file worker, 120-second default test deadline |
+| `cli` | CLI integration tests with engine and shell; one file worker, 120-second default test deadline |
+| `render` | Engine-only artwork and export tests with engine and shell, on macOS or Linux; one file worker, 120-second default test deadline |
 | `rust` | `cargo fmt --all -- --check`, Clippy with warnings denied (the workspace, plus the WASM adapter on Linux or release runs), then the Rust suite with cargo-nextest, one process per test; a test running two minutes is a named hang. A filtered run (`verify rust store::`) runs only the tests |
 | `landing` | The site's type check; `website.yml` builds and deploys separately |
-| `packed` | Engine/evaluator, shell and skills, then `tests/packed` (120-second default deadline), when what the npm package ships changes (its sources, starter, skills, page shell or packing) |
+| `packed` | Engine, shell and skills, then `tests/packed` (120-second default deadline), when what the npm package ships changes (its sources, starter, skills, page shell or packing) |
 | `swift` | Swift formatting, native bindings, shell and fixtures, then one serial `swift test` invocation after compilation, with an isolated temporary directory and registry. Requires at least one executed test. Filtered runs (`verify swift --filter X`) pass Swift’s filters through, including `name\(` patterns |
 | `app` | Complete macOS app build and bundle acceptance; selected explicitly or by `release:check` |
-| `webkit` | `*.webkit.test.ts` in Playwright WebKit, with the Rust engine/evaluator and shell; no Swift build. Runs when named (`verify webkit`), with `POP_NIGHTLY=1 --native`, and during release acceptance; nightly/manual qualification in CI, never a required PR check |
+| `webkit` | `*.webkit.test.ts` in Playwright WebKit, with the Rust engine and shell; no Swift build. Runs when named (`verify webkit`), with `POP_NIGHTLY=1 --native`, and during release acceptance; nightly/manual qualification in CI, never a required PR check |
 | `sharing` | Builds the Rust Worker, then runs the account/document boundary in pinned Miniflare with SQLite DOs and R2, including the account library feed, membership and account isolation. Requires `worker-build 0.8.7` in `generated/core-tools` (see `apps/sharing/README.md`). Selected explicitly or in a full nightly/release run. A pull request runs it (the `sharing` job) when it changes any of the tier's own inputs (`apps/sharing`, `scripts/sharing`, any crate or Cargo build input); `sharing.yml` runs it on master pushes and release tags |
-| `native` | Remaining native tests with engine/evaluator and shell; no Swift preparation |
+| `native` | Remaining native tests with engine and shell; no Swift preparation |
 
 Oxlint (`.oxlintrc.json`, `bun run lint`) adds type-aware promise rules to its correctness
 rules: a promise must be awaited, returned, handled or `void`-prefixed, and never used as a
@@ -116,7 +116,7 @@ type-aware rules skip `.svelte` files, so `svelte-check` stays the Svelte type c
 out of scope: Bun's types declare `expect(...).rejects` matchers as returning `void`.
 
 Each tier prepares only its prerequisites: SDK WASM for `bun`, native bindings and
-shell for `swift`, and engine/evaluator and shell for CLI/render/native. Actual shared outputs are prepared once per run. A
+shell for `swift`, and engine and shell for CLI/render/native. Actual shared outputs are prepared once per run. A
 build whose inputs did not change rewrites nothing, so nothing downstream recompiles: a
 repeated `bun run build` takes seconds. Each invocation retains commands, logs, inventory, toolchain identity and outcomes in
 `.pop/evidence/runs/<run-id>/`. The latest report is also written to
@@ -295,9 +295,9 @@ embedded app, edit it, save it, and reopen the result without losing data or att
 Native page replay uses the actual WKWebView host, not Playwright. Keep these checks in
 the required Rust, Swift and native tiers whenever their inputs change.
 
-Capture a separate frozen collection for **each released version**, starting with the first public document-lineage-2 release.
+Capture a separate frozen collection for **each released version**, starting with 3.0.0, the first public release of this format.
 Before that first publication the pin file `scripts/compat/dotpop-required-history.json` is `{}`: ordinary development permits empty history, and release checks require the frozen candidate. After publication, its corpus hash is permanently pinned there; missing
-or changed public history fails even on a fresh machine. Published releases of an earlier lineage are skipped by discovery, and one of a newer lineage needs newer tooling. There is no fallback corpus.
+or changed public history fails even on a fresh machine. Published releases with another application ID are skipped by discovery; a higher application ID needs newer tooling. There is no fallback corpus.
 Later builds replay every collection; never
 rebuild old samples with current tools. These artifacts are immutable GitHub release assets, downloaded and verified for testing. The format markers can remain at 1 across
 many releases; release versions and format requirements are different things.
@@ -392,7 +392,7 @@ older file intact.
 The `compat` tier verifies every resolved corpus's content hashes, immutable storage SQL,
 required case inventory and versioned command prelude. `scripts/compat/corpora.ts` discovers
 all public immutable releases, checks history closure, and verifies each archive.
-It extracts once into `~/.cache/pop/compat-corpora/lineage-2/trees/<sha>/`, verifies extracted
+It extracts once into `~/.cache/pop/compat-corpora/application-1347375107/trees/<sha>/`, verifies extracted
 files again on reuse and makes them read-only, then atomically activates a snapshot of version links at
 `.pop/compat/current`. Candidate entries live in a separate snapshot. Editing tests explicitly make only
 their disposable document copies writable; templates are read directly from the cache. Preparation
@@ -581,7 +581,7 @@ and source-image scaling ([qualification evidence](evidence/native-fullscreen-20
   builds retain module resolution, registration and emitted-artifact cases.
 - Native tests own real window, catalog, WebView, save/close and export integration.
   Controlled native-client doubles test coordination, not document semantics.
-- Package/release tests own installed artifacts, evaluator discovery and relocation.
+- Package/release tests own installed artifacts and bundled engine discovery.
   Generic template smoke checks have no template-specific selectors or actions.
 - Frozen compatibility cases retain their original artifacts and expectations.
 

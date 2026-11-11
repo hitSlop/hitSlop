@@ -54,11 +54,11 @@ Successful mutations acknowledge persistence. Generic edits are never automatica
 
 ## Engine requests
 
-`pop-engine --client-protocol N` reads one `EngineRequest` (`crates/pop-core/src/wire/engine.rs`, exported to TypeScript by ts-rs) from standard
+`pop-engine --client-protocol N` reads one `EngineRequest` (`crates/pop-contracts/src/wire/engine.rs`, exported to TypeScript by ts-rs) from standard
 input, bounded at 16 MiB, and prints one `EngineReply` line. The core keeps the 1 MiB
 limit for ordinary owner requests and the app metadata limit for `validateApp`.
 A request names no protocol: the engine adds the one it was called with. A success carries its
-method and required result fields (`EngineReply` in `crates/pop-core/src/wire/engine.rs`); the CLI treats a success
+method and required result fields (`EngineReply` in `crates/pop-contracts/src/wire/engine.rs`); the CLI treats a success
 without it as an unknown outcome. A refusal is a reply with
 `ok: false`, an outcome `code` and, for a refused edit, the core's `reason` and `opIndex`.
 `rejected`, `owner_replaced`, `closing` and `owner_invalidated` were not applied;
@@ -83,13 +83,14 @@ It opens the document with `/usr/bin/open -a` in the app that contains the runni
 engine, else the app `POP_APP` names, else `/Applications/dotpop.app`, then
 `~/Applications/dotpop.app`; a `POP_APP` that names no app is an error rather than a
 cue to try another copy. A document that is already open in the app is edited and
-exported by that app's Rust owner, which the engine reaches through its socket. The owner drains pending page edits, saves and captures an independent source, then renders through the same capture path as a closed export. Everything
+exported by that app's Rust owner, which the engine reaches through its socket. The owner saves accepted edits and captures an independent source, then renders
+through the same capture path as a closed export. CLI export does not drain unsent page text. Everything
 else runs in the engine, including a closed document's export and the artwork a build
 renders. The one other thing read from an app is the bundled starter templates:
 `templates` and `create --from` list them from an app found the same way (a
 `POP_APP` without starters is skipped).
-The app contains its linked core and the restricted `pop-evaluator`; the engine ships
-only in npm.
+The Mac app contains its linked core and bundles the same `pop-engine` executable
+that ships in npm. Restricted children start through `--evaluate-command`.
 
 The CLI and Mac app update separately. The CLI names its command protocol on every
 engine call (`--client-protocol VERSION`), and the engine names it in every request to a
@@ -116,8 +117,7 @@ A bare template slug resolves installed templates before bundled ones.
 `inspect` returns file kind, requirements, metadata, window, resource/state sizes and
 the app digest (equal digests mean the same app);
 `schema` reads its stored descriptor. `get`, `describe`, `batch` and `call` route through
-the live or in-process owner and wait for persistence as required. `copy` makes a saved
-copy; `artwork.export` exports stored artwork. `attachments.ref` reads a local regular
+the live or in-process owner and wait for persistence as required. `artwork.export` exports stored artwork. `attachments.ref` reads a local regular
 file and returns its hash, byte length, name and detected MIME type without opening a
 document. `export` renders a closed document in the engine, and routes an open one to its
 owner on macOS. Closed export also works on Linux; `open` is macOS only and asks

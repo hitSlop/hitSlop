@@ -8,11 +8,14 @@ included) use the native Rust core. Bun SDK tests use the WASM adapter.
 - `pop-contracts`: passive shared wire, error, limit, relay frame, app-presentation, media-registry
   and evaluator types; no Loro, SQLite or renderer.
 - `pop-core`: pure Loro document semantics, app acceptance and sync. It has no storage or
-  runtime features; optional `ts` generation is tooling.
+  runtime features and no cloud dependency; optional `ts` generation is tooling.
 - `pop-storage`: SQLite `.pop` files, file acceptance, registry, attachments and atomic
-  publication. It depends on core and contracts.
+  publication. Each Store is owned by one persistence thread; owner state caches its
+  save status. It depends on core and contracts, with no cloud dependency.
 - `pop-runtime`: owner, command, socket and persistence orchestration, and its `capture`
   module (saved-source capture and widgets); it composes core, storage and runner.
+  Typed Owner methods enter one queue bounded by message count and carried bytes.
+  Open-document CLI exports flush accepted edits and render an independent saved source.
   Platform policy is target-driven: iOS uses in-process capture and the socket stub;
   other targets use process providers and the socket server.
 - `pop-core-ffi`: UniFFI adapter used by the Apple host and its Quick Look extensions.
@@ -22,21 +25,24 @@ included) use the native Rust core. Bun SDK tests use the WASM adapter.
   a build does not supply when asked. On macOS and Linux the engine exports closed documents in its own
   restricted evaluator; on macOS it also opens documents in dotpop.app.
 - `pop-sharing-protocol`: the cloud service's HTTP and library wire types, limits
-  and failure table, free of Loro, used by the native and web clients and the Worker.
+  and failure table, free of Loro, used by the native client and the Worker.
   Its `supervisor` module is the pure sync supervisor driven by the native sharing client
   (reconnect backoff, fold/compaction decisions, push budgets); no I/O, clocks or Loro.
 - `pop-cloud`: the native cloud client over the existing owner: identity-authenticated,
   event-driven transport, cloud HTTP calls, durable confirmed-version receipts and the account
   feed, composed into the device-local `library` (index of the live account feed, downloaded
-  copies and recovery copies).
+  copies and recovery copies). One shared async runtime handles document and account
+  sockets; one long-lived library switches accounts. Confirmed receipts live in its
+  `index.sqlite`. Callbacks and a managed-folder watcher refresh native snapshots.
 - `pop-runner`: the restricted QuickJS child and its bounded process launcher, with
   no storage dependency. Its `capture` feature includes the `render` module (Takumi
-  raster/PDF rendering and fonts; no owner). The engine re-executes itself with `--evaluate-command`; the
-  `pop-evaluator` binary provides the same child for native-host integration.
-  Its features are `child` (sandbox and evaluator binary), `capture` (QuickJS and renderer),
-  and `in-process` (caller-thread capture for iOS); `child` and `capture` are defaults.
+  raster/PDF rendering and fonts; no owner). The engine re-executes itself with `--evaluate-command`; the Mac app
+  bundles and signs that same `pop-engine` binary.
+  Its features are `child` (sandbox and evaluator entry point), `capture` (QuickJS and renderer),
+  and `in-process` (caller-thread capture for iOS); defaults are empty.
   Native process launching compiles on non-iOS targets without a feature flag.
 
+`tools/pop-bindgen` generates TypeScript contracts with ts-rs.
 `tools/pop-compat` captures release acceptance vectors and limits, and replays recorded
 acceptance and limits in its tests. It is never shipped with the document engine.
 

@@ -359,8 +359,7 @@ widths by column. Values are scalars or objects.
 ## Storage layout
 
 How kinds map to Loro containers is a persisted contract implied by the app’s
-`packageFormat`; there is no separate document layout marker. Opening checks that the
-`data` and `theme` root maps exist, including when empty, before interpreting state
+`packageFormat`. Opening applies the stored descriptor’s acceptance to the saved state
 ([engineering contract](../engineering-contract.md#compatibility)).
 
 | Kind | Stored as |

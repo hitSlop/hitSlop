@@ -6,14 +6,14 @@ routes and limits are in [cloud documents](../cloud-documents.md).
 
 ## The confirmed receipt
 
-Each device keeps a small receipt per relay endpoint and cloud document, in its local state
-directory, naming the one document version that **both** the cloud holds and the local save
+Each device keeps a small receipt per account and cloud document in its library’s
+`index.sqlite`, naming the one document version that **both** the cloud holds and the local save
 holds. The
 owner writes it only when the cloud has acknowledged every push, the session is caught
 up and not paused, and the saved file's exact history matches. A seed upload also writes
 it once Open succeeds, which follows the upload of every attachment the seed references; a
-download writes it once its attachments are verified and persisted. The receipt is replaced atomically under an OS lock; a failed
-write keeps the previous one. It holds no document state and no credentials.
+download writes it once its attachments are verified and persisted. The receipt is replaced in an index transaction; a failed
+write rolls back and keeps the previous one. It holds no document state and no credentials.
 
 The receipt is the only thing that decides whether a downloaded copy is clean. **Remove
 Download** is refused while the saved version differs from the receipt, and catalog

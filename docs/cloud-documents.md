@@ -15,7 +15,8 @@ opaque Loro updates and never interprets them. Operators deploy it from
 - **Owner.** One Firebase account (Sign in with Apple). Only the owner can create a cloud
   document and control the invitation and deletion.
 - **Guests.** A guest joins by signing in with Apple; local editing needs no identity. A guest
-  holds the editor role while the invitation generation they joined under is current.
+  holds the editor role until leaving, revocation or deletion. There is no per-member
+  management UI; Stop sharing removes all guests.
 - **Authority.** The per-document Durable Object (named by the UUID) owns permissions,
   lifecycle and accepted updates. A per-account Durable Object
   (named by the SHA-256 of the Firebase UID) registers the account's documents; that
@@ -39,8 +40,10 @@ opaque Loro updates and never interprets them. Operators deploy it from
 Every route is a row of `ROUTES` in
 `apps/sharing/src/routes.rs`, which drives dispatch and per-IP rate limiting. An unlisted method,
 path or trailing segment is a 404 before any limiter, identity check or Durable Object.
-JSON bodies over their limit are 413 and malformed ones 400. Document sockets negotiate
-`pop.sync.v2`; the library uses `pop.library.v1`. An unsupported protocol gets 426 `requires_update`.
+JSON bodies over their limit are 413 and malformed ones 400. Identity is verified once
+at the edge and trusted caller context is forwarded to the objects. Native sockets
+upgrade without a subprotocol header. The `/v1` route and relay Hello identify the
+protocol; 2.0.0 subprotocol headers receive 426 `requires_update`.
 
 | Route | Who | Effect |
 |---|---|---|
@@ -51,7 +54,6 @@ JSON bodies over their limit are 413 and malformed ones 400. Document sockets ne
 | `GET /v1/documents/{document}` | member | Phase, seed and app metadata, and whether compaction is due. It never carries the invitation. |
 | `PATCH /v1/documents/{document}` | owner | Store title and template ID. |
 | `DELETE /v1/documents/{document}` | owner | Revoke everyone, purge payloads, keep a tombstone. |
-| `GET /v1/documents/{document}/metadata` | member | Title and template ID. |
 | `GET`, `POST`, `DELETE …/sharing` | member (read), owner | The caller's current access, read from the document; enable (idempotent); revoke the invitation and its memberships. Only the owner receives the capability. |
 | `POST …/members` | identity | Exchange the invitation secret for editor membership. |
 | `DELETE …/members/me` | member | Leave without deleting the document. |
@@ -67,7 +69,9 @@ and iPhone and holds no credentials.
 
 ## Sync and compaction
 
-On connect a replica sends its version and receives what it lacks; pushes carry whole
+A socket accepts one Hello. Catch-up runs in alarm-driven slices bounded by bytes and
+rows, rechecking membership and phase before delivery. A replica sends its version and
+receives what it lacks; pushes carry whole
 causal changes, one in flight at a time. Live sharing carries the document's retained
 history, not a sanitized copy: a person who joins receives retained document history,
 including content since removed from view (**Share a Copy** sends a sanitized copy instead).
@@ -131,7 +135,7 @@ sharing changes or Join, it durably queues publication and an alarm. Bounded fan
 retries failed deliveries without requiring another edit. Leave and deletion remove
 account entries. Uploading documents stay hidden until Open succeeds.
 
-`GET /v1/account/library` negotiates `pop.library.v1` with a Firebase identity.
+`GET /v1/account/library` upgrades with a named Firebase identity and no subprotocol header.
 It sends byte/count-bounded snapshot pages, then upsert/remove messages. Clients apply
 absence only after a complete snapshot; interruption preserves the last known library.
 One account connection serves all library entries, and every device of that account

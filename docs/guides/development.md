@@ -15,7 +15,7 @@ bun run build
 bun run verify --all --native
 ```
 
-`build` generates platform contracts, builds the Rust core bindings (arm64 XCFramework and WASM) and the page shell (bundled with Vite), installs the shell into the app resources and the CLI, builds agent skills, and compiles the Rust document engine. The engine stays in its Cargo output directory; `POP_ENGINE` selects it, and `POP_APP` names a development dotpop.app for `pop open` and bundled-starter discovery. Verification prepares each tier’s prerequisites itself: Swift gets native bindings, the engine/evaluator and shell; SDK/shell tests get SDK WASM; CLI/render/native tests get the engine/evaluator and shell; package consumers get the engine/evaluator and shell. `bun scripts/build/build.ts --prepare OUTPUT[,OUTPUT]` prepares named outputs and their prerequisites (listed in `scripts/build/preparation.ts`). Template artwork is rendered by that engine as each template builds, in a separate, cached `bun run build:templates` step. Rust toolchain setup is described in [crates/README.md](../../crates/README.md).
+`build` generates platform contracts, builds the Rust core bindings (arm64 XCFramework and WASM) and the page shell (bundled with Vite), installs the shell into the app resources and the CLI, builds agent skills, and compiles the Rust document engine. The engine stays in its Cargo output directory; `POP_ENGINE` selects it, and `POP_APP` names a development dotpop.app for `pop open` and bundled-starter discovery. Verification prepares each tier’s prerequisites itself: Swift gets native bindings, the engine and shell; SDK/shell tests get SDK WASM; CLI/render/native tests get the engine and shell; package consumers get the engine and shell. `bun scripts/build/build.ts --prepare OUTPUT[,OUTPUT]` prepares named outputs and their prerequisites (listed in `scripts/build/preparation.ts`). Template artwork is rendered by that engine as each template builds, in a separate, cached `bun run build:templates` step. Rust toolchain setup is described in [crates/README.md](../../crates/README.md).
 
 To work on the app, generate `apps/apple/pop.xcodeproj` with `xcodegen generate --spec apps/apple/project.yml` and open it in Xcode. `bun run apple:build` builds and verifies a disposable development app under `generated/app`. Both refresh bundled templates through the template cache before embedding them.
 
@@ -48,7 +48,8 @@ re-registered. Existing `.pop` documents always keep their embedded app: neither
 app rebuild nor a template replacement upgrades them. Never replace a document's app
 or saved data by copying a template over it.
 
-Every Xcode app configuration builds, embeds and signs `pop-evaluator`, which runs
+Every Mac Xcode app configuration builds, embeds and signs `pop-engine`, whose
+`--evaluate-command` entry point runs
 named commands such as Quick Checklist's add, file, restore and remove actions. Debug
 Run does not require `POP_EVALUATOR`; that override is for isolated tests.
 
@@ -62,11 +63,10 @@ in a background session, and use filtered verification while iterating.
 | Area | Responsibility |
 | --- | --- |
 | `apps/apple` | Mac and iPhone entry points, widgets, Quick Look extensions, project configuration and signing; Sparkle on Mac |
-| `crates` | `pop-core` (Rust on Loro) document semantics and the `.pop` file, its UniFFI and WASM adapters, and the CLI's `pop-engine` |
+| `crates` | See the [crate map](../../crates/README.md) for responsibilities and tools. |
 | `apps/apple/Packages/PopApple` | Core, the native document owner (PopDocument), Host, the app and catalog models (PopFeatures), Catalog, and telemetry |
 | `packages/pop/src/sdk` | Author SDK: `defineDocument`, descriptors, handle and `ctx` types, and the Svelte adapter (`getDocument` for editors, `CaptureProps` for static views) |
 | `packages/pop/src/shell` | Page shell (private): snapshot store, typed handles, bindings and themes (no CRDT) |
-| `crates/pop-core/src/wire`, `src/app` | Serde wire types and package-format acceptance, exported with ts-rs and UniFFI |
 | `packages/pop/src/cli` | Scaffolding, checks, disposable preview, builds, registration, skills, and native forwarding |
 | `pop` | Active authored templates and the bundled selection |
 | `apps/landing` | Website and public author documentation; independently locked dependencies |

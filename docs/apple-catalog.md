@@ -42,10 +42,10 @@ Transient failures retain the last known value. An optional presentation refresh
 not make an acknowledged upload fail. No authority request runs while rendering a cell
 or refreshing the local index.
 
-Standalone guest documents use their accepted document UUID and a matching valid
-credential. Rust interprets the opaque credential, including its ended state; filenames
-do not establish sharing. Native code caches this projection off the main thread at
-startup, foreground and credential changes. The long-lived Rust library fences account changes and reattaches registered live owners.
+Rust projects sharing from the accepted document UUID, the current account and cached
+library relationship; filenames do not establish sharing. The long-lived Rust library
+fences account changes and reattaches registered live owners. Opening an arbitrary Mac
+file records it in Recents without adopting it into the library.
 
 ## Sync and accounts
 
@@ -87,8 +87,8 @@ previews, context menus and creation/opening behavior remain.
 ## Qualification
 
 Tests belong to Rust library persistence and the shared native presentation boundary.
-They cover private, shared and unknown state; state changes; cache reopening and
-migration; account isolation; Inbox persistence; badge priority; and accessibility text.
+They cover private, shared and unknown state; state changes; cache reopening; account
+isolation; Inbox persistence; badge priority; and accessibility text.
 No per-template tests are added.
 
 Visual qualification covers local, private-sync, shared, undownloaded, unavailable and

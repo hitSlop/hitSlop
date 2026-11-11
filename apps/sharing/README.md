@@ -36,7 +36,12 @@ repository. Complete it before the first deployment.
 3. **Worker.** `dotpop` (`dotpop-staging` for `--env staging`) owns the
    `share.dotpop.click` custom domain. Migration tag `documents-v1` declares its
    two SQLite Durable Object classes.
-4. **Deploy.** `.github/workflows/sharing.yml` qualifies on matching `master` changes and
+4. **First single-Worker deployment.** Coordinate deployment with removal of the old
+   `hitslop-sharing-host` Worker and its unused `FIREBASE_WEB_API_KEY` secret. Check the
+   deployed resources first; removing the old host before the replacement is ready
+   interrupts the join page, Apple callback and association file. Deployment remains
+   release qualification work.
+5. **Deploy.** `.github/workflows/sharing.yml` qualifies on matching `master` changes and
    deploys the Worker with its assets on a `pop-v*` tag or manual run when the repository
    variable `POP_DEPLOY_ENABLED` is `true`. A smoke check requests
    `https://share.dotpop.click/health` and the association file. `wrangler rollback` reverses a deploy.
@@ -46,8 +51,9 @@ repository. Complete it before the first deployment.
 `bun run verify sharing` builds the Rust Worker and runs, in pinned Miniflare with real Rust
 WASM, SQLite Durable Objects and R2:
 
-- `check-accounts.ts`: identity, UUID ownership, access generations, revocation, the
-  account registry and its cleanup under racing joins, deletion, request limits and the seed hash Open requires. Only external identity certificates are
+- `check-accounts.ts`: named identity, UUID ownership, revocation, the
+  revisioned library outbox and cleanup under racing joins, deletion, request limits
+  and the content-addressed seed and attachment inventory Open requires. Only external identity certificates are
   substituted, in the local outbound harness; production has no test route, asserted-UID
   bypass, configurable certificate endpoint or clock override. It also reads the files in
   `public/` that deploy (the callback's script hash against its policy, the association

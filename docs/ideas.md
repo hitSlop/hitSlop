@@ -66,7 +66,7 @@ a person and their agent edit the same live document. What's missing is the pope
     export and theme as tools whose input schemas come from each document's descriptor.
 - **Why:** today an agent learns about a person's edits only by polling `get`. MCP lets
   clients without a shell work on pop.
-- **Builds on:** the owner socket and its serde types in `crates/pop-core/src/wire`. The
+- **Builds on:** the owner socket and its serde types in `crates/pop-contracts/src/wire`. The
   socket takes one request per connection today, so streaming needs a new CLI protocol
   with both sides updated, rather than an additive method in the current protocol.
 
@@ -141,9 +141,9 @@ a person and their agent edit the same live document. What's missing is the pope
   the identical triggers in the same transaction (the exact layout check then passes);
   keep the triggers rather than weakening them for this.
 - **Identity:** safety comes from the descriptor comparison, so an explicit "move this
-  document to that template" needs no lineage. Offering "a newer version of this app
+  document to that template" needs no app ancestry. Offering "a newer version of this app
   exists" does, and neither a slug nor an SDK version provides it. The exact revision is
-  a digest of the app (its `app` row and assets) that Rust computes; lineage comes with
+  a digest of the app (its `app` row and assets) that Rust computes; app ancestry comes with
   publishing and signing.
 - **Contract change:** schema evolution is deferred, and documents keep the app version
   they were created with. An upgrade is always an explicit operation: installing pop
@@ -378,14 +378,13 @@ remains the permission authority.
 
 ### Opening a shared pop in a browser
 
-A shared pop can be opened where dotpop is not installed. The intended design is a live
+Let a shared pop open where dotpop is not installed. The intended design is a live
 session, not a saved copy: the document core and the sync session compile to WASM, the
 cloud document holds the state, and the browser keeps no storage of its own, so leaving
 the tab leaves nothing behind. `pop-core` stays free of storage, threads and operating
 system dependencies, and the reconnect supervisor stays pure, so both can run there
 unchanged. An earlier implementation kept a durable copy in the browser's origin-private
-storage; it is in git history before the browser removal on branch
-`chore/crates-foundation`.
+storage; its last commit is `efe7ff9a`, before browser removal in `4183ad54`.
 
 ### Slimmer history for shared documents
 
@@ -434,3 +433,9 @@ Commands currently serve agents and take flat scalar arguments. Page command cal
 could add a context method behind a new runtime ABI; `s.row(list)` could add a checked
 argument kind, and nested arguments could widen package-format acceptance. None is
 required for launch. Pages share plain functions over `Scope` with commands today.
+
+## Widgets that refresh from the cloud
+
+A silent push from the document’s cloud object wakes the app to sync and re-render a
+shared pop’s widget. This needs Apple push delivery in the Worker; iOS limits how often
+the app can wake, and WidgetKit controls when the refreshed image appears.
