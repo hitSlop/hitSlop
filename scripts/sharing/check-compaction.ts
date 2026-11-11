@@ -8,9 +8,9 @@ export const documentName = (id: string) => id;
 export const objectKey = (id: string, suffix: string) => `${id}/${suffix}`;
 
 export function relayHarness(source: string) {
-  return `import relay, {CloudDocument as Room, DocumentAccount as Account} from ${JSON.stringify(source)};
+  return `import relay, {SharedDocument as Room, AccountLibrary as Account} from ${JSON.stringify(source)};
 export default relay;
-export class DocumentAccount {
+export class AccountLibrary {
   constructor(state,env){this.state=state;this.inner=new Account(state,env);}
   async fetch(req){
     const path = new URL(req.url).pathname;
@@ -34,7 +34,7 @@ export class DocumentAccount {
   webSocketClose(ws,code,reason,clean){return this.inner.webSocketClose(ws,code,reason,clean);}
   webSocketError(ws,error){return this.inner.webSocketError(ws,error);}
 }
-export class CloudDocument {
+export class SharedDocument {
   constructor(state, env) {
     this.state = state;
     this.failDeletes = false;

@@ -1,7 +1,7 @@
 # Sharing service
 
 The Cloudflare Worker behind [cloud documents](../../docs/cloud-documents.md): a SQLite
-Durable Object per document (`CloudDocument`) and per account (`DocumentAccount`), and
+Durable Object per document (`SharedDocument`) and per account (`AccountLibrary`), and
 R2 for the seed and attachments. It validates identity, membership, hashes, inventories
 and limits; it never executes apps or interprets Loro bytes. The same Worker owns
 share.dotpop.click: it serves the API, and static assets from `public/` (the join page for
@@ -34,8 +34,8 @@ repository. Complete it before the first deployment.
    That file also names the Analytics dataset and rate-limit namespaces. Staging
    (`--env staging`) declares its own Worker, bucket, dataset and namespaces.
 3. **Worker.** `dotpop` (`dotpop-staging` for `--env staging`) owns the
-   `share.dotpop.click` custom domain. Migration tag `documents-v1` declares its
-   two SQLite Durable Object classes.
+   `share.dotpop.click` custom domain. The migrations in `wrangler.jsonc` declare its two
+   SQLite Durable Object classes and retire the classes an earlier deployment created.
 4. **First single-Worker deployment.** Coordinate deployment with removal of the old
    `hitslop-sharing-host` Worker and its unused `FIREBASE_WEB_API_KEY` secret. Check the
    deployed resources first; removing the old host before the replacement is ready

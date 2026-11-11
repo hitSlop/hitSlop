@@ -1,5 +1,5 @@
 //! One typed SQL row owns document lifecycle and publication state.
-use crate::room::{CloudDocument, fail};
+use crate::room::{SharedDocument, fail};
 use pop_sharing_protocol::http::RoomPhase;
 use serde::Deserialize;
 use worker::{Result, SqlStorage, SqlStorageValue};
@@ -49,7 +49,7 @@ impl DocumentState {
         Ok(())
     }
 }
-impl CloudDocument {
+impl SharedDocument {
     pub(crate) fn document_state(&self) -> Result<Option<DocumentState>> {
         DocumentState::load(&self.sql)
     }

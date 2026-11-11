@@ -1,13 +1,13 @@
 //! Commit a staged blob set as the immutable document seed and initial attachments.
 use crate::metrics::{Metric, record};
 use crate::refusal::Refusal;
-use crate::room::{CloudDocument, SQLITE_HEADER_BYTES, fail, object_key, version, wire_version};
+use crate::room::{SQLITE_HEADER_BYTES, SharedDocument, fail, object_key, version, wire_version};
 use pop_contracts::hex;
 use pop_sharing_protocol::http::RoomPhase;
 use pop_sharing_protocol::{CONTROL_BYTES, SEED_BYTES, resources};
 use worker::*;
 
-impl CloudDocument {
+impl SharedDocument {
     pub(crate) async fn open(&self, req: &mut Request, room: &str) -> Result<Response> {
         let _upload = self.uploads.lock().await;
         let input: pop_sharing_protocol::http::OpenRoom = match crate::input::body(req, CONTROL_BYTES).await {

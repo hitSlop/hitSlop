@@ -2,13 +2,13 @@
 use crate::metrics::{Metric, record};
 use crate::refusal::Refusal;
 use crate::room::object_key;
-use crate::room::{CloudDocument, fail};
+use crate::room::{SharedDocument, fail};
 use pop_contracts::relay::frame::ErrorCode;
 use pop_sharing_protocol::CONTROL_BYTES;
 use pop_sharing_protocol::http::RoomPhase;
 use worker::*;
 
-impl CloudDocument {
+impl SharedDocument {
     pub(crate) async fn initialize_document(&self, req: &mut Request) -> Result<Response> {
         let input: crate::account::DocumentInit = match crate::input::body(req, CONTROL_BYTES).await {
             Ok(input) => input,

@@ -3,7 +3,7 @@ use crate::{
     bounded::bounded,
     document_state::DocumentState,
     limits::OBJECT_TIMEOUT,
-    room::{CloudDocument, fail, hash},
+    room::{SharedDocument, fail, hash},
 };
 use futures_util::{StreamExt, stream};
 use pop_sharing_protocol::{document::DocumentRole, http::RoomPhase, library::AccountEntry};
@@ -30,7 +30,7 @@ struct Pending {
     payload: String,
     retry_ms: u64,
 }
-impl CloudDocument {
+impl SharedDocument {
     /// The mutation, revision and latest desired entries commit together without yielding.
     /// The caller reserves a durable alarm before entering this transaction.
     pub(crate) fn library_transaction(

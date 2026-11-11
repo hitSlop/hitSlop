@@ -1,5 +1,5 @@
 //! Seed and attachment blobs: immutable, content-addressed files in R2, inventoried in `resource_blobs`.
-use crate::room::{CloudDocument, NumberRow, decode_hex, fail, object_key};
+use crate::room::{NumberRow, SharedDocument, decode_hex, fail, object_key};
 
 use crate::refusal::Refusal;
 
@@ -11,7 +11,7 @@ use worker::*;
 
 use pop_sharing_protocol::resources::{self, Resource};
 
-impl CloudDocument {
+impl SharedDocument {
     /// Uploads register their R2 key here before writing it. Caller holds uploads, so
     /// no blob write can repopulate a deleted object.
     pub(crate) async fn sweep_garbage(&self, room: &str) -> Result<()> {

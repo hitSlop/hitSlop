@@ -2,14 +2,14 @@
 
 use crate::refusal::Refusal;
 use crate::room::{CHUNK, RecordRow, wire_version};
-use crate::room::{CloudDocument, fail};
+use crate::room::{SharedDocument, fail};
 use pop_sharing_protocol::http::RoomPhase;
 use worker::*;
 
 use pop_contracts::{hex, relay::limits::BASE_BYTES};
 use sha2::{Digest, Sha256};
 
-impl CloudDocument {
+impl SharedDocument {
     pub(crate) fn update_usage(&self) -> Result<(usize, usize)> {
         let state = self.stored()?;
         Ok((

@@ -166,14 +166,14 @@ pub(crate) struct BlobRow {
     pub(crate) bytes: Vec<u8>,
 }
 #[durable_object]
-pub struct CloudDocument {
+pub struct SharedDocument {
     pub(crate) state: State,
     pub(crate) env: Env,
     pub(crate) sql: SqlStorage,
     pub(crate) uploads: futures_util::lock::Mutex<()>,
 }
 
-impl CloudDocument {
+impl SharedDocument {
     pub(crate) fn heads(&self) -> Result<Version> {
         Self::read_heads(&self.sql)
     }
@@ -241,7 +241,7 @@ pub(crate) fn decode_hex(text: &str) -> Result<Vec<u8>> {
         })
         .collect()
 }
-impl DurableObject for CloudDocument {
+impl DurableObject for SharedDocument {
     fn new(state: State, env: Env) -> Self {
         state.set_websocket_auto_response(
             &worker::worker_sys::WebSocketRequestResponsePair::new("ping", "pong").expect("valid ping/pong"),

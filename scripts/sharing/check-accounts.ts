@@ -66,7 +66,7 @@ function runtime(roomsAvailable = true, identityAvailable = true) {
       name: "relay", modules: true, scriptPath: harness, modulesRoot: "/",
       compatibilityDate: relayConfig.compatibility_date, modulesRules: [{ type: "ESModule", include: ["**/*.js"], fallthrough: true }, { type: "CompiledWasm", include: ["**/*.wasm"], fallthrough: true }],
       bindings: relayConfig.vars,
-      durableObjects: { ...(roomsAvailable ? { DOCUMENTS: { className: "CloudDocument", useSQLite: true } } : {}), ACCOUNTS: { className: "DocumentAccount", useSQLite: true } },
+      durableObjects: { ...(roomsAvailable ? { DOCUMENTS: { className: "SharedDocument", useSQLite: true } } : {}), ACCOUNTS: { className: "AccountLibrary", useSQLite: true } },
       r2Buckets: ["SEEDS"],
       analyticsEngineDatasets: { METRICS: { dataset: "dotpop_documents" } },
       ratelimits: Object.fromEntries(relayConfig.ratelimits.map(({ name, simple }) => [name, { simple: name === "ACCOUNT_CREATE_LIMIT" ? { ...simple, limit: 1000 } : simple }])),

@@ -1,13 +1,13 @@
 //! The Document DO is the sole permissions and lifecycle authority.
 use crate::limits::{DOCUMENT_MEMBERS, JOIN_BODY_BYTES, METADATA_BODY_BYTES};
 use crate::refusal::Refusal;
-use crate::room::{CloudDocument, NumberRow, SocketState, fail, hash, now, random_hex};
+use crate::room::{NumberRow, SharedDocument, SocketState, fail, hash, now, random_hex};
 use pop_contracts::relay::frame::Frame;
 use pop_sharing_protocol::document::{AccessState, DocumentRole, JoinDocument, JoinedDocument, UpdateDocument};
 use pop_sharing_protocol::http::RoomPhase;
 use worker::*;
 
-impl CloudDocument {
+impl SharedDocument {
     pub(crate) fn role_for_uid(&self, uid: &str) -> Result<Option<DocumentRole>> {
         let Some(state) = self.document_state()? else {
             return Ok(None);

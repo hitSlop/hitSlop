@@ -34,13 +34,13 @@ mod runtime {
         payload: String,
     }
     #[durable_object]
-    pub struct DocumentAccount {
+    pub struct AccountLibrary {
         state: State,
         env: Env,
         sql: SqlStorage,
         operations: futures_util::lock::Mutex<()>,
     }
-    impl DocumentAccount {
+    impl AccountLibrary {
         async fn document(
             &self,
             id: &str,
@@ -326,7 +326,7 @@ mod runtime {
             Ok(result)
         }
     }
-    impl DurableObject for DocumentAccount {
+    impl DurableObject for AccountLibrary {
         fn new(state: State, env: Env) -> Self {
             state.set_websocket_auto_response(
                 &worker::worker_sys::WebSocketRequestResponsePair::new("ping", "pong").expect("valid heartbeat"),

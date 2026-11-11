@@ -3,7 +3,7 @@ use crate::limits::{ROOM_CONNECTIONS, ROOM_IP_CONNECTIONS};
 use crate::metrics::{Metric, record};
 use crate::refusal::Refusal;
 use crate::room::{BlobRow, CHUNK, NumberRow, RecordRow, SocketResult, SocketState, now, refused, wire_version};
-use crate::room::{CloudDocument, fail};
+use crate::room::{SharedDocument, fail};
 use pop_contracts::{
     hex,
     relay::frame::{Ack, ErrorCode, Frame, PROTOCOL, Permission, Record, Version},
@@ -11,7 +11,7 @@ use pop_contracts::{
 use pop_sharing_protocol::http::RoomPhase;
 use worker::*;
 
-impl CloudDocument {
+impl SharedDocument {
     pub(crate) fn bytes(&self, seq: i64, size: usize) -> Result<Vec<u8>> {
         let mut bytes = Vec::with_capacity(size);
         for chunk in

@@ -6,9 +6,13 @@
   "routes": [{ "pattern": "share.dotpop.click", "custom_domain": true }],
   "assets": { "directory": "./public" },
   "vars": { "FIREBASE_PROJECT": "hitslopapp", "CREATION_ENABLED": "1" },
-  "durable_objects": { "bindings": [{ "name": "DOCUMENTS", "class_name": "CloudDocument" }, { "name": "ACCOUNTS", "class_name": "DocumentAccount" }] },
-  "migrations": [{ "tag": "documents-v1", "new_sqlite_classes": ["CloudDocument", "DocumentAccount"] }],
-  "r2_buckets": [{ "binding": "SEEDS", "bucket_name": "dotpop-documents" }],
+  "durable_objects": { "bindings": [{ "name": "DOCUMENTS", "class_name": "SharedDocument" }, { "name": "ACCOUNTS", "class_name": "AccountLibrary" }] },
+  "migrations": [
+    { "tag": "documents-v1", "new_sqlite_classes": ["CloudDocument", "DocumentAccount"] },
+    { "tag": "shared-documents", "new_sqlite_classes": ["SharedDocument", "AccountLibrary"] },
+    { "tag": "retire-2.0.0-objects", "deleted_classes": ["CloudDocument", "DocumentAccount"] }
+  ],
+  "r2_buckets": [{ "binding": "SEEDS", "bucket_name": "dotpop-shared-documents" }],
   "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "dotpop_documents" }],
   "ratelimits": [
     { "name": "COMPACT_LIMIT", "namespace_id": "27924748", "simple": { "limit": 6, "period": 60 } },
@@ -30,18 +34,18 @@
         "bindings": [
           {
             "name": "DOCUMENTS",
-            "class_name": "CloudDocument"
+            "class_name": "SharedDocument"
           },
           {
             "name": "ACCOUNTS",
-            "class_name": "DocumentAccount"
+            "class_name": "AccountLibrary"
           }
         ]
       },
       "r2_buckets": [
         {
           "binding": "SEEDS",
-          "bucket_name": "dotpop-documents-staging"
+          "bucket_name": "dotpop-shared-documents-staging"
         }
       ],
       "analytics_engine_datasets": [
