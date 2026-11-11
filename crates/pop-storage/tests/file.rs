@@ -334,7 +334,7 @@ fn freshly_packed_pragmas_and_writer_journal_mode_are_pinned() {
     let packed = template(dir.path());
     let conn = Connection::open(&packed).unwrap();
     for (pragma, expected) in
-        [("application_id", 0x504f_5002), ("user_version", 1), ("page_size", 4096), ("auto_vacuum", 1)]
+        [("application_id", 0x504f_5003), ("user_version", 1), ("page_size", 4096), ("auto_vacuum", 1)]
     {
         assert_eq!(
             conn.query_row(&format!("PRAGMA {pragma}"), [], |r| r.get::<_, i64>(0)).unwrap(),
