@@ -59,10 +59,8 @@ impl Library {
     }
     pub(super) fn account_recovery(&self, id: &str, title: &str) -> Result<Entry> {
         let info = self.with_owner(id, |owner| {
-            let state = crate::local::request(owner, Request::State).map_err(failed)?;
-            let pop_runtime::owner::Reply::State { reading, .. } = state else {
-                return Err(failed("Missing owner state"));
-            };
+            let state = crate::local::request(owner, Owner::version).map_err(failed)?;
+            let reading = state;
             Ok(reading.version)
         })?;
         let directory = self.state_dir().join("Recovered");
@@ -71,8 +69,10 @@ impl Library {
         let path = directory.join(format!("{digest}.pop"));
         if !path.exists() {
             self.with_owner(id, |owner| {
-                crate::local::request(owner, Request::Copy { destination: path.clone(), preview: None, icon: None })
-                    .map_err(failed)?;
+                crate::local::request(owner, |owner: &Owner, options, callback| {
+                    owner.copy(path.clone(), None, None, options, callback)
+                })
+                .map_err(failed)?;
                 Ok(())
             })?;
         }

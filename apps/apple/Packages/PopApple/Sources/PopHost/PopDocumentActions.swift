@@ -215,9 +215,9 @@ extension PopDocumentWindowController {
     try await exportDocument(format: format, to: await PopPanels.select(panel, in: window))
   }
 
-  /// The one export path, for the menu and for `pop export` of this open document. A
+  /// The menu export path. A
   /// cancelled picker has no output and emits no success event.
-  func exportDocument(format: ExportFormat, to output: URL?, deadline: NativeCommandDeadline = NativeCommandDeadline())
+  func exportDocument(format: ExportFormat, to output: URL?)
     async throws
   {
     guard let output else {
@@ -230,7 +230,7 @@ extension PopDocumentWindowController {
       guard isContentReady, session.isReady, presentedPageError == nil else {
         throw PopFailure("The document is not ready to export")
       }
-      try await PopRenderer.exportDocument(session: session, format: format, output: output, deadline: deadline)
+      try await PopRenderer.exportDocument(session: session, format: format, output: output)
       telemetry.send(.breadcrumb(.export, .completed))
       telemetry.send(.exported(format))
     } catch {

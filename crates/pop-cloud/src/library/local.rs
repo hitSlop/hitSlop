@@ -88,8 +88,10 @@ impl Library {
             .join("documents")
             .join(format!("copy-{}.pop", pop_core::random_hex(16).expect("OS random source")));
         self.with_owner(id, |owner| {
-            crate::local::request(owner, Request::Copy { destination: path.clone(), preview: None, icon: None })
-                .map_err(failed)?;
+            crate::local::request(owner, |owner: &Owner, options, callback| {
+                owner.copy(path.clone(), None, None, options, callback)
+            })
+            .map_err(failed)?;
             Ok(())
         })?;
         self.adopt(&path, title)
@@ -111,8 +113,10 @@ impl Library {
                 return Ok(false);
             }
         }
-        crate::local::request(owner, Request::SetArtwork { source_version: version.into(), preview, icon })
-            .map_err(failed)?;
+        crate::local::request(owner, |owner: &Owner, options, callback| {
+            owner.set_artwork(version.into(), preview, icon, options, callback)
+        })
+        .map_err(failed)?;
         self.cache_file(id, Some(version))?;
         Ok(true)
     }

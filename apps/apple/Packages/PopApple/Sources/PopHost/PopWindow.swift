@@ -247,11 +247,6 @@ public final class PopDocumentWindowController: NSWindowController, NSWindowDele
     super.init(window: window)
     window.delegate = self
     session.delegate = self
-    // `pop export` of this open document exports its live view, as the window does.
-    session.onExport = { [weak self] format, output, deadline in
-      guard let self else { throw PopFailure("Document closed") }
-      try await self.exportDocument(format: format, to: output, deadline: deadline)
-    }
     container.changed = { [weak self] _ in self?.toolbar.refresh() }
     _ = toolbar  // It follows the pointer from now on.
     // Editor discovery queries Launch Services; warm it before the first hover.

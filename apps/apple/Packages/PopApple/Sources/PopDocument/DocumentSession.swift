@@ -95,7 +95,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   var pageCallTimeout = Timeouts.pageCall
   var readyTimeout = Timeouts.pageReady
   private var openingWatchdog: Task<Void, Never>?
-  public var onExport: ((ExportFormat, URL, NativeCommandDeadline) async throws -> Void)?
   private(set) var capturing = false
   /// Captures queued behind the one in progress (`withCapture`).
   private var captureQueue: [CheckedContinuation<Void, Never>] = []
@@ -903,21 +902,43 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     liveWebView = nil
   }
 
+  private var cliCapturePrepared = false
+
   /// The socket and discovery file live as long as the owner, not the page.
   func startDiscovery() throws {
     #if os(macOS)
       guard server == nil else { return }
       server = try owner.startServer(
-        exporter: NativeExports(copy: { [weak self] output, deadline in
-          guard let self, acceptsPageWork else { throw OwnerFailure.closing }
-          try deadline.check()
-          _ = try await self.copy(to: output)
-          try deadline.check()
-        }) { [weak self] _, format, output, deadline in
-          guard let self, !closed, !closing else { throw OwnerFailure.closing }
-          guard let onExport, isReady else { throw PopFailure("Export unavailable") }
-          try await onExport(format, output, deadline)
-        })
+        page: PageBarrier(
+          settle: { [weak self] completion in
+            guard let self, !closed, !closing, isReady, completion.isActive() else {
+              _ = completion.complete(failure: .closing)
+              return
+            }
+            self.cliCapturePrepared = true
+            do {
+              let drafts = try await self.prepareClose(for: .handoff)
+              guard drafts.isEmpty else { throw PopFailure("Unresolved text drafts prevent export") }
+              guard completion.isActive() else {
+                await self.cancelClose()
+                self.cliCapturePrepared = false
+                return
+              }
+              if !completion.complete(failure: nil) {
+                await self.cancelClose()
+                self.cliCapturePrepared = false
+              }
+            } catch {
+              await self.cancelClose()
+              self.cliCapturePrepared = false
+              _ = completion.complete(failure: OwnerFailure(error))
+            }
+          },
+          resume: { [weak self] in
+            guard let self, self.cliCapturePrepared else { return }
+            await self.cancelClose()
+            self.cliCapturePrepared = false
+          }))
     #endif
   }
 

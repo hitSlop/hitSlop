@@ -1,5 +1,5 @@
 //! Owner event and completion channels used by runtime boundary tests.
-use pop_runtime::owner::{Event, Failure, Owner, Reply, Request};
+use pop_runtime::owner::{CallOptions, Completion, Event, Failure, Owner};
 use pop_storage::store::Mode;
 use std::path::Path;
 use std::sync::{Arc, mpsc};
@@ -21,36 +21,30 @@ pub fn open(path: &Path, mode: Mode) -> (Owner, mpsc::Receiver<Event>) {
     )
 }
 
-/// Admits a request with its optional originating view and returns its completion channel.
-pub fn submit(owner: &Owner, request: Request, view: Option<&str>) -> mpsc::Receiver<Result<Reply, Failure>> {
+/// Admits a typed operation with an optional originating view.
+pub fn submit<T: Send + 'static>(
+    owner: &Owner,
+    run: impl FnOnce(&Owner, CallOptions, Completion<T>),
+    view: Option<&str>,
+) -> mpsc::Receiver<Result<T, Failure>> {
     let (tx, rx) = mpsc::channel();
-    owner.submit(
-        request,
-        view.map(str::to_owned),
+    run(
+        owner,
+        CallOptions { view: view.map(str::to_owned), deadline: None },
         Box::new(move |result| {
             let _ = tx.send(result);
         }),
     );
     rx
 }
-
-/// Waits at most thirty seconds for an owner request to complete.
-pub fn call(owner: &Owner, request: Request) -> Result<Reply, Failure> {
-    let operation = match &request {
-        Request::Flush => "flush",
-        Request::ExportTheme => "export theme",
-        Request::Close { .. } => "close",
-        Request::Discard => "discard",
-        Request::State => "read state",
-        Request::Apply { .. } => "apply",
-        _ => "owner request",
-    };
-    submit(owner, request, None)
-        .recv_timeout(Duration::from_secs(30))
-        .unwrap_or_else(|error| panic!("owner did not complete {operation} within 30s: {error}"))
+/// Waits at most thirty seconds for a typed owner completion.
+pub fn call<T: Send + 'static>(
+    owner: &Owner,
+    run: impl FnOnce(&Owner, CallOptions, Completion<T>),
+) -> Result<T, Failure> {
+    submit(owner, run, None).recv_timeout(Duration::from_secs(30)).expect("owner did not complete within 30s")
 }
-
 /// Flushes and closes the owner without replacing artwork.
 pub fn close(owner: &Owner) {
-    call(owner, Request::Close { preview: None, icon: None }).unwrap();
+    call(owner, |owner, options, callback| owner.close(None, None, options, callback)).unwrap();
 }

@@ -15,10 +15,10 @@ pub(in crate::owner) struct Invocation {
     seed: [u32; 4],
     origin: Origin,
     attempt: u8,
-    callback: Option<Completion>,
+    callback: Option<Completion<CommandResult>>,
 }
 impl Invocation {
-    pub(super) fn take_callback(&mut self) -> Completion {
+    pub(super) fn take_callback(&mut self) -> Completion<CommandResult> {
         take(&mut self.callback)
     }
 }
@@ -116,7 +116,7 @@ impl Actor {
         origin: Origin,
         view: Option<String>,
         deadline: Option<Duration>,
-        callback: &mut Option<Completion>,
+        callback: &mut Option<Completion<CommandResult>>,
     ) -> Result<()> {
         self.mutation()?;
         if self.evaluating {
@@ -204,7 +204,7 @@ impl Actor {
         self.evaluating = false;
         // A runtime failure is a definite refusal: no intents have been admitted.
         // Only a stale version retries, once, with the same clock and random seed.
-        let applied = catch_unwind(AssertUnwindSafe(|| -> Result<Reply> {
+        let applied = catch_unwind(AssertUnwindSafe(|| -> Result<CommandResult> {
             self.admit(false, invocation.view.as_deref())?;
             self.mutation()?;
             if invocation.generation != self.generation {
@@ -218,11 +218,7 @@ impl Actor {
             let batch = pop_contracts::wire::Batch { intents, if_version: Some(invocation.version.clone()) };
             let accepted = self.edited(|core| core.apply_command(batch, invocation.origin, &invocation.name))?;
             self.accepted(accepted.sequence, accepted.publication, accepted.theme_changed);
-            Ok(Reply::Command {
-                sequence: accepted.sequence,
-                ids: accepted.ids,
-                result_json: output.result.to_string(),
-            })
+            Ok(CommandResult { sequence: accepted.sequence, ids: accepted.ids, result_json: output.result.to_string() })
         }))
         .unwrap_or_else(|_| {
             self.invalidated = true;
@@ -304,12 +300,13 @@ mod tests {
         actor.invalidated = true;
         let (reply, result) = mpsc::channel();
         actor.dispatch(
-            Request::Discard,
+            Operation::Discard {
+                callback: Box::new(move |answer| {
+                    let _ = reply.send(answer);
+                }),
+            },
             None,
             None,
-            Box::new(move |answer| {
-                let _ = reply.send(answer);
-            }),
         );
         if let Ok(answer) = result.try_recv() {
             assert!(answer.is_ok(), "a poisoned shared owner must allow saved-state recovery: {answer:?}");
@@ -320,22 +317,26 @@ mod tests {
         assert!(matches!(notices.recv_timeout(Duration::from_secs(2)).unwrap(), SyncEvent::Reconnect));
         let (reply, old_page) = mpsc::channel();
         actor.dispatch(
-            Request::State,
+            Operation::State {
+                callback: Box::new(move |answer| {
+                    let _ = reply.send(answer);
+                }),
+            },
             Some("old-page".into()),
             None,
-            Box::new(move |answer| {
-                let _ = reply.send(answer);
-            }),
         );
         assert_eq!(old_page.recv_timeout(Duration::from_secs(2)).unwrap().unwrap_err().kind, FailureKind::Replaced);
         let (reply, closed) = mpsc::channel();
         actor.dispatch(
-            Request::Close { preview: None, icon: None },
+            Operation::Close {
+                preview: None,
+                icon: None,
+                callback: Box::new(move |answer| {
+                    let _ = reply.send(answer);
+                }),
+            },
             None,
             None,
-            Box::new(move |answer| {
-                let _ = reply.send(answer);
-            }),
         );
         let work = storage.recv_timeout(Duration::from_secs(2)).unwrap();
         actor.step(super::super::persistence::perform(&store, work));
@@ -396,13 +397,13 @@ mod tests {
                 assert_eq!(failure.message, "The command evaluator failed: the evaluator panicked");
             } else {
                 assert!(
-                    matches!(answer.unwrap(), Reply::Command { result_json, .. } if result_json == r#""second command""#)
+                    matches!(answer.unwrap(), CommandResult { result_json, .. } if result_json == r#""second command""#)
                 );
             }
         }
         let (reply, flushed) = mpsc::channel();
-        actor.dispatch(Request::Flush, None, None, Box::new(move |answer| reply.send(answer).unwrap()));
-        assert!(matches!(flushed.recv_timeout(Duration::from_secs(2)).unwrap().unwrap(), Reply::Unit));
+        actor.dispatch(Operation::Flush { callback: Box::new(move |answer| reply.send(answer).unwrap()) }, None, None);
+        assert!(matches!(flushed.recv_timeout(Duration::from_secs(2)).unwrap().unwrap(), ()));
         actor.evaluate = None;
         thread.join().unwrap();
     }

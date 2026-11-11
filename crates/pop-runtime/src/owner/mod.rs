@@ -24,7 +24,7 @@ pub enum ThemeChange {
     ResetAll,
     ImportFile { file: String },
 }
-pub fn theme_request(change: ThemeChange) -> Request {
+fn theme_batch(change: ThemeChange) -> pop_contracts::wire::Batch {
     let intent = match change {
         ThemeChange::Set { values } => pop_contracts::wire::Intent::SetTheme {
             values: values.into_iter().map(|(k, v)| (k, Some(v))).collect(),
@@ -35,132 +35,48 @@ pub fn theme_request(change: ThemeChange) -> Request {
         }
         ThemeChange::ImportFile { file } => pop_contracts::wire::Intent::ImportTheme { file },
     };
-    Request::Apply {
-        batch: pop_contracts::wire::Batch { intents: vec![intent], if_version: None },
-        origin: Origin::Window,
-    }
+    pop_contracts::wire::Batch { intents: vec![intent], if_version: None }
 }
-
-pub enum Request {
-    /// The document as it reads (`Document::reading`), and its publication sequence.
-    State,
-    Apply {
-        batch: pop_contracts::wire::Batch,
-        origin: Origin,
-    },
-    Undo {
-        redo: bool,
-    },
-    Command {
-        name: String,
-        args_json: String,
-        origin: Origin,
-    },
-    Flush,
-    /// Reload durable state and replace the page session. Shared documents refuse
-    /// ordinary discard; an invalidated owner may explicitly recover its saved state.
-    Discard,
-    Close {
-        preview: Option<Vec<u8>>,
-        icon: Option<Vec<u8>>,
-    },
-    /// Moves a document that cannot save (a shared one that is full) to a new file: writes
-    /// the accepted live state beside `dest` as `Copy` does, checks that it opens as a
-    /// document whose state and palette equal the live ones, publishes it at `dest`
-    /// without replacing anything, then releases the writer lock without saving. The host
-    /// fences edits first (the close barrier), so the state cannot move under the copy. Any
-    /// failure removes only the temporary file this request made and leaves the owner open
-    /// with every edit.
-    Handoff {
-        dest: PathBuf,
-        preview: Option<Vec<u8>>,
-        icon: Option<Vec<u8>>,
-    },
-    /// The accepted live state as a document of its own, without saving the source's
-    /// history first (`Store::copy_clean`), with the artwork its window rendered for it.
-    Copy {
-        destination: PathBuf,
-        preview: Option<Vec<u8>>,
-        icon: Option<Vec<u8>>,
-    },
-    /// The saved document as stored, copied after a flush for a capture to render once.
-    CaptureSource {
-        destination: PathBuf,
-    },
-    /// The saved document as stored, copied after a flush: the same document, with its
-    /// identity, history and artwork (`Store::backup`). Native hosts only.
-    Backup {
-        destination: PathBuf,
-    },
-    /// The saved document as a sharing seed, copied after a flush: its identity, its
-    /// history as one checkpoint, only the attachments it references and no artwork
-    /// (`Store::stage_seed`). The live document and its file are untouched. Native hosts only.
-    StageSeed {
-        destination: PathBuf,
-    },
-    Artwork {
-        name: Artwork,
-    },
-    /// Derived images are admitted only for the saved state they were rendered from.
-    SetArtwork {
-        source_version: String,
-        preview: Option<Vec<u8>>,
-        icon: Option<Vec<u8>>,
-    },
-    Attachments,
-    ReadAttachment {
-        id: String,
-    },
-    PutAttachment {
-        bytes: Vec<u8>,
-    },
-    /// Shares the document through a relay endpoint: from then on it keeps its whole
-    /// history and every attachment, and the host may attach a connection to that relay.
-    Share {
-        share: store::Share,
-    },
-    Unshare,
-    /// The palette; changes are batch intents.
-    Theme,
-    ExportTheme,
-}
+/// One document reading and its publication sequence.
 #[derive(Debug)]
-pub enum Reply {
-    Command {
-        sequence: u64,
-        ids: Vec<String>,
-        result_json: String,
-    },
-    Unit,
-    /// One reading and its publication sequence.
-    State {
-        reading: pop_contracts::wire::Reading,
-        sequence: u64,
-    },
-    /// A theme file, the bytes every export writes.
-    ThemeFile {
-        json: String,
-    },
-    /// `text` answers the page's text edit.
-    Applied {
-        sequence: u64,
-        ids: Vec<String>,
-        text: Option<pop_core::TextEdit>,
-    },
-    Theme {
-        state: theme::ThemeState,
-        sequence: u64,
-    },
-    Bytes {
-        bytes: Option<Vec<u8>>,
-    },
-    Attachments {
-        items: Vec<store::Attachment>,
-    },
-    Attachment {
-        item: store::Attachment,
-    },
+pub struct Reading {
+    pub reading: pop_contracts::wire::Reading,
+    pub sequence: u64,
 }
+/// A version probe that does not materialize the document value.
+#[derive(Debug)]
+pub struct Version {
+    pub version: String,
+    pub sequence: u64,
+}
+/// An accepted edit and its publication sequence.
+#[derive(Debug)]
+pub struct Applied {
+    pub sequence: u64,
+    pub ids: Vec<String>,
+    pub text: Option<pop_core::TextEdit>,
+}
+/// An evaluated and accepted command.
+#[derive(Debug)]
+pub struct CommandResult {
+    pub sequence: u64,
+    pub ids: Vec<String>,
+    pub result_json: String,
+}
+/// The palette and its publication sequence.
+#[derive(Debug)]
+pub struct Theme {
+    pub state: theme::ThemeState,
+    pub sequence: u64,
+}
+/// Optional session fence and admission deadline for one operation.
+#[derive(Debug, Default)]
+pub struct CallOptions {
+    pub view: Option<String>,
+    pub deadline: Option<Instant>,
+}
+mod operation;
+use operation::Operation;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveStatus {
     Saved,
@@ -187,28 +103,28 @@ pub enum Event {
     },
     ThemeChanged,
 }
-pub type Completion = Box<dyn FnOnce(Result<Reply>) + Send>;
+pub type Completion<T> = Box<dyn FnOnce(Result<T>) + Send>;
 pub type Listener = Arc<dyn Fn(Event) + Send + Sync>;
-fn complete(callback: Completion, value: Result<Reply>) {
+fn complete<T>(callback: Completion<T>, value: Result<T>) {
     let _ = catch_unwind(AssertUnwindSafe(|| callback(value)));
 }
 /// A queued request must settle even when shutdown drops its mailbox or worker job.
 /// Taking the callback before invocation also prevents a panicking caller from answering twice.
-struct PendingCompletion(Option<Completion>);
-impl PendingCompletion {
-    fn finish(mut self, value: Result<Reply>) {
+struct PendingCompletion<T>(Option<Completion<T>>);
+impl<T> PendingCompletion<T> {
+    fn finish(mut self, value: Result<T>) {
         let callback = self.0.take().expect("pending completion is answered once");
         complete(callback, value);
     }
 }
-impl Drop for PendingCompletion {
+impl<T> Drop for PendingCompletion<T> {
     fn drop(&mut self) {
         if let Some(callback) = self.0.take() {
             complete(callback, Err(closed()));
         }
     }
 }
-fn settle_on_drop(callback: Completion) -> Completion {
+fn settle_on_drop<T: Send + 'static>(callback: Completion<T>) -> Completion<T> {
     let pending = PendingCompletion(Some(callback));
     Box::new(move |value| pending.finish(value))
 }
@@ -226,7 +142,7 @@ fn contained<T>(work: impl FnOnce() -> Result<T>) -> Result<T> {
     catch_unwind(AssertUnwindSafe(work)).unwrap_or_else(|_| Err(poisoned()))
 }
 /// The request's callback, which the request answers or hands on exactly once.
-fn take(callback: &mut Option<Completion>) -> Completion {
+fn take<T>(callback: &mut Option<Completion<T>>) -> Completion<T> {
     callback.take().expect("a request's callback is taken once")
 }
 
@@ -241,6 +157,7 @@ pub struct Owner {
     thread: std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
     path: PathBuf,
     started: Instant,
+    evaluator: Option<Evaluator>,
 }
 impl Owner {
     pub fn open(path: &Path, mode: store::Mode, listener: Listener) -> Result<Self> {
@@ -265,8 +182,10 @@ impl Owner {
     ) -> Result<Self> {
         let app = store.opened_app();
         let resources = store.resource_source();
-        let actor::Started { sender, started, admission, thread } = actor::spawn(store, mode, listener, evaluator)?;
+        let actor::Started { sender, started, admission, thread } =
+            actor::spawn(store, mode, listener, evaluator.clone())?;
         Ok(Self {
+            evaluator,
             sender,
             app,
             resources,
@@ -276,6 +195,9 @@ impl Owner {
             sync_admission: Arc::default(),
             admission,
         })
+    }
+    pub(crate) fn evaluator(&self) -> Option<&Evaluator> {
+        self.evaluator.as_ref()
     }
     fn storage_control<T>(
         &self,
@@ -290,7 +212,7 @@ impl Owner {
     pub(crate) fn reserve_page(&self, view_bytes: usize, payload_bytes: usize) -> Result<Permit> {
         self.admission.reserve_page(view_bytes, payload_bytes).ok_or_else(busy)
     }
-    pub(crate) fn admit_page(&self, view: String, permit: Permit, callback: Completion) {
+    pub(crate) fn admit_page(&self, view: String, permit: Permit, callback: Completion<()>) {
         let callback = admitted_callback(callback, permit);
         if let Err(mpsc::SendError(Message::PageAdmission { callback, .. })) =
             self.sender.send(Message::PageAdmission { view, callback })
@@ -316,32 +238,25 @@ impl Owner {
     pub fn withdraw_discovery(&self) {
         let _ = self.storage_control(actor::persistence::Control::Withdraw);
     }
-    /// Enqueue without waiting. Exhausted request count or payload budgets answer Busy
-    /// without applying the request; lifecycle requests have reserved admission capacity.
-    pub fn submit(&self, request: Request, view: Option<String>, callback: Completion) {
-        self.enqueue(request, view, None, callback);
-    }
-    /// The deadline is checked on the edit worker, before the command is admitted.
-    pub fn submit_until(&self, request: Request, view: Option<String>, deadline: Instant, callback: Completion) {
-        self.enqueue(request, view, Some(deadline.saturating_duration_since(self.started)), callback);
-    }
-    fn enqueue(&self, request: Request, view: Option<String>, deadline: Option<Duration>, callback: Completion) {
-        let Some(permit) = self.admission.reserve(&request, &view) else {
-            complete(callback, Err(busy()));
+    fn enqueue(&self, operation: Operation, options: CallOptions) {
+        let bytes = operation.payload_bytes().saturating_add(options.view.as_ref().map_or(0, String::len));
+        let Some(permit) = self.admission.reserve(bytes, operation.properties().control) else {
+            operation.reject(busy());
             return;
         };
-        let callback = admitted_callback(callback, permit);
-        if let Err(mpsc::SendError(Message::Request { callback, .. })) =
-            self.sender.send(Message::Request { request, view, deadline, callback })
-        {
-            complete(callback, Err(closed()));
-        }
+        let operation = operation.admitted(permit);
+        let deadline = options.deadline.map(|d| d.saturating_duration_since(self.started));
+        let _ = self.sender.send(Message::Request { operation, view: options.view, deadline });
+    }
+    /// Native palette changes follow the same edit path as page batches.
+    pub fn change_theme(&self, change: ThemeChange, options: CallOptions, callback: Completion<Applied>) {
+        self.apply(theme_batch(change), Origin::Window, options, callback);
     }
 }
 fn busy() -> Failure {
     Failure::new(FailureKind::Busy, "Pending document work exceeds its admission budget")
 }
-fn admitted_callback(callback: Completion, permit: Permit) -> Completion {
+fn admitted_callback<T: Send + 'static>(callback: Completion<T>, permit: Permit) -> Completion<T> {
     settle_on_drop(Box::new(move |result| {
         drop(permit);
         callback(result);

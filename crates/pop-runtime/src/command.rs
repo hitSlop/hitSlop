@@ -16,6 +16,11 @@ fn invalid(message: impl Into<String>) -> Failure {
 /// owner took a mutation, whose outcome a later failure leaves unknown; `saving` while a
 /// save it waits for can fail.
 pub fn failure(error: Failure, accepted: bool, saving: bool) -> String {
+    crate::encode(&classified_failure(error, accepted, saving))
+}
+
+/// Classifies an owner failure without encoding a transport reply.
+pub fn classified_failure(error: Failure, accepted: bool, saving: bool) -> wire::engine::Failure {
     let code = match error.kind {
         FailureKind::Full | FailureKind::Busy | FailureKind::Moved | FailureKind::SaveFailed if saving => {
             OutcomeCode::SaveFailed
@@ -33,13 +38,13 @@ pub fn failure(error: Failure, accepted: bool, saving: bool) -> String {
     } else {
         error.message
     };
-    crate::encode(&wire::engine::Failure {
+    wire::engine::Failure {
         ok: wire::engine::False,
         error: message,
         code,
         reason: (code == OutcomeCode::Rejected).then_some(error.reason).flatten(),
         op_index: (code == OutcomeCode::Rejected).then_some(error.op_index).flatten(),
-    })
+    }
 }
 fn raw(value: String) -> Result<Box<RawValue>> {
     RawValue::from_string(value).map_err(|e| Failure::new(FailureKind::Failed, e.to_string()))
@@ -88,15 +93,20 @@ fn not_declared(capability: Capability) -> PageDispatch {
 fn admit_page_dispatch(
     owner: &Owner,
     view: String,
-    payload_bytes: usize,
+    request_bytes: usize,
     prepare: impl FnOnce() -> Result<PageDispatch>,
     reply: impl FnOnce(PageDispatch) + Send + 'static,
 ) {
-    let permit = match owner.reserve_page(view.capacity(), payload_bytes) {
+    let dispatch = prepare();
+    let payload_bytes = match &dispatch {
+        Ok(PageDispatch::Reply { json, .. }) => json.len(),
+        Ok(PageDispatch::Host { .. }) => request_bytes,
+        Err(error) => error.message.len(),
+    };
+    let permit = match owner.reserve_page(view.len(), payload_bytes) {
         Ok(permit) => permit,
         Err(error) => return reply(page_failure(error, false)),
     };
-    let dispatch = prepare();
     owner.admit_page(
         view,
         permit,
@@ -137,94 +147,61 @@ fn page_validated(
     request: PageRequest,
     reply: impl FnOnce(PageDispatch) + Send + 'static,
 ) {
-    use owner::{Reply, Request};
+    use owner::{Applied, Reading};
     use wire::engine::True;
     use wire::page::{HostAction, PageSuccess as Success};
-    type Answer = Box<dyn FnOnce(Reply) -> Option<Success> + Send>;
+    let request_bytes = owner::serialized_size(&request);
     if let Some(capability) = request.requires()
         && !owner.app().app.capabilities().contains(&capability)
     {
-        let bytes = owner::serialized_size(&request).saturating_mul(2).saturating_add(512);
-        admit_page_dispatch(owner, view, bytes, || Ok(not_declared(capability)), reply);
+        admit_page_dispatch(owner, view, request_bytes, || Ok(not_declared(capability)), reply);
         return;
     }
     let storage = matches!(request, PageRequest::AttachmentsPut { .. });
-    let (request, answer): (Request, Answer) = match request {
-        PageRequest::Open {} => (
-            Request::State,
-            Box::new(|reply| match reply {
-                Reply::State { reading, sequence } => {
-                    Some(Success::Open { ok: True, state: crate::encode(&reading.sequenced(sequence)) })
-                }
-                _ => None,
+    let options = owner::CallOptions { view: Some(view.clone()), deadline: None };
+    match request {
+        PageRequest::Open {} => owner.state(
+            options,
+            page_reply(reply, storage, |Reading { reading, sequence }| Success::Open {
+                ok: True,
+                state: crate::encode(&reading.sequenced(sequence)),
             }),
         ),
-        PageRequest::Apply { batch } => (
-            Request::Apply { batch, origin: pop_core::Origin::Page },
-            Box::new(|reply| match reply {
-                Reply::Applied { sequence, ids, text } => Some(Success::Apply {
-                    ok: True,
-                    sequence,
-                    ids,
-                    selection_start: text.as_ref().map(|t| t.selection[0]),
-                    selection_end: text.as_ref().map(|t| t.selection[1]),
-                }),
-                _ => None,
+        PageRequest::Apply { batch } => owner.apply(
+            batch,
+            pop_core::Origin::Page,
+            options,
+            page_reply(reply, storage, |Applied { sequence, ids, text }| Success::Apply {
+                ok: True,
+                sequence,
+                ids,
+                selection_start: text.as_ref().map(|t| t.selection[0]),
+                selection_end: text.as_ref().map(|t| t.selection[1]),
             }),
         ),
-        PageRequest::Flush {} => {
-            (Request::Flush, Box::new(|reply| matches!(reply, Reply::Unit).then_some(Success::Flush { ok: True })))
-        }
-        PageRequest::Undo {} => (
-            Request::Undo { redo: false },
-            Box::new(|reply| match reply {
-                Reply::Applied { sequence, .. } => Some(Success::Undo { ok: True, sequence }),
-                _ => None,
-            }),
-        ),
-        PageRequest::Redo {} => (
-            Request::Undo { redo: true },
-            Box::new(|reply| match reply {
-                Reply::Applied { sequence, .. } => Some(Success::Redo { ok: True, sequence }),
-                _ => None,
-            }),
-        ),
+        PageRequest::Flush {} => owner.flush(options, page_reply(reply, storage, |()| Success::Flush { ok: True })),
+        PageRequest::Undo {} => owner
+            .undo(options, page_reply(reply, storage, |Applied { sequence, .. }| Success::Undo { ok: True, sequence })),
+        PageRequest::Redo {} => owner
+            .redo(options, page_reply(reply, storage, |Applied { sequence, .. }| Success::Redo { ok: True, sequence })),
         PageRequest::AttachmentsPut { bytes } => match data_encoding::BASE64.decode(bytes.as_bytes()) {
-            Ok(bytes) => (
-                Request::PutAttachment { bytes },
-                Box::new(|reply| match reply {
-                    Reply::Attachment { item } => Some(Success::AttachmentsPut {
-                        ok: True,
-                        id: item.id,
-                        byte_length: item.bytes,
-                        mime_type: item.media_type,
-                    }),
-                    _ => None,
+            Ok(bytes) => owner.put_attachment(
+                bytes,
+                options,
+                page_reply(reply, storage, |item: pop_storage::store::Attachment| Success::AttachmentsPut {
+                    ok: True,
+                    id: item.id,
+                    byte_length: item.bytes,
+                    mime_type: item.media_type,
                 }),
             ),
-            Err(_) => return reply(page_failure(invalid("Invalid attachment bytes"), false)),
+            Err(_) => reply(page_failure(invalid("Invalid attachment bytes"), false)),
         },
         request => {
-            // serde's growing output buffer can retain up to twice its encoded size.
-            // Config carries the accepted descriptor, not just the tiny input request;
-            // charge it before cloning or serializing any response data. The allowance
-            // covers the fixed envelope, scalar fields, and inline dispatch storage.
-            let bytes = if matches!(&request, PageRequest::Config {}) {
-                owner
-                    .app()
-                    .app
-                    .document_json()
-                    .len()
-                    .saturating_add(owner::serialized_size(&owner.app().app.window()))
-                    .saturating_add(512)
-                    .saturating_mul(2)
-            } else {
-                owner::serialized_size(&request).saturating_mul(2).saturating_add(512)
-            };
             admit_page_dispatch(
                 owner,
                 view,
-                bytes,
+                request_bytes,
                 || match request {
                     PageRequest::Config {} => page_config(owner).map(page_success),
                     request => {
@@ -237,21 +214,22 @@ fn page_validated(
                 },
                 reply,
             );
-            return;
         }
-    };
-    owner.submit(
-        request,
-        Some(view),
-        Box::new(move |result| {
-            reply(match result.map(answer) {
-                Ok(Some(result)) => page_success(result),
-                Ok(None) => page_failure(Failure::new(FailureKind::Invalidated, "Unexpected owner result"), storage),
-                Err(error) => page_failure(error, storage),
-            })
-        }),
-    );
+    }
 }
+fn page_reply<T: Send + 'static>(
+    reply: impl FnOnce(PageDispatch) + Send + 'static,
+    storage: bool,
+    success: impl FnOnce(T) -> wire::page::PageSuccess + Send + 'static,
+) -> owner::Completion<T> {
+    Box::new(move |result| {
+        reply(match result {
+            Ok(value) => page_success(success(value)),
+            Err(error) => page_failure(error, storage),
+        })
+    })
+}
+
 pub fn protocol() -> String {
     serde_json::json!({ "version": wire::ENGINE_PROTOCOL }).to_string()
 }

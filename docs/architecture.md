@@ -166,13 +166,14 @@ and schema migration are outside this work.
 
 ### Owner admission and callbacks
 
-The serial owner admits at most 128 ordinary requests retaining up to 56 MiB, with eight
-separate control slots and a shared 64 MiB ceiling. Flush, Discard, Close and native Handoff
-use control admission. Copy requests share a two-producer limit. Host dispatches use
-ordinary admission; derived snapshot/export buffers retain byte leases until their work
-settles. Exhaustion returns typed `busy` before mutation. Control payloads can also exceed
-the shared ceiling. These operational budgets account for retained work, not total Loro
-memory or process RSS.
+The serial owner retains at most 136 outstanding messages and 64 MiB of payload.
+Ordinary work stops at 128 messages or 56 MiB of the same totals; Flush, Discard,
+Close and native Handoff can use the reserved tail. Payload accounting uses encoded
+batch lengths and the lengths of carried bytes, strings and paths. Host dispatches
+share this admission, and derived snapshot/export buffers retain byte leases until
+completion. Exhaustion returns typed `busy` before mutation. Held barrier work keeps
+its original permit and order. Sync frame/byte, socket-client and preview caps bound
+their own transport and worker resources independently.
 
 Callbacks settle once, including requests queued behind shutdown. Their admission permits
 are released before invocation; a listener, completion or sync-sink panic does not kill

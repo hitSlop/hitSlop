@@ -47,6 +47,17 @@ impl CaptureRuntime {
         Ok(std::sync::Arc::new(Self { evaluator }))
     }
 
+    /// Renders and publishes an export from a source the host already saved.
+    pub fn export_saved(&self, path: String, format: ExportFormat, output: String) -> Result<(), crate::CoreError> {
+        Ok(pop_runtime::capture::export_saved(
+            std::path::Path::new(&path),
+            format,
+            std::path::Path::new(&output),
+            &self.evaluator,
+            std::time::Instant::now() + pop_runtime::command::COMMAND_TIMEOUT,
+        )?)
+    }
+
     pub fn render_saved(
         &self,
         path: String,

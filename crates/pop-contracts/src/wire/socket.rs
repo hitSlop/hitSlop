@@ -23,7 +23,9 @@ impl SocketRequest {
             request: Box<serde_json::value::RawValue>,
         }
         let envelope: Envelope = serde_json::from_str(input).map_err(|e| err(Code::InvalidRequest, e))?;
-        let request = DocumentRequest::parse(envelope.request.get()).map_err(|e| err(Code::InvalidRequest, e))?;
+        let request: DocumentRequest =
+            serde_json::from_str(envelope.request.get()).map_err(|e| err(Code::InvalidRequest, e))?;
+        request.check()?;
         if input.len() > request.socket_limit() {
             return Err(err(Code::InvalidRequest, "Oversized socket request"));
         }

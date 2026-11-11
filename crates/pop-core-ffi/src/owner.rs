@@ -95,29 +95,6 @@ pub enum Request {
         change: ThemeChange,
     },
 }
-impl Request {
-    fn into_core(self) -> Result<core::Request, Failure> {
-        use core::Request as R;
-        Ok(match self {
-            Self::State => R::State,
-            Self::Apply { batch, origin } => R::Apply { batch: Batch::decode(&batch)?, origin },
-            Self::Undo { redo } => R::Undo { redo },
-            Self::Flush => R::Flush,
-            Self::Discard => R::Discard,
-            Self::Close { preview, icon } => R::Close { preview, icon },
-            Self::Handoff { dest, preview, icon } => R::Handoff { dest, preview, icon },
-            Self::Copy { destination, preview, icon } => R::Copy { destination, preview, icon },
-            Self::CaptureSource { destination } => R::CaptureSource { destination },
-            Self::Backup { destination } => R::Backup { destination },
-            Self::Artwork { name } => R::Artwork { name },
-            Self::SetArtwork { source_version, preview, icon } => R::SetArtwork { source_version, preview, icon },
-            Self::Theme => R::Theme,
-            Self::ExportTheme => R::ExportTheme,
-            Self::ChangeTheme { change } => core::theme_request(change),
-        })
-    }
-}
-
 /// The owner's reply as the host receives it: the core's, without what only the core's
 /// command path reads, or the failure.
 #[derive(uniffi::Enum)]
@@ -129,28 +106,6 @@ pub enum OwnerReply {
     Theme { state: ThemeState, sequence: u64 },
     Bytes { bytes: Option<Vec<u8>> },
     Failed { failure: Failure },
-}
-impl From<core::Reply> for OwnerReply {
-    fn from(value: core::Reply) -> Self {
-        match value {
-            core::Reply::Unit => Self::Unit,
-            core::Reply::State { reading, .. } => Self::State { json: reading.to_json() },
-            core::Reply::ThemeFile { json } => Self::ThemeFile { json },
-            core::Reply::Applied { sequence, ids, .. } => Self::Applied { sequence, ids },
-            core::Reply::Theme { state, sequence } => Self::Theme { state: state.into(), sequence },
-            core::Reply::Bytes { bytes } => Self::Bytes { bytes },
-            // No native request produces the command or attachment replies.
-            other => Self::Failed {
-                failure: Failure {
-                    kind: FailureKind::Failed,
-                    message: format!("Unexpected owner reply: {other:?}"),
-                    reason: None,
-                    op_index: None,
-                    path: vec![],
-                },
-            },
-        }
-    }
 }
 #[uniffi::remote(Enum)]
 pub enum SaveStatus {
@@ -216,19 +171,77 @@ impl NativeOwner {
         self.0.attach(view);
     }
     pub fn submit(&self, request: Request, view: Option<String>, completion: Box<dyn OwnerCompletion>) {
-        let request = match request.into_core() {
-            Ok(request) => request,
-            Err(failure) => return completion.complete(OwnerReply::Failed { failure }),
-        };
-        self.0.submit(
-            request,
-            view,
-            Box::new(move |result| {
-                completion.complete(match result {
-                    Ok(reply) => reply.into(),
-                    Err(failure) => OwnerReply::Failed { failure },
-                })
-            }),
-        );
+        let options = core::CallOptions { view, deadline: None };
+        match request {
+            Request::State => self.0.state(
+                options,
+                native_completion(completion, |value: core::Reading| OwnerReply::State {
+                    json: value.reading.to_json(),
+                }),
+            ),
+            Request::Apply { batch, origin } => match Batch::decode(&batch) {
+                Ok(batch) => self.0.apply(batch, origin, options, native_completion(completion, applied)),
+                Err(error) => completion.complete(OwnerReply::Failed { failure: error.into() }),
+            },
+            Request::Undo { redo } => {
+                let callback = native_completion(completion, applied);
+                if redo {
+                    self.0.redo(options, callback);
+                } else {
+                    self.0.undo(options, callback);
+                }
+            }
+            Request::Flush => self.0.flush(options, native_completion(completion, unit)),
+            Request::Discard => self.0.discard(options, native_completion(completion, unit)),
+            Request::Close { preview, icon } => {
+                self.0.close(preview, icon, options, native_completion(completion, unit))
+            }
+            Request::Handoff { dest, preview, icon } => {
+                self.0.handoff(dest, preview, icon, options, native_completion(completion, unit))
+            }
+            Request::Copy { destination, preview, icon } => {
+                self.0.copy(destination, preview, icon, options, native_completion(completion, unit))
+            }
+            Request::CaptureSource { destination } => {
+                self.0.capture_source(destination, options, native_completion(completion, unit))
+            }
+            Request::Backup { destination } => self.0.backup(destination, options, native_completion(completion, unit)),
+            Request::Artwork { name } => {
+                self.0.artwork(name, options, native_completion(completion, |bytes| OwnerReply::Bytes { bytes }))
+            }
+            Request::SetArtwork { source_version, preview, icon } => {
+                self.0.set_artwork(source_version, preview, icon, options, native_completion(completion, unit))
+            }
+            Request::Theme => self.0.theme(
+                options,
+                native_completion(completion, |core::Theme { state, sequence }| OwnerReply::Theme {
+                    state: state.into(),
+                    sequence,
+                }),
+            ),
+            Request::ExportTheme => {
+                self.0.export_theme(options, native_completion(completion, |json| OwnerReply::ThemeFile { json }))
+            }
+            Request::ChangeTheme { change } => {
+                self.0.change_theme(change, options, native_completion(completion, applied))
+            }
+        }
     }
+}
+fn unit((): ()) -> OwnerReply {
+    OwnerReply::Unit
+}
+fn applied(core::Applied { sequence, ids, .. }: core::Applied) -> OwnerReply {
+    OwnerReply::Applied { sequence, ids }
+}
+fn native_completion<T>(
+    completion: Box<dyn OwnerCompletion>,
+    success: impl FnOnce(T) -> OwnerReply + Send + 'static,
+) -> core::Completion<T> {
+    Box::new(move |result| {
+        completion.complete(match result {
+            Ok(value) => success(value),
+            Err(failure) => OwnerReply::Failed { failure },
+        })
+    })
 }

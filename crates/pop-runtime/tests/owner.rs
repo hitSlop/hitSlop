@@ -1,6 +1,6 @@
 use crate::support;
 use pop_core::Origin;
-use pop_runtime::owner::{Event, FailureKind, Owner, Reply, Request, SyncConnection};
+use pop_runtime::owner::{Applied, CallOptions, Completion, Event, FailureKind, Owner, Reading, SyncConnection};
 use pop_storage::file;
 use pop_storage::store::{Mode, Store};
 use pop_testkit::owner::{call, close, open, submit};
@@ -25,22 +25,30 @@ fn fixture() -> (tempfile::TempDir, PathBuf) {
     file::create_document(&template, &path).unwrap();
     (dir, path)
 }
-fn set(title: &str) -> Request {
-    Request::Apply {
-        batch: serde_json::from_value(json!({"intents":[{"type":"set","path":["title"],"value":title}]})).unwrap(),
-        origin: Origin::Page,
+fn set(title: &str) -> impl FnOnce(&Owner, CallOptions, Completion<Applied>) + '_ {
+    move |owner: &Owner, options, callback| {
+        owner.apply(
+            serde_json::from_value(json!({"intents":[{"type":"set","path":["title"],"value":title}]})).unwrap(),
+            Origin::Page,
+            options,
+            callback,
+        )
     }
 }
 fn state(owner: &Owner) -> Value {
-    let Reply::State { reading, .. } = call(owner, Request::State).unwrap() else { panic!("state") };
+    let Reading { reading, .. } = call(owner, Owner::state).unwrap();
     let json = serde_json::to_string(&reading).unwrap();
     serde_json::from_str(&json).unwrap()
 }
 /// A palette change to the accent, from the theme panel or an agent.
-fn theme(color: &str, origin: Origin) -> Request {
-    Request::Apply {
-        batch: serde_json::from_value(json!({"intents":[{"type":"setTheme","values":{"accent":color}}]})).unwrap(),
-        origin,
+fn theme(color: &str, origin: Origin) -> impl FnOnce(&Owner, CallOptions, Completion<Applied>) + '_ {
+    move |owner: &Owner, options, callback| {
+        owner.apply(
+            serde_json::from_value(json!({"intents":[{"type":"setTheme","values":{"accent":color}}]})).unwrap(),
+            origin,
+            options,
+            callback,
+        )
     }
 }
 
@@ -51,9 +59,9 @@ fn a_sharing_seed_is_the_saved_document_with_only_what_it_references() {
     let (dir, path) = fixture();
     let (owner, _) = open(&path, Mode::Document);
     let attachment = |bytes: &[u8]| {
-        let Reply::Attachment { item } = call(&owner, Request::PutAttachment { bytes: bytes.to_vec() }).unwrap() else {
-            panic!("attachment")
-        };
+        let item =
+            call(&owner, |owner: &Owner, options, callback| owner.put_attachment(bytes.to_vec(), options, callback))
+                .unwrap();
         item.id
     };
     let removed = attachment(b"removed before sharing");
@@ -61,14 +69,17 @@ fn a_sharing_seed_is_the_saved_document_with_only_what_it_references() {
     call(&owner, set(&removed)).unwrap();
     call(&owner, set(&kept)).unwrap();
     let seed = dir.path().join("seed.pop");
-    call(&owner, Request::StageSeed { destination: seed.clone() }).unwrap();
+    call(&owner, |owner: &Owner, options, callback| owner.stage_seed(seed.clone(), options, callback)).unwrap();
     let staged = Store::open(&seed, Mode::Snapshot).unwrap();
     assert_eq!(staged.app().document_uuid, owner.app().document_uuid);
     assert_eq!(staged.document().unwrap().reading().unwrap().value["title"], kept);
     let ids: Vec<_> = staged.attachments().unwrap().into_iter().map(|item| item.id).collect();
     assert_eq!(ids, vec![kept], "a seed carries no unreferenced attachment");
     staged.close().unwrap();
-    assert!(matches!(call(&owner, Request::ReadAttachment { id: removed }).unwrap(), Reply::Bytes { bytes: Some(_) }));
+    assert!(matches!(
+        call(&owner, |owner: &Owner, options, callback| owner.read_attachment(removed, options, callback)).unwrap(),
+        bytes if !bytes.is_empty()
+    ));
     close(&owner);
 }
 
@@ -79,15 +90,9 @@ fn ordered_publications_flush_and_reopen_include_theme() {
     let a = submit(&owner, set("First"), None);
     let b = submit(&owner, theme("#123456", Origin::Agent), None);
     let c = submit(&owner, set("Last"), None);
-    let sequences: Vec<_> = [a, b, c]
-        .into_iter()
-        .map(|rx| match rx.recv().unwrap().unwrap() {
-            Reply::Applied { sequence, .. } => sequence,
-            _ => panic!("edit"),
-        })
-        .collect();
+    let sequences: Vec<_> = [a, b, c].into_iter().map(|rx| rx.recv().unwrap().unwrap().sequence).collect();
     assert_eq!(sequences, vec![1, 2, 3]);
-    call(&owner, Request::Flush).unwrap();
+    call(&owner, Owner::flush).unwrap();
     let published: Vec<Value> = events
         .try_iter()
         .filter_map(|e| {
@@ -113,22 +118,23 @@ fn theme_and_content_share_undo_and_an_agent_color_ends_the_panel_run() {
     let (_dir, path) = fixture();
     let (owner, events) = open(&path, Mode::Document);
     for color in ["#111111", "#222222"] {
-        call(
-            &owner,
-            pop_runtime::owner::theme_request(pop_runtime::owner::ThemeChange::Set {
-                values: [("accent".into(), color.into())].into(),
-            }),
-        )
+        call(&owner, |owner: &Owner, options, callback| {
+            owner.change_theme(
+                pop_runtime::owner::ThemeChange::Set { values: [("accent".into(), color.into())].into() },
+                options,
+                callback,
+            )
+        })
         .unwrap();
     }
     call(&owner, theme("#333333", Origin::Agent)).unwrap();
     call(&owner, set("Content after theme")).unwrap();
-    call(&owner, Request::Undo { redo: false }).unwrap();
+    call(&owner, Owner::undo).unwrap();
     assert_eq!(state(&owner)["value"]["title"], "Saved");
     assert_eq!(state(&owner)["theme"]["accent"], "#333333");
-    call(&owner, Request::Undo { redo: false }).unwrap();
+    call(&owner, Owner::undo).unwrap();
     assert_eq!(state(&owner)["theme"]["accent"], "#222222");
-    call(&owner, Request::Undo { redo: false }).unwrap();
+    call(&owner, Owner::undo).unwrap();
     assert_eq!(state(&owner)["theme"]["accent"], "#335577");
     assert!(events.try_iter().filter(|e| matches!(e, Event::ThemeChanged)).count() >= 5);
     close(&owner);
@@ -140,13 +146,13 @@ fn slow_persistence_does_not_block_edits_and_flush_waits_for_its_target() {
     let lock = rusqlite::Connection::open(&path).unwrap();
     lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
     call(&owner, set("First")).unwrap();
-    let first = submit(&owner, Request::Flush, None);
+    let first = submit(&owner, Owner::flush, None);
     // Whether the persistence worker has reached SQLite yet or not, the flush is
     // queued before this edit and cannot complete while the external lock is held.
     let second = submit(&owner, set("While saving"), None);
     assert!(second.recv_timeout(Duration::from_millis(250)).unwrap().is_ok());
     assert!(first.try_recv().is_err());
-    let latest = submit(&owner, Request::Flush, None);
+    let latest = submit(&owner, Owner::flush, None);
     lock.execute_batch("ROLLBACK").unwrap();
     first.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
     latest.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
@@ -160,12 +166,14 @@ fn slow_persistence_does_not_block_edits_and_flush_waits_for_its_target() {
 fn sync_attach_answers_while_a_save_waits_to_commit() {
     let (_dir, path) = fixture();
     let (owner, _) = open(&path, Mode::Document);
-    call(&owner, Request::Share { share: pop_storage::store::Share { endpoint: "https://relay.example".into() } })
-        .unwrap();
+    call(&owner, |owner: &Owner, options, callback| {
+        owner.set_share(pop_storage::store::Share { endpoint: "https://relay.example".into() }, options, callback)
+    })
+    .unwrap();
     let reader = rusqlite::Connection::open(&path).unwrap();
     reader.execute_batch("BEGIN; SELECT * FROM history;").unwrap();
     call(&owner, set("Saving behind a reader")).unwrap();
-    let flush = submit(&owner, Request::Flush, None);
+    let flush = submit(&owner, Owner::flush, None);
     let journal = path.with_extension("pop-journal");
     let deadline = Instant::now() + Duration::from_secs(1);
     while !journal.exists() && Instant::now() < deadline {
@@ -193,7 +201,10 @@ fn failed_close_keeps_state_and_writer_lease_for_retry() {
     call(&owner, set("Keep me")).unwrap();
     let moved = dir.path().join("moved.pop");
     std::fs::rename(&path, &moved).unwrap();
-    assert_eq!(call(&owner, Request::Close { preview: None, icon: None }).unwrap_err().kind, FailureKind::Moved);
+    assert_eq!(
+        call(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap_err().kind,
+        FailureKind::Moved
+    );
     assert!(matches!(Store::open(&moved, Mode::Document), Err(pop_storage::store::Error::Locked)));
     assert_eq!(state(&owner)["value"]["title"], "Keep me");
     std::fs::rename(&moved, &path).unwrap();
@@ -210,12 +221,16 @@ fn discard_restores_data_and_theme_and_fences_the_old_view() {
     owner.attach("page".into());
     call(&owner, set("Unsaved")).unwrap();
     call(&owner, theme("#123456", Origin::Window)).unwrap();
-    call(&owner, Request::Discard).unwrap();
+    call(&owner, Owner::discard).unwrap();
     assert_eq!(state(&owner)["value"]["title"], "Saved");
     assert_eq!(state(&owner)["theme"]["accent"], "#335577");
     owner.attach("next page".into());
     let (tx, rx) = mpsc::channel();
-    owner.submit(set("stale"), Some("page".into()), Box::new(move |r| tx.send(r).unwrap()));
+    (set("stale"))(
+        &owner,
+        CallOptions { view: Some("page".into()), deadline: None },
+        Box::new(move |r| tx.send(r).unwrap()),
+    );
     assert_eq!(rx.recv().unwrap().unwrap_err().kind, FailureKind::Replaced);
     close(&owner);
 }
@@ -226,9 +241,9 @@ fn discard_waits_for_inflight_save_and_ignores_its_old_completion() {
     let lock = rusqlite::Connection::open(&path).unwrap();
     lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
     call(&owner, set("Captured for save")).unwrap();
-    let flush = submit(&owner, Request::Flush, None);
+    let flush = submit(&owner, Owner::flush, None);
     call(&owner, set("Discard me")).unwrap();
-    let discard = submit(&owner, Request::Discard, None);
+    let discard = submit(&owner, Owner::discard, None);
     assert_eq!(flush.recv_timeout(Duration::from_secs(2)).unwrap().unwrap_err().kind, FailureKind::Replaced);
     lock.execute_batch("ROLLBACK").unwrap();
     discard.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
@@ -241,17 +256,17 @@ fn discard_waits_for_inflight_save_and_ignores_its_old_completion() {
 fn snapshot_refuses_mutations_and_closed_owner_refuses_every_request() {
     let (_dir, path) = fixture();
     let (owner, _) = open(&path, Mode::Snapshot);
-    for request in [
-        set("No"),
-        theme("#123456", Origin::Window),
-        Request::Undo { redo: false },
-        Request::PutAttachment { bytes: vec![1] },
+    for result in [
+        call(&owner, set("No")).map(|_| ()),
+        call(&owner, theme("#123456", Origin::Window)).map(|_| ()),
+        call(&owner, Owner::undo).map(|_| ()),
+        call(&owner, |owner, options, callback| owner.put_attachment(vec![1], options, callback)).map(|_| ()),
     ] {
-        assert_eq!(call(&owner, request).unwrap_err().kind, FailureKind::ReadOnly);
+        assert_eq!(result.unwrap_err().kind, FailureKind::ReadOnly);
     }
-    call(&owner, Request::Flush).unwrap();
+    call(&owner, Owner::flush).unwrap();
     close(&owner);
-    assert_eq!(call(&owner, Request::State).unwrap_err().kind, FailureKind::Closed);
+    assert_eq!(call(&owner, Owner::state).unwrap_err().kind, FailureKind::Closed);
 }
 #[test]
 fn autosave_is_bounded_while_edits_continue() {
@@ -289,8 +304,10 @@ fn autosave_is_bounded_while_edits_continue() {
 fn full_shared_document() -> (tempfile::TempDir, PathBuf, Owner, mpsc::Receiver<Event>) {
     let (dir, path) = fixture();
     let (owner, events) = open(&path, Mode::Document);
-    call(&owner, Request::Share { share: pop_storage::store::Share { endpoint: "wss://relay.example".into() } })
-        .unwrap();
+    call(&owner, |owner: &Owner, options, callback| {
+        owner.set_share(pop_storage::store::Share { endpoint: "wss://relay.example".into() }, options, callback)
+    })
+    .unwrap();
     let mut seed = 5u64;
     let mut full = false;
     for _ in 0..64 {
@@ -303,7 +320,7 @@ fn full_shared_document() -> (tempfile::TempDir, PathBuf, Owner, mpsc::Receiver<
             })
             .collect();
         call(&owner, set(&title)).unwrap();
-        if let Err(error) = call(&owner, Request::Flush) {
+        if let Err(error) = call(&owner, Owner::flush) {
             assert_eq!(error.kind, FailureKind::Full);
             full = true;
         }
@@ -315,19 +332,20 @@ fn full_shared_document() -> (tempfile::TempDir, PathBuf, Owner, mpsc::Receiver<
 #[test]
 fn a_full_shared_document_copies_its_unsaved_live_state() {
     let (dir, path, owner, _) = full_shared_document();
-    let Reply::Attachment { item } =
-        call(&owner, Request::PutAttachment { bytes: b"live reference".to_vec() }).unwrap()
-    else {
-        panic!("attachment")
-    };
-    call(&owner, Request::PutAttachment { bytes: b"unreferenced".to_vec() }).unwrap();
+    let item = call(&owner, |owner: &Owner, options, callback| {
+        owner.put_attachment(b"live reference".to_vec(), options, callback)
+    })
+    .unwrap();
+    call(&owner, |owner: &Owner, options, callback| owner.put_attachment(b"unreferenced".to_vec(), options, callback))
+        .unwrap();
     let title = format!("Unsaved escape attachment/{}", item.id);
     call(&owner, set(&title)).unwrap();
-    assert_eq!(call(&owner, Request::Flush).unwrap_err().kind, FailureKind::Full);
+    assert_eq!(call(&owner, Owner::flush).unwrap_err().kind, FailureKind::Full);
     assert_eq!(state(&owner)["value"]["title"], title);
     assert_ne!(saved_title(&path), title);
     let destination = dir.path().join("Unshared.pop");
-    call(&owner, Request::Copy { destination: destination.clone(), preview: None, icon: None }).unwrap();
+    call(&owner, |owner: &Owner, options, callback| owner.copy(destination.clone(), None, None, options, callback))
+        .unwrap();
     let copy = Store::open(&destination, Mode::Snapshot).unwrap();
     assert_eq!(serde_json::from_str::<Value>(&copy.document().unwrap().value()).unwrap()["title"], title);
     assert!(copy.share().unwrap().is_none());
@@ -341,7 +359,7 @@ fn a_full_shared_document_copies_its_unsaved_live_state() {
 fn full_with_unsaved_edit(title: &str) -> (tempfile::TempDir, PathBuf, Owner, mpsc::Receiver<Event>) {
     let (dir, path, owner, events) = full_shared_document();
     call(&owner, set(title)).unwrap();
-    assert_eq!(call(&owner, Request::Flush).unwrap_err().kind, FailureKind::Full);
+    assert_eq!(call(&owner, Owner::flush).unwrap_err().kind, FailureKind::Full);
     assert!(
         events.try_iter().any(|event| matches!(
             event,
@@ -351,8 +369,8 @@ fn full_with_unsaved_edit(title: &str) -> (tempfile::TempDir, PathBuf, Owner, mp
     );
     (dir, path, owner, events)
 }
-fn handoff(dest: &Path) -> Request {
-    Request::Handoff { dest: dest.to_path_buf(), preview: None, icon: None }
+fn handoff(dest: &Path) -> impl FnOnce(&Owner, CallOptions, Completion<()>) + '_ {
+    move |owner: &Owner, options, callback| owner.handoff(dest.to_path_buf(), None, None, options, callback)
 }
 fn leftovers(dir: &Path) -> Vec<String> {
     let mut names: Vec<String> = std::fs::read_dir(dir)
@@ -368,10 +386,13 @@ fn leftovers(dir: &Path) -> Vec<String> {
 fn a_full_shared_document_hands_off_its_live_state_to_a_new_file() {
     let (dir, path, owner, _) = full_with_unsaved_edit("Unsaved");
     // A close must save first, so it cannot leave.
-    assert_eq!(call(&owner, Request::Close { preview: None, icon: None }).unwrap_err().kind, FailureKind::Full);
+    assert_eq!(
+        call(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap_err().kind,
+        FailureKind::Full
+    );
     let dest = dir.path().join("Unshared.pop");
     call(&owner, handoff(&dest)).unwrap();
-    assert_eq!(call(&owner, Request::State).unwrap_err().kind, FailureKind::Closed);
+    assert_eq!(call(&owner, Owner::state).unwrap_err().kind, FailureKind::Closed);
     // The new file holds what the owner could not save, as a document of its own.
     assert_eq!(saved_title(&dest), "Unsaved");
     let copy = Store::open(&dest, Mode::Snapshot).unwrap();
@@ -389,17 +410,17 @@ fn a_refused_handoff_keeps_the_owner_open_and_never_touches_the_destination() {
     let (dir, path, owner, _) = full_with_unsaved_edit("Unsaved");
     // Another owner already has a document at the destination, with an edit of its own.
     let dest = dir.path().join("Taken.pop");
-    call(&owner, Request::Copy { destination: dest.clone(), preview: None, icon: None }).unwrap();
+    call(&owner, |owner: &Owner, options, callback| owner.copy(dest.clone(), None, None, options, callback)).unwrap();
     let (other, _) = open(&dest, Mode::Document);
     call(&other, set("Other owner")).unwrap();
-    call(&other, Request::Flush).unwrap();
+    call(&other, Owner::flush).unwrap();
     let failure = call(&owner, handoff(&dest)).unwrap_err();
     assert_eq!((failure.kind, failure.reason), (FailureKind::Rejected, Some(pop_contracts::wire::Code::Exists)));
     // The destination and its owner are untouched: still locked, still the other owner's.
     assert!(Store::open(&dest, Mode::Document).is_err());
     assert_eq!(state(&other)["value"]["title"], "Other owner");
     call(&other, set("Still editing")).unwrap();
-    call(&other, Request::Flush).unwrap();
+    call(&other, Owner::flush).unwrap();
     assert_eq!(saved_title(&dest), "Still editing");
     close(&other);
     assert!(leftovers(dir.path()).is_empty(), "a refusal leaves no temporary file");
@@ -422,8 +443,12 @@ fn an_admitted_copy_finishes_before_close_and_contains_its_flushed_edits() {
     let lock = rusqlite::Connection::open(&path).unwrap();
     lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
     call(&owner, set("Captured")).unwrap();
-    let copied = submit(&owner, Request::Copy { destination: destination.clone(), preview: None, icon: None }, None);
-    let closed = submit(&owner, Request::Close { preview: None, icon: None }, None);
+    let copied = submit(
+        &owner,
+        |owner: &Owner, options, callback| owner.copy(destination.clone(), None, None, options, callback),
+        None,
+    );
+    let closed = submit(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback), None);
     assert_eq!(call(&owner, set("Too late")).unwrap_err().kind, FailureKind::Closing);
     lock.execute_batch("ROLLBACK").unwrap();
     copied.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
@@ -438,10 +463,9 @@ fn expired_command_does_not_mutate_or_publish() {
     let (_dir, path) = fixture();
     let (owner, events) = open(&path, Mode::Document);
     let (tx, rx) = mpsc::channel();
-    owner.submit_until(
-        set("Expired"),
-        None,
-        Instant::now() - Duration::from_millis(1),
+    (set("Expired"))(
+        &owner,
+        CallOptions { view: None, deadline: Some(Instant::now() - Duration::from_millis(1)) },
         Box::new(move |result| tx.send(result).unwrap()),
     );
     assert_eq!(rx.recv_timeout(Duration::from_secs(2)).unwrap().unwrap_err().kind, FailureKind::Closing);
@@ -483,17 +507,21 @@ fn saving(events: &mpsc::Receiver<Event>) -> Vec<pop_runtime::owner::SaveStatus>
 fn undo_saves_like_an_edit_and_reaches_agent_edits() {
     let (_dir, path) = fixture();
     let (owner, events) = open(&path, Mode::Document);
-    let agent = Request::Apply {
-        batch: serde_json::from_value(json!({"intents":[{"type":"set","path":["title"],"value":"Agent"}]})).unwrap(),
-        origin: Origin::Agent,
+    let agent = |owner: &Owner, options, callback| {
+        owner.apply(
+            serde_json::from_value(json!({"intents":[{"type":"set","path":["title"],"value":"Agent"}]})).unwrap(),
+            Origin::Agent,
+            options,
+            callback,
+        )
     };
     call(&owner, agent).unwrap();
     call(&owner, set("Person")).unwrap();
-    call(&owner, Request::Flush).unwrap();
+    call(&owner, Owner::flush).unwrap();
     assert_eq!(saved_title(&path), "Person");
     for expected in ["Agent", "Saved"] {
-        call(&owner, Request::Undo { redo: false }).unwrap();
-        call(&owner, Request::Flush).unwrap();
+        call(&owner, Owner::undo).unwrap();
+        call(&owner, Owner::flush).unwrap();
         assert_eq!(saved_title(&path), expected);
     }
     let undo: Vec<_> = events
@@ -507,7 +535,7 @@ fn undo_saves_like_an_edit_and_reaches_agent_edits() {
     close(&owner);
     // A document opens with nothing to undo: the next session starts where this one saved.
     let (reopened, events) = open(&path, Mode::Document);
-    let Reply::Applied { sequence, .. } = call(&reopened, Request::Undo { redo: false }).unwrap() else { panic!() };
+    let Applied { sequence, .. } = call(&reopened, Owner::undo).unwrap();
     assert_eq!(sequence, 0, "nothing to undo publishes nothing");
     close(&reopened);
     assert!(!events.try_iter().any(|e| matches!(e, Event::UndoState { can_undo: true, .. })));
@@ -522,7 +550,7 @@ fn close_refuses_edits_and_holds_the_lock_until_its_final_write() {
     call(&owner, set("Before close")).unwrap();
     let lock = rusqlite::Connection::open(&path).unwrap();
     lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
-    let closing = submit(&owner, Request::Close { preview: None, icon: None }, None);
+    let closing = submit(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback), None);
     let refused = call(&owner, set("Too late")).unwrap_err();
     assert_eq!(refused.kind, FailureKind::Closing);
     assert!(pop_storage::registry::Lease::acquire(&path).is_err(), "the lock is held until the final write");
@@ -544,8 +572,8 @@ fn a_failed_discard_publishes_its_failure_and_saving_recovers() {
     call(&owner, set("Unsaved")).unwrap();
     let lock = rusqlite::Connection::open(&path).unwrap();
     lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
-    let flush = submit(&owner, Request::Flush, None);
-    let discard = submit(&owner, Request::Discard, None);
+    let flush = submit(&owner, Owner::flush, None);
+    let discard = submit(&owner, Owner::discard, None);
     // Discard rejects the old save's waiter before waiting for the persistence queue.
     assert_eq!(flush.recv_timeout(Duration::from_secs(30)).unwrap().unwrap_err().kind, FailureKind::Replaced);
     std::fs::rename(&path, &moved).unwrap();
@@ -554,9 +582,9 @@ fn a_failed_discard_publishes_its_failure_and_saving_recovers() {
     assert_eq!(discard.recv_timeout(Duration::from_secs(30)).unwrap().unwrap_err().kind, FailureKind::Moved);
     assert!(saving(&events).contains(&pop_runtime::owner::SaveStatus::Failed));
     std::fs::rename(&moved, &path).unwrap();
-    call(&owner, Request::Discard).unwrap();
+    call(&owner, Owner::discard).unwrap();
     call(&owner, set("After")).unwrap();
-    call(&owner, Request::Flush).unwrap();
+    call(&owner, Owner::flush).unwrap();
     assert_eq!(saved_title(&path), "After");
     close(&owner);
     assert!(pop_storage::registry::Lease::acquire(&path).is_ok());
@@ -567,7 +595,7 @@ fn a_discard_publishes_no_save_failure() {
     let (_dir, path) = fixture();
     let (owner, events) = open(&path, Mode::Document);
     call(&owner, set("Unsaved")).unwrap();
-    call(&owner, Request::Discard).unwrap();
+    call(&owner, Owner::discard).unwrap();
     assert!(!saving(&events).contains(&pop_runtime::owner::SaveStatus::Failed));
     assert_eq!(state(&owner)["value"]["title"], "Saved");
     close(&owner);
@@ -585,15 +613,19 @@ fn a_flush_during_a_discard_reload_settles_as_replaced() {
     call(&owner, set("Two")).unwrap();
     let lock = rusqlite::Connection::open(&path).unwrap();
     lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
-    let discard = submit(&owner, Request::Discard, None);
+    let discard = submit(&owner, Owner::discard, None);
     let (tx, rx) = mpsc::channel();
-    owner.submit(Request::Flush, Some("page".into()), Box::new(move |r| tx.send(r).unwrap()));
+    (Owner::flush)(
+        &owner,
+        CallOptions { view: Some("page".into()), deadline: None },
+        Box::new(move |r| tx.send(r).unwrap()),
+    );
     assert_eq!(rx.recv_timeout(Duration::from_secs(30)).unwrap().unwrap_err().kind, FailureKind::Replaced);
     lock.execute_batch("ROLLBACK").unwrap();
     drop(lock);
     discard.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
     call(&owner, set("Three")).unwrap();
-    call(&owner, Request::Flush).unwrap();
+    call(&owner, Owner::flush).unwrap();
     assert_eq!(saved_title(&path), "Three");
     close(&owner);
 }
@@ -614,10 +646,10 @@ fn a_busy_database_fails_a_flush_or_theme_export_that_a_retry_completes() {
         let (owner, _) = open(&path, Mode::Document);
         call(&owner, set("Retried")).unwrap();
         let lock = hold(&path);
-        assert_eq!(call(&owner, Request::Flush).unwrap_err().kind, FailureKind::Busy);
+        assert_eq!(call(&owner, Owner::flush).unwrap_err().kind, FailureKind::Busy);
         lock.execute_batch("ROLLBACK").unwrap();
         drop(lock);
-        call(&owner, Request::Flush).unwrap();
+        call(&owner, Owner::flush).unwrap();
         assert_eq!(saved_title(&path), "Retried");
         close(&owner);
     };
@@ -627,10 +659,10 @@ fn a_busy_database_fails_a_flush_or_theme_export_that_a_retry_completes() {
         let lock = hold(&path);
         call(&owner, theme("#111111", Origin::Window)).unwrap();
         assert_eq!(state(&owner)["theme"]["accent"], "#111111");
-        assert_eq!(call(&owner, Request::ExportTheme).unwrap_err().kind, FailureKind::Busy);
+        assert_eq!(call(&owner, Owner::export_theme).unwrap_err().kind, FailureKind::Busy);
         lock.execute_batch("ROLLBACK").unwrap();
         drop(lock);
-        let Reply::ThemeFile { json } = call(&owner, Request::ExportTheme).unwrap() else { panic!() };
+        let json = call(&owner, Owner::export_theme).unwrap();
         assert!(json.contains("#111111"));
         close(&owner);
         let (saved, _) = open(&path, Mode::Snapshot);
@@ -665,14 +697,14 @@ fn pending_copies_bound_derived_work_until_completion_and_preserve_flush_capacit
     lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
     let mut accepted = vec![submit(
         &owner,
-        Request::Copy { destination: dir.path().join("first.pop"), preview: None, icon: None },
+        |owner: &Owner, options, callback| owner.copy(dir.path().join("first.pop"), None, None, options, callback),
         None,
     )];
     let (entered, blocked) = mpsc::sync_channel(1);
     let (release, gate) = mpsc::channel();
-    owner.submit(
-        Request::State,
-        None,
+    (Owner::state)(
+        &owner,
+        CallOptions { view: None, deadline: None },
         Box::new(move |_| {
             entered.send(()).unwrap();
             let _ = gate.recv();
@@ -680,9 +712,13 @@ fn pending_copies_bound_derived_work_until_completion_and_preserve_flush_capacit
     );
     blocked.recv_timeout(Duration::from_secs(5)).unwrap();
     let mut refused = None;
-    for index in 0..32 {
+    for index in 0..1024 {
         let destination = dir.path().join(format!("copy-{index}.pop"));
-        let reply = submit(&owner, Request::Copy { destination: destination.clone(), preview: None, icon: None }, None);
+        let reply = submit(
+            &owner,
+            |owner: &Owner, options, callback| owner.copy(destination.clone(), None, None, options, callback),
+            None,
+        );
         match reply.try_recv() {
             Err(mpsc::TryRecvError::Empty) => accepted.push(reply),
             Ok(Err(failure)) => {
@@ -694,7 +730,7 @@ fn pending_copies_bound_derived_work_until_completion_and_preserve_flush_capacit
         }
     }
     assert!(refused.is_some(), "snapshot-producing requests must have a bounded outstanding budget");
-    let flush = submit(&owner, Request::Flush, None);
+    let flush = submit(&owner, Owner::flush, None);
     assert!(matches!(flush.try_recv(), Err(mpsc::TryRecvError::Empty)));
     lock.execute_batch("ROLLBACK").unwrap();
     release.send(()).unwrap();
@@ -704,8 +740,11 @@ fn pending_copies_bound_derived_work_until_completion_and_preserve_flush_capacit
         }
     }
     assert!(!refused.unwrap().exists(), "a refused copy must not publish a destination");
-    assert!(matches!(flush.recv_timeout(Duration::from_secs(30)).unwrap().unwrap(), Reply::Unit));
-    call(&owner, Request::Copy { destination: dir.path().join("recovered.pop"), preview: None, icon: None }).unwrap();
+    assert!(matches!(flush.recv_timeout(Duration::from_secs(30)).unwrap().unwrap(), ()));
+    call(&owner, |owner: &Owner, options, callback| {
+        owner.copy(dir.path().join("recovered.pop"), None, None, options, callback)
+    })
+    .unwrap();
     assert_eq!(state(&owner)["value"]["title"], "Saved");
     close(&owner);
 }
@@ -726,9 +765,9 @@ fn request_flood_refuses_before_mutation_and_preserves_flush_capacity() {
     let (entered, blocked) = mpsc::sync_channel(1);
     let (release, gate) = mpsc::channel();
     let release = Release(Some(release));
-    owner.submit(
-        Request::State,
-        None,
+    (Owner::state)(
+        &owner,
+        CallOptions { view: None, deadline: None },
         Box::new(move |_| {
             entered.send(()).unwrap();
             gate.recv().unwrap();
@@ -751,74 +790,17 @@ fn request_flood_refuses_before_mutation_and_preserves_flush_capacity() {
     }
     assert!(refused, "a blocked owner must bound retained requests");
     assert!(!accepted.is_empty());
-    let flush = submit(&owner, Request::Flush, None);
+    let flush = submit(&owner, Owner::flush, None);
     assert!(matches!(flush.try_recv(), Err(mpsc::TryRecvError::Empty)));
     drop(release);
     let expected = format!("request {}", accepted.len() - 1);
     for reply in accepted {
         reply.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
     }
-    assert!(matches!(flush.recv_timeout(Duration::from_secs(30)).unwrap().unwrap(), Reply::Unit));
+    assert!(matches!(flush.recv_timeout(Duration::from_secs(30)).unwrap().unwrap(), ()));
     assert_eq!(state(&owner)["value"]["title"], expected);
     call(&owner, set("Capacity recovered")).unwrap();
-    call(&owner, Request::Flush).unwrap();
-    close(&owner);
-}
-
-#[test]
-fn retained_batch_capacity_is_refused_before_mutation_and_preserves_flush_capacity() {
-    struct Release(Option<mpsc::Sender<()>>);
-    impl Drop for Release {
-        fn drop(&mut self) {
-            if let Some(sender) = self.0.take() {
-                let _ = sender.send(());
-            }
-        }
-    }
-
-    let (_dir, path) = fixture();
-    let (owner, _) = open(&path, Mode::Document);
-    let (entered, blocked) = mpsc::sync_channel(1);
-    let (release, gate) = mpsc::channel();
-    let release = Release(Some(release));
-    owner.submit(
-        Request::State,
-        None,
-        Box::new(move |_| {
-            entered.send(()).unwrap();
-            gate.recv().unwrap();
-        }),
-    );
-    blocked.recv_timeout(Duration::from_secs(5)).unwrap();
-
-    // Reserve a large backing allocation without touching it; the visible valid edit
-    // stays tiny, so serialized JSON size cannot represent the queued memory.
-    let mut value = String::with_capacity(65 * 1024 * 1024);
-    value.push_str("Oversized backing allocation");
-    let request = Request::Apply {
-        batch: pop_contracts::wire::Batch {
-            if_version: None,
-            intents: vec![pop_contracts::wire::Intent::Set {
-                path: vec![pop_contracts::wire::Segment::Key("title".into())],
-                value: Value::String(value),
-                from: None,
-                selection: None,
-            }],
-        },
-        origin: Origin::Page,
-    };
-    let reply = submit(&owner, request, None);
-    match reply.try_recv() {
-        Ok(Err(failure)) => assert_eq!(failure.kind, FailureKind::Busy),
-        other => panic!("oversized retained batch must be refused before enqueueing: {other:?}"),
-    }
-    let flush = submit(&owner, Request::Flush, None);
-    assert!(matches!(flush.try_recv(), Err(mpsc::TryRecvError::Empty)));
-    drop(release);
-    assert!(matches!(flush.recv_timeout(Duration::from_secs(30)).unwrap().unwrap(), Reply::Unit));
-    assert_eq!(state(&owner)["value"]["title"], "Saved");
-    call(&owner, set("Capacity recovered")).unwrap();
-    call(&owner, Request::Flush).unwrap();
+    call(&owner, Owner::flush).unwrap();
     close(&owner);
 }
 
@@ -838,7 +820,7 @@ fn sync_callback_panics_preserve_editing_and_saving() {
             }
         }));
         if reconnect {
-            call(&owner, Request::State).unwrap();
+            call(&owner, Owner::state).unwrap();
             assert!(!connection.frame(vec![0; pop_contracts::relay::frame::MAX_FRAME + 1]));
         } else {
             connection.base(move |_| {
@@ -848,7 +830,7 @@ fn sync_callback_panics_preserve_editing_and_saving() {
         }
         received.recv_timeout(Duration::from_secs(5)).unwrap();
         call(&owner, set("Saved after callback panic")).unwrap();
-        call(&owner, Request::Flush).unwrap();
+        call(&owner, Owner::flush).unwrap();
         close(&owner);
         let (reopened, _) = open(&path, Mode::Document);
         assert_eq!(state(&reopened)["value"]["title"], "Saved after callback panic");
@@ -916,16 +898,19 @@ fn sync_input_budget_recovers_and_old_connections_cannot_detach_the_replacement(
     for frame in [vec![0; pop_contracts::relay::frame::MAX_FRAME], Vec::new()] {
         let (_dir, path) = fixture();
         let (owner, _) = open(&path, Mode::Document);
-        call(&owner, Request::Share { share: Share { endpoint: "https://relay.example".into() } }).unwrap();
+        call(&owner, |owner: &Owner, options, callback| {
+            owner.set_share(Share { endpoint: "https://relay.example".into() }, options, callback)
+        })
+        .unwrap();
         let (sink, events) = sync_sink();
         let old = owner.sync_connection(sink);
-        call(&owner, Request::State).unwrap();
+        call(&owner, Owner::state).unwrap();
         while events.try_recv().is_ok() {}
         let (blocked, wait) = mpsc::channel();
         let (release, gate) = mpsc::channel();
-        owner.submit(
-            Request::State,
-            None,
+        (Owner::state)(
+            &owner,
+            CallOptions { view: None, deadline: None },
             Box::new(move |_| {
                 blocked.send(()).unwrap();
                 gate.recv().unwrap();
@@ -978,7 +963,7 @@ fn sync_input_budget_recovers_and_old_connections_cannot_detach_the_replacement(
         replacement.confirmed_version(move |receipt| sent.send(receipt).unwrap());
         let receipt = confirmed.recv_timeout(Duration::from_secs(5)).unwrap().unwrap();
         assert_eq!(receipt.version, current["version"]);
-        call(&owner, Request::Flush).unwrap();
+        call(&owner, Owner::flush).unwrap();
         assert_eq!(
             Store::open(&path, Mode::Snapshot).unwrap().document().unwrap().version(),
             receipt.version,
@@ -1047,13 +1032,13 @@ fn owners_of_a_shared_document_sync_through_their_hooks() {
     };
     assert!(matches!(paused, Status::Paused { .. }), "{paused:?}");
     let share = Share { endpoint: "wss://relay.example".into() };
-    call(&a, Request::Share { share: share.clone() }).unwrap();
+    call(&a, |owner: &Owner, options, callback| owner.set_share(share.clone(), options, callback)).unwrap();
     assert_eq!(a.share().unwrap(), Some(share.clone()));
-    let refused = call(&a, Request::Discard).unwrap_err();
+    let refused = call(&a, Owner::discard).unwrap_err();
     assert_eq!(refused.reason, Some(pop_contracts::wire::Code::InvalidRequest), "{refused:?}");
     // The seed every replica starts from: a backup, which keeps the identity and share.
     let seed = dir.path().join("seed.pop");
-    call(&a, Request::Backup { destination: seed.clone() }).unwrap();
+    call(&a, |owner: &Owner, options, callback| owner.backup(seed.clone(), options, callback)).unwrap();
     let (b, _b_events) = open(&seed, Mode::Document);
     assert_eq!(b.share().unwrap(), Some(share));
 
@@ -1084,7 +1069,7 @@ fn owners_of_a_shared_document_sync_through_their_hooks() {
     call(&b, set("From B")).unwrap();
     pump(&mut relay, owners, &mut joined, &mut status, |s| synced(s) && title(&a) == "From B");
     // What arrived is saved like an edit.
-    call(&a, Request::Close { preview: None, icon: None }).unwrap();
+    call(&a, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap();
     let (reopened, _) = open(&path, Mode::Document);
     assert_eq!(title(&reopened), "From B");
 }
@@ -1097,17 +1082,20 @@ fn discard_does_not_relabel_an_applied_attachment_as_not_applied() {
     let (owner, _) = open(&path, Mode::Document);
     let lock = rusqlite::Connection::open(&path).unwrap();
     lock.execute_batch("BEGIN IMMEDIATE").unwrap();
-    let attachment = submit(&owner, Request::PutAttachment { bytes: b"kept immutable blob".to_vec() }, None);
-    let discarded = submit(&owner, Request::Discard, None);
+    let attachment = submit(
+        &owner,
+        |owner: &Owner, options, callback| owner.put_attachment(b"kept immutable blob".to_vec(), options, callback),
+        None,
+    );
+    let discarded = submit(&owner, Owner::discard, None);
     // The actor has admitted both requests; storage still cannot commit.
-    call(&owner, Request::State).unwrap();
+    call(&owner, Owner::state).unwrap();
     lock.execute_batch("ROLLBACK").unwrap();
     let reply = attachment.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
-    let Reply::Attachment { item } = reply else { panic!("the applied attachment must return its identity") };
+    let item = reply;
     discarded.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
-    let Reply::Bytes { bytes: Some(bytes) } = call(&owner, Request::ReadAttachment { id: item.id }).unwrap() else {
-        panic!("the immutable attachment must remain readable");
-    };
+    let bytes =
+        call(&owner, |owner: &Owner, options, callback| owner.read_attachment(item.id, options, callback)).unwrap();
     assert_eq!(bytes, b"kept immutable blob");
     close(&owner);
 }
@@ -1120,15 +1108,17 @@ fn discard_waits_for_membership_outcome_without_retracting_shared_edits() {
     lock.execute_batch("BEGIN IMMEDIATE").unwrap();
     let sharing = submit(
         &owner,
-        Request::Share { share: pop_storage::store::Share { endpoint: "https://relay.example".into() } },
+        |owner: &Owner, options, callback| {
+            owner.set_share(pop_storage::store::Share { endpoint: "https://relay.example".into() }, options, callback)
+        },
         None,
     );
-    let discarded = submit(&owner, Request::Discard, None);
-    call(&owner, Request::State).unwrap();
+    let discarded = submit(&owner, Owner::discard, None);
+    call(&owner, Owner::state).unwrap();
     lock.execute_batch("ROLLBACK").unwrap();
     sharing.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
     assert_eq!(discarded.recv_timeout(Duration::from_secs(30)).unwrap().unwrap_err().kind, FailureKind::Busy);
-    let refusal = call(&owner, Request::Discard).unwrap_err();
+    let refusal = call(&owner, Owner::discard).unwrap_err();
     assert_eq!(refusal.reason, Some(pop_contracts::wire::Code::InvalidRequest));
     close(&owner);
 }
@@ -1144,8 +1134,10 @@ fn an_outgrown_shared_document_keeps_editing_and_saving_without_pushing() {
     use pop_runtime::owner::SyncEvent;
     let (_dir, path) = fixture();
     let (owner, _) = open(&path, Mode::Document);
-    call(&owner, Request::Share { share: pop_storage::store::Share { endpoint: "https://relay.example".into() } })
-        .unwrap();
+    call(&owner, |owner: &Owner, options, callback| {
+        owner.set_share(pop_storage::store::Share { endpoint: "https://relay.example".into() }, options, callback)
+    })
+    .unwrap();
     let (sink, events) = sync_sink();
     let connection = owner.sync_connection(sink);
     let version = loop {
@@ -1167,7 +1159,7 @@ fn an_outgrown_shared_document_keeps_editing_and_saving_without_pushing() {
         }
     }
     call(&owner, set("Kept locally")).unwrap();
-    call(&owner, Request::Flush).unwrap();
+    call(&owner, Owner::flush).unwrap();
     while let Ok(event) = events.try_recv() {
         assert!(!matches!(event, SyncEvent::Send { .. }), "an outgrown document pushes nothing: {event:?}");
     }
@@ -1212,8 +1204,10 @@ fn durable_sync_confirmation_requires_ack_and_save_in_either_order() {
     for save_first in [false, true] {
         let (_dir, path) = fixture();
         let (owner, _) = open(&path, Mode::Document);
-        call(&owner, Request::Share { share: pop_storage::store::Share { endpoint: "https://relay.example".into() } })
-            .unwrap();
+        call(&owner, |owner: &Owner, options, callback| {
+            owner.set_share(pop_storage::store::Share { endpoint: "https://relay.example".into() }, options, callback)
+        })
+        .unwrap();
         let (send, events) = mpsc::channel();
         let connection = owner.sync_connection(Arc::new(move |event| {
             let _ = send.send(event);
@@ -1231,7 +1225,7 @@ fn durable_sync_confirmation_requires_ack_and_save_in_either_order() {
         let expected = state(&owner)["version"].as_str().unwrap().to_owned();
         let Frame::Push { id, .. } = frame(&events) else { panic!("expected Push") };
         if save_first {
-            call(&owner, Request::Flush).unwrap();
+            call(&owner, Owner::flush).unwrap();
             assert!(confirmed(&connection).is_none(), "a save without relay acknowledgement is insufficient");
         }
         connection.frame(Frame::Ack { id, status: Ack::Stored }.encode());
@@ -1247,8 +1241,8 @@ fn durable_sync_confirmation_requires_ack_and_save_in_either_order() {
         assert_eq!(snapshot.document().unwrap().version(), expected);
         snapshot.close().unwrap();
         // A clean flush must not repeat the durable-version notification.
-        call(&owner, Request::Flush).unwrap();
-        call(&owner, Request::State).unwrap();
+        call(&owner, Owner::flush).unwrap();
+        call(&owner, Owner::state).unwrap();
         assert!(!events.try_iter().any(|event| matches!(event, SyncEvent::Status { status: Status::Synced })));
         connection.detach();
         assert!(confirmed(&connection).is_none(), "a detached connection cannot confirm");
@@ -1274,9 +1268,12 @@ fn welcome_push_ack_does_not_confirm_withheld_backfill() {
 
     let (dir, path) = fixture();
     let (a, _) = open(&path, Mode::Document);
-    call(&a, Request::Share { share: pop_storage::store::Share { endpoint: "https://relay.example".into() } }).unwrap();
+    call(&a, |owner: &Owner, options, callback| {
+        owner.set_share(pop_storage::store::Share { endpoint: "https://relay.example".into() }, options, callback)
+    })
+    .unwrap();
     let seed = dir.path().join("offline.pop");
-    call(&a, Request::Backup { destination: seed.clone() }).unwrap();
+    call(&a, |owner: &Owner, options, callback| owner.backup(seed.clone(), options, callback)).unwrap();
     let (a_sink, a_events) = sync_sink();
     let a_connection = a.sync_connection(a_sink);
     let hello = frame(&a_events);
@@ -1312,7 +1309,7 @@ fn welcome_push_ack_does_not_confirm_withheld_backfill() {
     for reply in relay.reply(&own.encode()).0 {
         b_connection.frame(reply.encode());
     }
-    call(&b, Request::Flush).unwrap();
+    call(&b, Owner::flush).unwrap();
     assert_eq!(state(&b)["theme"]["accent"], "#335577");
     let (send, confirmation) = mpsc::channel();
     b_connection.durable_confirmed_version(move |version| {
@@ -1326,7 +1323,7 @@ fn welcome_push_ack_does_not_confirm_withheld_backfill() {
         b_connection.frame(reply.encode());
     }
     assert!(received_records);
-    call(&b, Request::Flush).unwrap();
+    call(&b, Owner::flush).unwrap();
     assert_eq!(state(&b)["value"]["title"], "Own offline title");
     assert_eq!(state(&b)["theme"]["accent"], "#123456");
     let (send, confirmation) = mpsc::channel();

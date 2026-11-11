@@ -7,7 +7,7 @@ use pop_contracts::relay::PauseKind;
 use pop_contracts::relay::SyncPhase;
 use pop_contracts::relay::envelope;
 use pop_contracts::relay::frame::{Frame, MAX_FRAME};
-use pop_runtime::owner::{Owner, Reply, Request, SyncConnection, SyncEvent};
+use pop_runtime::owner::{CallOptions, Completion, Owner, SyncConnection, SyncEvent};
 use pop_sharing_protocol::failure;
 use pop_sharing_protocol::failure::Route;
 use sha2::{Digest, Sha256};
@@ -130,15 +130,18 @@ fn unconfirmed_owner() -> HttpFailure {
         reason: "The owner result could not be confirmed; sharing is paused".into(),
     })
 }
-pub(crate) fn owner_request(owner: &Owner, request: Request) -> TransportResult<Reply> {
+pub(crate) fn owner_request<T: Send + 'static>(
+    owner: &Owner,
+    request: impl FnOnce(&Owner, CallOptions, Completion<T>),
+    effect: OwnerEffect,
+) -> TransportResult<T> {
     if cancellation().is_cancelled() {
         return Err("Sharing stopped".into());
     }
-    let effect = owner_effect(&request);
     let (send, reply) = mpsc::channel();
-    owner.submit(
-        request,
-        None,
+    request(
+        owner,
+        CallOptions::default(),
         Box::new(move |result| {
             let _ = send.send(result);
         }),
@@ -303,15 +306,9 @@ impl From<pop_runtime::owner::Failure> for HttpFailure {
     }
 }
 #[derive(Clone, Copy)]
-enum OwnerEffect {
+pub(crate) enum OwnerEffect {
     Other,
     Attachment,
-}
-fn owner_effect(request: &Request) -> OwnerEffect {
-    match request {
-        Request::PutAttachment { .. } => OwnerEffect::Attachment,
-        _ => OwnerEffect::Other,
-    }
 }
 fn owner_failure(error: pop_runtime::owner::Failure, effect: OwnerEffect) -> HttpFailure {
     let kind = match error.reason {
@@ -746,8 +743,10 @@ mod tests {
     #[allow(clippy::result_large_err, reason = "tungstenite fixes the handshake callback error type")]
     fn local_connection(close: CloseCode) -> (bool, SyncPhase, Option<PauseKind>) {
         let (_dir, owner) = crate::client::tests::fixture();
-        request(&owner, Request::Share { share: Share { endpoint: pop_sharing_protocol::TRUSTED_ORIGIN.into() } })
-            .unwrap();
+        request(&owner, |owner: &Owner, options, callback| {
+            owner.set_share(Share { endpoint: pop_sharing_protocol::TRUSTED_ORIGIN.into() }, options, callback)
+        })
+        .unwrap();
         let store = Store::open(owner.path(), Mode::Snapshot).unwrap();
         let checkpoint = store.document().unwrap().checkpoint().unwrap();
         let vv = loro::LoroDoc::decode_import_blob_meta(&checkpoint, false).unwrap().partial_end_vv;
@@ -824,8 +823,13 @@ mod tests {
                         let deadline = Instant::now() + Duration::from_secs(5);
                         loop {
                             if matches!(
-                                request(&observing_owner, Request::ReadAttachment { id: remote_id.clone() }).unwrap(),
-                                Reply::Bytes { bytes: Some(_) }
+                                request(&observing_owner, |owner: &Owner, options, callback| owner.read_attachment(
+                                    remote_id.clone(),
+                                    options,
+                                    callback
+                                ))
+                                .unwrap(),
+                                bytes if !bytes.is_empty()
                             ) {
                                 break;
                             }
@@ -901,7 +905,7 @@ mod tests {
         );
         stop.store(true, Ordering::Relaxed);
         serving.join().unwrap();
-        request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+        request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap();
         let (phase, _, kind) = status.value.into_inner().unwrap();
         (result.unwrap_or_else(|e| panic!("{}", String::from(e))), phase, kind)
     }
@@ -962,7 +966,7 @@ mod tests {
         );
         // The relay saw one upgrade: a terminal answer does not loop back for another.
         serving.join().unwrap();
-        request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+        request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap();
         let (phase, _, kind) = status.value.into_inner().unwrap();
         (result, phase, kind)
     }

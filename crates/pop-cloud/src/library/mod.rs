@@ -16,7 +16,7 @@ pub use error::{Error, Issue};
 use error::{Result, failed};
 use index::IndexedDocument;
 use pop_contracts::hex;
-use pop_runtime::owner::{Failure, FailureKind, Owner, Request};
+use pop_runtime::owner::{Failure, FailureKind, Owner};
 use pop_sharing_protocol::document::{AccessState, DocumentMetadata, DocumentRole};
 use pop_storage::file;
 use pop_storage::store::{Mode, Store};

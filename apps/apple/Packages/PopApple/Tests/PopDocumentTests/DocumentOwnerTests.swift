@@ -31,7 +31,7 @@ import Testing
     defer { try? FileManager.default.removeItem(at: root) }
     let owner = try DocumentOwner(url: root)
     let server = try owner.startServer(
-      exporter: NativeExports { _, _, _, _ in throw OwnerFailure.rejected("No renderer") })
+      page: PageBarrier(settle: { _ = $0.complete(failure: .rejected("No page")) }, resume: {}))
     defer { server.stop() }
     // U+0001 is stored as one byte and written to JSON as six (`\u0001`): the reply outgrows
     // 48 MiB while the document stays far inside its 32 MiB.

@@ -1,5 +1,5 @@
 use crate::{client::*, transport};
-use pop_runtime::owner::{Owner, Reply, Request};
+use pop_runtime::owner::Owner;
 use pop_sharing_protocol::resources::{self as resource_types, Resource};
 
 pub(crate) fn inventory(items: Vec<pop_storage::store::Attachment>) -> Vec<Resource> {
@@ -9,9 +9,7 @@ pub(crate) fn inventory(items: Vec<pop_storage::store::Attachment>) -> Vec<Resou
         .collect()
 }
 fn local_blobs(owner: &Owner) -> std::result::Result<Vec<Resource>, transport::HttpFailure> {
-    let Reply::Attachments { items } = request(owner, Request::Attachments)? else {
-        return Err(fail("Missing attachment inventory").into());
-    };
+    let items = request(owner, Owner::attachments)?;
     Ok(inventory(items))
 }
 pub(crate) fn remote_blobs(key: &RoomKey) -> std::result::Result<Vec<Resource>, transport::HttpFailure> {
@@ -50,9 +48,8 @@ pub(crate) fn upload_blobs(
     uploaded: &mut Vec<Resource>,
 ) -> std::result::Result<(), transport::HttpFailure> {
     upload(key, &local_blobs(owner)?, uploaded, |id| {
-        let Reply::Bytes { bytes: Some(bytes) } = request(owner, Request::ReadAttachment { id: id.into() })? else {
-            return Err(fail("Missing attachment bytes").into());
-        };
+        let bytes =
+            request(owner, |owner: &Owner, options, callback| owner.read_attachment(id.into(), options, callback))?;
         Ok(bytes)
     })
 }
@@ -68,9 +65,11 @@ pub(crate) fn download_blobs(
         if accepted.id != item.hash || accepted.bytes != item.size || accepted.media_type != item.media_type {
             return Err(fail("Downloaded attachment failed verification").into());
         }
-        let Reply::Attachment { item: stored } = request(owner, Request::PutAttachment { bytes })? else {
-            return Err(fail("Attachment was not stored").into());
-        };
+        let stored = transport::owner_request(
+            owner,
+            |owner: &Owner, options, callback| owner.put_attachment(bytes, options, callback),
+            transport::OwnerEffect::Attachment,
+        )?;
         if stored.id != item.hash {
             return Err(fail("Attachment identity changed").into());
         }

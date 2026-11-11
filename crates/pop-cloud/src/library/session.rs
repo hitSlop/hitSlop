@@ -9,7 +9,7 @@ impl Library {
             let live = inner.live.get(id).and_then(Weak::upgrade);
             (self.row(&inner, id)?, retained.clone().or(live.clone()), retained.is_some() || live.is_none())
         };
-        let existing = existing.filter(|owner| !matches!(crate::local::request_typed(owner, Request::State), Err(error) if error.kind == FailureKind::Closed));
+        let existing = existing.filter(|owner| !matches!(crate::local::request_typed(owner, Owner::version), Err(error) if error.kind == FailureKind::Closed));
         let temporary = temporary || existing.is_none();
         let owner = match existing {
             Some(owner) => owner,
@@ -17,7 +17,9 @@ impl Library {
         };
         let result = work(&owner);
         if temporary {
-            match crate::local::request_typed(&owner, Request::Close { preview: None, icon: None }) {
+            match crate::local::request_typed(&owner, |owner: &Owner, options, callback| {
+                owner.close(None, None, options, callback)
+            }) {
                 Ok(_) => {
                     self.inner.lock().unwrap().retained.remove(id);
                 }
@@ -66,7 +68,7 @@ impl Library {
             client.pause();
         }
         if let Some(owner) = owner {
-            match crate::local::request_typed(&owner, Request::Flush) {
+            match crate::local::request_typed(&owner, Owner::flush) {
                 Ok(_) => {}
                 Err(error) if error.kind == FailureKind::Closed => {}
                 Err(error) => return Err(error.into()),
@@ -203,7 +205,7 @@ impl Library {
         }
         let mut failure = None;
         for owner in owners {
-            if let Err(error) = crate::local::request_typed(&owner, Request::Flush)
+            if let Err(error) = crate::local::request_typed(&owner, Owner::flush)
                 && error.kind != FailureKind::Closed
             {
                 failure.get_or_insert(error);

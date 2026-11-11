@@ -86,15 +86,14 @@ impl Operations {
         current.key = self.current_key();
         blocking(&self.cancel, self.identity.clone(), move || run(current)).await
     }
-    async fn request(&self, request: Request) -> TransportResult<Reply> {
+    async fn version(&self) -> TransportResult<pop_runtime::owner::Version> {
         if self.cancel.is_cancelled() {
             return Err(stopped());
         }
-        let effect = owner_effect(&request);
+        let effect = OwnerEffect::Other;
         let (send, reply) = oneshot::channel();
-        self.owner.submit(
-            request,
-            None,
+        self.owner.version(
+            CallOptions::default(),
             Box::new(move |result| {
                 let _ = send.send(result);
             }),
@@ -442,7 +441,7 @@ async fn connected_attempt(
     if operations.cancel.is_cancelled() {
         return Err(stopped());
     }
-    pump.effect(operations.request(Request::State)).await?;
+    pump.effect(operations.version()).await?;
     trace("owner_attached");
     let mut uploaded = pump
         .effect(operations.call(|operation| {
@@ -615,7 +614,7 @@ async fn connected_attempt(
                         })).await?;
                     }
                     if !admission.frame(frame.encode()) { return Ok(false); }
-                    pump.effect(operations.request(Request::State)).await?;
+                    pump.effect(operations.version()).await?;
                     if !waiting { status.set(core_status.0, core_status.1.clone()); }
                 }
                 Input::Socket(Some(Ok(Message::Close(_)))) | Input::Socket(Some(Err(_))) | Input::Socket(None) => return Ok(false),
@@ -734,7 +733,10 @@ mod tests {
             identity: "fixture-identity".into(),
             origin: format!("http://{}", listener.local_addr().unwrap()),
         };
-        request(&owner, Request::Share { share: Share { endpoint: key.origin.clone() } }).unwrap();
+        request(&owner, |owner: &Owner, options, callback| {
+            owner.set_share(Share { endpoint: key.origin.clone() }, options, callback)
+        })
+        .unwrap();
         let journal = crate::client::tests::test_journal(&owner, &key, true);
         let route = format!("GET /v1/documents/{}/blobs ", key.room);
         let (observed, controls) = mpsc::channel();
@@ -798,7 +800,7 @@ mod tests {
         if early.is_err() {
             let _ = completed.recv_timeout(Duration::from_secs(5));
         }
-        request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+        request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap();
         assert!(pong, "server Ping must receive Pong while inventory HTTP is still held");
         assert!(
             early.is_ok_and(|result| matches!(result, Ok(false))),

@@ -1,6 +1,6 @@
 //! Accepted local document inspection, owner calls and exclusive installation.
 use pop_contracts::hex;
-use pop_runtime::owner::{Owner, Reply, Request};
+use pop_runtime::owner::{CallOptions, Completion, Owner};
 use pop_storage::file;
 use pop_storage::store::{Mode, Store};
 use sha2::{Digest, Sha256};
@@ -15,17 +15,20 @@ pub struct Info {
     pub version: String,
     pub artwork_digest: String,
 }
-pub fn request(owner: &Owner, request: Request) -> Result<Reply> {
+pub fn request<T: Send + 'static>(
+    owner: &Owner,
+    request: impl FnOnce(&Owner, CallOptions, Completion<T>),
+) -> Result<T> {
     request_typed(owner, request).map_err(|e| e.to_string())
 }
-pub(crate) fn request_typed(
+pub(crate) fn request_typed<T: Send + 'static>(
     owner: &Owner,
-    request: Request,
-) -> std::result::Result<Reply, pop_runtime::owner::Failure> {
+    request: impl FnOnce(&Owner, CallOptions, Completion<T>),
+) -> std::result::Result<T, pop_runtime::owner::Failure> {
     let (send, receive) = mpsc::channel();
-    owner.submit(
-        request,
-        None,
+    request(
+        owner,
+        CallOptions::default(),
         Box::new(move |result| {
             let _ = send.send(result);
         }),
@@ -40,10 +43,10 @@ pub(crate) fn request_typed(
 }
 pub fn inspect(path: &Path) -> Result<Info> {
     let store = Store::open(path, Mode::Snapshot).map_err(|e| e.to_string())?;
-    let reading = store.document().map_err(|e| e.to_string())?.reading().map_err(|e| e.to_string())?;
+    let version = store.document().map_err(|e| e.to_string())?.version();
     Ok(Info {
         id: store.app().document_uuid.clone().ok_or("Not a document")?,
-        version: reading.version,
+        version,
         artwork_digest: artwork_digest(&store)?,
     })
 }

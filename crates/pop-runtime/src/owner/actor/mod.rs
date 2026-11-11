@@ -8,7 +8,7 @@ pub(super) mod persistence;
 mod saving;
 mod sync;
 use commands::{Evaluation, Invocation, Work as EvaluationWork};
-use persistence::{StorageAction, Work, persistence};
+use persistence::{Work, persistence};
 pub(super) use sync::Admission;
 use sync::{Link, SyncMessage};
 pub use sync::{SyncConnection, SyncEvent, SyncSink};
@@ -70,10 +70,10 @@ pub(super) fn spawn(
 
 pub(super) enum Message {
     Evaluated { invocation: Invocation, result: Result<Evaluation> },
-    Request { request: Request, view: Option<String>, deadline: Option<Duration>, callback: Completion },
+    Request { operation: Operation, view: Option<String>, deadline: Option<Duration> },
     Attach(String),
     Sync(SyncMessage),
-    PageAdmission { view: String, callback: Completion },
+    PageAdmission { view: String, callback: Completion<()> },
     Persisted(persistence::Persisted),
     Control(persistence::Control),
     Stop,
@@ -86,14 +86,15 @@ enum Lifecycle {
     Releasing,
     Closed,
 }
+type SavedWork = Box<dyn FnOnce(&mut Actor, Completion<()>) + Send>;
 enum AfterSave {
-    Reply(Reply),
-    Storage(StorageAction),
+    Reply,
+    Storage(SavedWork),
     Close { preview: Option<Vec<u8>>, icon: Option<Vec<u8>> },
 }
 struct Waiter {
     target: u64,
-    callback: Completion,
+    callback: Completion<()>,
     next: AfterSave,
 }
 struct Actor {
@@ -108,7 +109,7 @@ struct Actor {
     app: Arc<file::OpenedApp>,
     digest: pop_contracts::AppDigest,
     save_state: store::SaveState,
-    finished: Option<(Completion, Result<Reply>)>,
+    finished: Option<(Completion<()>, Result<()>)>,
     mode: store::Mode,
     /// Fences session-bound work when Discard reloads saved state. Committed storage
     /// operations retain their actual outcomes across that boundary.
@@ -209,10 +210,8 @@ impl Actor {
             Message::Evaluated { invocation, result } => self.command_finished(invocation, result),
             Message::Attach(view) => self.view = Some(view),
             Message::Sync(message) => self.sync(message),
-            Message::PageAdmission { view, callback } => {
-                complete(callback, self.admit(false, Some(&view)).map(|()| Reply::Unit))
-            }
-            Message::Request { request, view, deadline, callback } => self.dispatch(request, view, deadline, callback),
+            Message::PageAdmission { view, callback } => complete(callback, self.admit(false, Some(&view))),
+            Message::Request { operation, view, deadline } => self.dispatch(operation, view, deadline),
             Message::Persisted(persistence::Persisted { generation, state, outcome }) => {
                 self.save_state = state;
                 match outcome {
@@ -260,7 +259,7 @@ impl Actor {
                                 self.refresh_undo();
                                 self.emit(Event::ThemeChanged);
                                 self.reconnect_after_reload();
-                                complete(callback, Ok(Reply::Unit));
+                                complete(callback, Ok(()));
                             }
                             Err(error) => {
                                 self.fail(error.clone(), u64::MAX);
@@ -314,7 +313,7 @@ impl Actor {
         self.reject_waiters(closed());
         self.fail_held(closed());
     }
-    fn run(mut self, messages: mpsc::Receiver<Message>, started: Instant) -> Option<(Completion, Result<Reply>)> {
+    fn run(mut self, messages: mpsc::Receiver<Message>, started: Instant) -> Option<(Completion<()>, Result<()>)> {
         self.start();
         loop {
             self.clock(started.elapsed(), native_unix_ms());
@@ -341,22 +340,42 @@ impl Actor {
         self.shutdown();
         self.finished.take()
     }
-    /// Admits one request, answering its callback unless the request handed it on. A
-    /// panic poisons the owner, as any engine panic does.
-    fn dispatch(&mut self, request: Request, view: Option<String>, deadline: Option<Duration>, callback: Completion) {
-        if deadline.is_some_and(|deadline| deadline <= self.now) {
-            complete(callback, Err(Failure::new(FailureKind::Closing, "Request expired before admission")));
+    fn dispatch(&mut self, operation: Operation, view: Option<String>, deadline: Option<Duration>) {
+        let policy = operation.properties();
+        let admission = if deadline.is_some_and(|deadline| deadline <= self.now) {
+            Err(Failure::new(FailureKind::Closing, "Request expired before admission"))
+        } else {
+            self.admit(policy.recover, view.as_deref()).and_then(|()| {
+                if policy.edits && self.barrier.closing() {
+                    Err(Failure::new(FailureKind::Closing, "Document is closing"))
+                } else {
+                    Ok(())
+                }
+            })
+        };
+        if let Err(error) = admission {
+            operation.reject(error);
             return;
         }
+        if self.barrier.precedes(&operation) || (self.evaluating && policy.fence) {
+            self.hold(operation, view, deadline);
+            return;
+        }
+        self.request(operation, view, deadline);
+    }
+    fn answer<T>(
+        &mut self,
+        callback: Completion<T>,
+        work: impl FnOnce(&mut Self, &mut Option<Completion<T>>) -> Result<Option<T>>,
+    ) {
         let mut callback = Some(callback);
-        let result = catch_unwind(AssertUnwindSafe(|| self.request(request, view, deadline, &mut callback)))
-            .unwrap_or_else(|_| {
-                self.invalidated = true;
-                self.fail(poisoned(), u64::MAX);
-                Err(poisoned())
-            });
+        let result = catch_unwind(AssertUnwindSafe(|| work(self, &mut callback))).unwrap_or_else(|_| {
+            self.invalidated = true;
+            self.fail(poisoned(), u64::MAX);
+            Err(poisoned())
+        });
         if let Some(callback) = callback {
-            complete(callback, result.map(|value| value.unwrap_or(Reply::Unit)));
+            complete(callback, result.map(|value| value.expect("immediate operation has a result")));
         }
     }
     fn admit(&self, recover: bool, view: Option<&str>) -> Result<()> {
@@ -394,7 +413,12 @@ impl Actor {
         }
         Ok(())
     }
-    fn retain_derived(&self, bytes: usize, control: bool, callback: &mut Option<Completion>) -> Result<()> {
+    fn retain_derived<T: Send + 'static>(
+        &self,
+        bytes: usize,
+        control: bool,
+        callback: &mut Option<Completion<T>>,
+    ) -> Result<()> {
         let lease = self.admission.reserve_bytes(bytes, control).ok_or_else(busy)?;
         let original = take(callback);
         *callback = Some(Box::new(move |result| {
@@ -403,106 +427,127 @@ impl Actor {
         }));
         Ok(())
     }
-    fn request(
-        &mut self,
-        request: Request,
-        view: Option<String>,
-        deadline: Option<Duration>,
-        callback: &mut Option<Completion>,
-    ) -> Result<Option<Reply>> {
-        self.admit(matches!(request, Request::Discard), view.as_deref())?;
-        if barrier::edits(&request) && self.barrier.closing() {
-            return Err(Failure::new(FailureKind::Closing, "Document is closing"));
-        }
-        if self.barrier.precedes(&request) || (self.evaluating && barrier::fence(&request)) {
-            self.hold(request, view, deadline, callback)?;
-            return Ok(None);
-        }
-        let reply = match request {
-            Request::Command { name, args_json, origin } => {
-                self.begin_command(name, args_json, origin, view, deadline, callback)?;
-                return Ok(None);
+    fn request(&mut self, operation: Operation, view: Option<String>, deadline: Option<Duration>) {
+        match operation {
+            Operation::Command { name, args_json, origin, callback } => {
+                self.answer(callback, move |actor, callback| {
+                    actor.begin_command(name, args_json, origin, view, deadline, callback)?;
+                    Ok(None)
+                })
             }
-            Request::State => Reply::State { reading: self.core.reading()?, sequence: self.core.sequence() },
-            Request::Apply { batch, origin } => {
-                self.mutation()?;
-                let result = self.edited(|core| core.apply_batch(batch, origin))?;
-                self.accepted(result.sequence, result.publication, result.theme_changed);
-                Reply::Applied { sequence: result.sequence, ids: result.ids, text: result.text }
+            Operation::State { callback } => self.answer(callback, move |actor, _| {
+                Ok(Some(Reading { reading: actor.core.reading()?, sequence: actor.core.sequence() }))
+            }),
+            Operation::Apply { batch, origin, callback } => self.answer(callback, move |actor, _| {
+                actor.mutation()?;
+                let result = actor.edited(|core| core.apply_batch(batch, origin))?;
+                actor.accepted(result.sequence, result.publication, result.theme_changed);
+                Ok(Some(Applied { sequence: result.sequence, ids: result.ids, text: result.text }))
+            }),
+            Operation::Undo { callback } => self.answer(callback, move |actor, _| {
+                actor.mutation()?;
+                let result = actor.edited(|core| core.undo())?;
+                actor.accepted(result.sequence, result.publication, result.theme_changed);
+                Ok(Some(Applied { sequence: result.sequence, ids: result.ids, text: None }))
+            }),
+            Operation::Redo { callback } => self.answer(callback, move |actor, _| {
+                actor.mutation()?;
+                let result = actor.edited(|core| core.redo())?;
+                actor.accepted(result.sequence, result.publication, result.theme_changed);
+                Ok(Some(Applied { sequence: result.sequence, ids: result.ids, text: None }))
+            }),
+            Operation::Theme { callback } => self.answer(callback, move |actor, _| {
+                Ok(Some(Theme { state: actor.core.theme_state()?, sequence: actor.core.sequence() }))
+            }),
+            Operation::Flush { callback } => self.answer(callback, move |actor, callback| {
+                actor.wait(callback, AfterSave::Reply)?;
+                Ok(None)
+            }),
+            Operation::ExportTheme { callback } => self.answer(callback, move |actor, callback| {
+                let json = actor.core.export_theme()?;
+                actor.wait_reply(callback, json)?;
+                Ok(None)
+            }),
+            Operation::Copy { destination, preview, icon, callback } => {
+                self.answer(callback, move |actor, callback| {
+                    if actor.discarding {
+                        return Err(replaced());
+                    }
+                    let state = actor.core.current_history_checkpoint()?;
+                    actor.retain_derived(state.len(), false, callback)?;
+                    actor.storage(
+                        false,
+                        move |store| {
+                            store.copy_clean(&destination, &state, &persistence::named_artwork(&preview, &icon))?;
+                            Ok(())
+                        },
+                        take(callback),
+                    );
+                    Ok(None)
+                })
             }
-            Request::Undo { redo } => {
-                self.mutation()?;
-                let result = self.edited(|core| if redo { core.redo() } else { core.undo() })?;
-                self.accepted(result.sequence, result.publication, result.theme_changed);
-                Reply::Applied { sequence: result.sequence, ids: result.ids, text: None }
+            Operation::CaptureSource { destination, callback } => self.answer(callback, move |actor, callback| {
+                actor.wait_storage(callback, move |store| {
+                    store.capture_source(&destination)?;
+                    Ok(())
+                })?;
+                Ok(None)
+            }),
+            Operation::Backup { destination, callback } => self.answer(callback, move |actor, callback| {
+                actor.wait_storage(callback, move |store| {
+                    store.backup(&destination)?;
+                    Ok(())
+                })?;
+                Ok(None)
+            }),
+            Operation::StageSeed { destination, callback } => self.answer(callback, move |actor, callback| {
+                actor.mutation()?;
+                actor.wait_storage(callback, move |store| {
+                    store.stage_seed(&destination)?;
+                    Ok(())
+                })?;
+                Ok(None)
+            }),
+            Operation::SetArtwork { source_version, preview, icon, callback } => {
+                self.answer(callback, move |actor, callback| {
+                    actor.mutation()?;
+                    if actor.core.version() != source_version {
+                        return Err(Failure::new(FailureKind::Replaced, "Artwork source changed"));
+                    }
+                    actor.wait_storage(callback, move |store| {
+                        store.set_artwork(&persistence::named_artwork(&preview, &icon))?;
+                        Ok(())
+                    })?;
+                    Ok(None)
+                })
             }
-            Request::Theme => Reply::Theme { state: self.core.theme_state()?, sequence: self.core.sequence() },
-            Request::Flush => {
-                self.wait(callback, AfterSave::Reply(Reply::Unit))?;
-                return Ok(None);
-            }
-            Request::ExportTheme => {
-                let json = self.core.export_theme()?;
-                self.wait(callback, AfterSave::Reply(Reply::ThemeFile { json }))?;
-                return Ok(None);
-            }
-            Request::Copy { destination, preview, icon } => {
-                if self.discarding {
-                    return Err(replaced());
-                }
-                let state = self.core.current_history_checkpoint()?;
-                self.retain_derived(state.capacity(), false, callback)?;
-                self.storage(StorageAction::Copy { path: destination, state, preview, icon }, take(callback));
-                return Ok(None);
-            }
-            Request::CaptureSource { destination } => {
-                self.wait(callback, AfterSave::Storage(StorageAction::CaptureSource(destination)))?;
-                return Ok(None);
-            }
-            Request::Backup { destination } => {
-                self.wait(callback, AfterSave::Storage(StorageAction::Backup(destination)))?;
-                return Ok(None);
-            }
-            Request::StageSeed { destination } => {
-                self.mutation()?;
-                self.wait(callback, AfterSave::Storage(StorageAction::StageSeed(destination)))?;
-                return Ok(None);
-            }
-            Request::SetArtwork { source_version, preview, icon } => {
-                self.mutation()?;
-                if self.core.reading()?.version != source_version {
-                    return Err(Failure::new(FailureKind::Replaced, "Artwork source changed"));
-                }
-                self.wait(callback, AfterSave::Storage(StorageAction::SetArtwork { preview, icon }))?;
-                return Ok(None);
-            }
-            Request::Close { preview, icon } => {
-                if self.lifecycle != Lifecycle::Open {
+            Operation::Close { preview, icon, callback } => self.answer(callback, move |actor, callback| {
+                if actor.lifecycle != Lifecycle::Open {
                     return Err(Failure::new(FailureKind::Closing, "Document is closing"));
                 }
-                if self.discarding {
+                if actor.discarding {
                     return Err(replaced());
                 }
-                self.lifecycle = Lifecycle::Closing;
-                self.deadline = None;
-                let (preview, icon) = if self.mode == store::Mode::Document { (preview, icon) } else { (None, None) };
-                self.wait(callback, AfterSave::Close { preview, icon })?;
-                return Ok(None);
-            }
-            Request::Handoff { dest, preview, icon } => {
-                self.mutation()?;
-                let reading = self.core.reading()?;
-                let state = self.core.current_history_checkpoint()?;
+                actor.lifecycle = Lifecycle::Closing;
+                actor.deadline = None;
+                let (preview, icon) = if actor.mode == store::Mode::Document { (preview, icon) } else { (None, None) };
+                actor.wait(callback, AfterSave::Close { preview, icon })?;
+                Ok(None)
+            }),
+            Operation::Handoff { dest, preview, icon, callback } => self.answer(callback, move |actor, callback| {
+                actor.mutation()?;
+                let reading = actor.core.reading()?;
+                let state = actor.core.current_history_checkpoint()?;
                 let bytes = state
-                    .capacity()
-                    .saturating_add(super::admission::value_capacity(&reading.value))
-                    .saturating_add(super::admission::serialized_size(&reading.theme).saturating_mul(2));
-                self.retain_derived(bytes, true, callback)?;
-                self.lifecycle = Lifecycle::Releasing;
-                self.deadline = None;
-                self.requested = false;
-                self.persist(Work::Handoff {
-                    generation: self.generation,
+                    .len()
+                    .saturating_add(serialized_size(&reading.value))
+                    .saturating_add(serialized_size(&reading.theme));
+                actor.retain_derived(bytes, true, callback)?;
+                actor.lifecycle = Lifecycle::Releasing;
+                actor.deadline = None;
+                actor.requested = false;
+                actor.persist(Work::Handoff {
+                    generation: actor.generation,
                     dest,
                     state,
                     preview,
@@ -511,60 +556,76 @@ impl Actor {
                     theme: reading.theme,
                     callback: take(callback),
                 });
-                return Ok(None);
-            }
-            Request::Discard => {
-                if self.discarding || self.lifecycle != Lifecycle::Open {
+                Ok(None)
+            }),
+            Operation::Discard { callback } => self.answer(callback, move |actor, callback| {
+                if actor.discarding || actor.lifecycle != Lifecycle::Open {
                     return Err(replaced());
                 }
-                if self.pending_membership != 0 {
+                if actor.pending_membership != 0 {
                     return Err(busy());
                 }
                 // Recovery reloads durable state after a fault; it never retracts edits
                 // already replicated. Ordinary shared documents still cannot discard.
-                if self.save_state.is_shared() && !self.invalidated {
+                if actor.save_state.is_shared() && !actor.invalidated {
                     return Err(Failure::rejected(
                         Code::InvalidRequest,
                         "A shared document keeps its edits: other copies may already have them",
                     ));
                 }
-                self.generation += 1;
-                self.discarding = true;
-                self.clear_sync_for_restore();
-                self.deadline = None;
-                self.reject_waiters(replaced());
-                self.persist(Work::Restore { generation: self.generation, callback: take(callback) });
-                return Ok(None);
-            }
-            Request::Artwork { name } => {
-                self.storage(StorageAction::Artwork(name), take(callback));
-                return Ok(None);
-            }
-            Request::Attachments => {
-                self.storage(StorageAction::Attachments, take(callback));
-                return Ok(None);
-            }
-            Request::ReadAttachment { id } => {
-                self.storage(StorageAction::ReadAttachment(id), take(callback));
-                return Ok(None);
-            }
-            Request::PutAttachment { bytes } => {
-                self.mutation()?;
-                self.storage(StorageAction::PutAttachment(bytes), take(callback));
-                return Ok(None);
-            }
-            Request::Share { share } => {
-                self.mutation()?;
-                self.storage(StorageAction::Share(share), take(callback));
-                return Ok(None);
-            }
-            Request::Unshare => {
-                self.mutation()?;
-                self.storage(StorageAction::Unshare, take(callback));
-                return Ok(None);
-            }
-        };
-        Ok(Some(reply))
+                actor.generation += 1;
+                actor.discarding = true;
+                actor.clear_sync_for_restore();
+                actor.deadline = None;
+                actor.reject_waiters(replaced());
+                actor.persist(Work::Restore { generation: actor.generation, callback: take(callback) });
+                Ok(None)
+            }),
+            Operation::Artwork { name, callback } => self.answer(callback, move |actor, callback| {
+                actor.storage(false, move |store| Ok(store.artwork(name)?), take(callback));
+                Ok(None)
+            }),
+            Operation::Attachments { callback } => self.answer(callback, move |actor, callback| {
+                actor.storage(false, move |store| Ok(store.attachments()?), take(callback));
+                Ok(None)
+            }),
+            Operation::ReadAttachment { id, callback } => self.answer(callback, move |actor, callback| {
+                actor.storage(false, move |store| Ok(store.attachment(&id)?), take(callback));
+                Ok(None)
+            }),
+            Operation::PutAttachment { bytes, callback } => self.answer(callback, move |actor, callback| {
+                actor.mutation()?;
+                actor.storage(false, move |store| Ok(store.put_attachment(&bytes)?), take(callback));
+                Ok(None)
+            }),
+            Operation::Share { share, callback } => self.answer(callback, move |actor, callback| {
+                actor.mutation()?;
+                actor.storage(
+                    true,
+                    move |store| {
+                        store.set_share(&share)?;
+                        Ok(())
+                    },
+                    take(callback),
+                );
+                Ok(None)
+            }),
+            Operation::Unshare { callback } => self.answer(callback, move |actor, callback| {
+                actor.mutation()?;
+                actor.storage(
+                    true,
+                    move |store| {
+                        store.clear_share()?;
+                        Ok(())
+                    },
+                    take(callback),
+                );
+                Ok(None)
+            }),
+            Operation::Version { callback } => self.answer(callback, |actor, _| {
+                Ok(Some(Version { version: actor.core.version(), sequence: actor.core.sequence() }))
+            }),
+        }
     }
 }
 

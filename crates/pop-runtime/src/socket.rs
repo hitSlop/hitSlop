@@ -2,7 +2,7 @@
 //! authority; the listener owns only its socket and the owner's discovery publication.
 // Native failures carry classified text across the owner/FFI boundary, not Rust error sources.
 use crate::command;
-use crate::command::{ExportHandler, Result};
+use crate::command::{PageBarrier, Result};
 use crate::owner::{Failure, FailureKind, Owner};
 use pop_contracts::wire::Code;
 use std::fs;
@@ -140,7 +140,7 @@ fn exchange(path: &Path, input: &str, reply_limit: Option<usize>) -> Result<Stri
 const CLIENTS: usize = 16;
 struct Shared {
     owner: Arc<Owner>,
-    exporter: Arc<dyn ExportHandler>,
+    page: Option<Arc<dyn PageBarrier>>,
     stopped: AtomicBool,
     /// Clients being served, each holding an `Admitted` place.
     clients: AtomicUsize,
@@ -165,7 +165,7 @@ pub struct Server {
 }
 impl Server {
     /// Starts the listener and publishes discovery only once it can answer.
-    pub fn start(owner: Arc<Owner>, exporter: Arc<dyn ExportHandler>) -> Result<Self> {
+    pub fn start(owner: Arc<Owner>, page: Option<Arc<dyn PageBarrier>>) -> Result<Self> {
         // SAFETY: getuid has no preconditions.
         let uid = unsafe { libc::getuid() };
         let folder = PathBuf::from(format!("/tmp/pop-{uid}"));
@@ -186,8 +186,7 @@ impl Server {
             let _ = fs::remove_file(&path);
             return Err(error);
         }
-        let shared =
-            Arc::new(Shared { owner, exporter, stopped: AtomicBool::new(false), clients: AtomicUsize::new(0) });
+        let shared = Arc::new(Shared { owner, page, stopped: AtomicBool::new(false), clients: AtomicUsize::new(0) });
         let worker = shared.clone();
         let server = Self { path, shared };
         std::thread::Builder::new()
@@ -256,8 +255,9 @@ fn accept(shared: &Arc<Shared>, mut stream: UnixStream) {
             let response = if worker.stopped.load(Ordering::Acquire) {
                 command::failure(Failure::new(FailureKind::Closing, "Socket server is closing"), false, false)
             } else {
-                command::preflight(&input)
-                    .unwrap_or_else(|| command::serve(&worker.owner, &input, Some(&worker.exporter), deadline))
+                command::preflight(&input).unwrap_or_else(|| {
+                    command::encode_reply(command::serve(&worker.owner, &input, worker.page.as_deref(), deadline))
+                })
             };
             let _ = write_line(&mut stream, &response, deadline);
         }

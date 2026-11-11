@@ -41,13 +41,8 @@ impl Actor {
             shared: self.save_state.is_shared(),
         });
     }
-    pub(super) fn wait(&mut self, callback: &mut Option<Completion>, next: AfterSave) -> Result<()> {
-        if self.discarding {
-            return Err(replaced());
-        }
-        if self.lifecycle == Lifecycle::Releasing {
-            return Err(Failure::new(FailureKind::Closing, "Document is closing"));
-        }
+    pub(super) fn wait(&mut self, callback: &mut Option<Completion<()>>, next: AfterSave) -> Result<()> {
+        self.can_wait()?;
         self.waiters.push(Waiter { target: self.revision, callback: take(callback), next });
         self.pump();
         Ok(())
@@ -94,8 +89,8 @@ impl Actor {
                 continue;
             }
             match waiter.next {
-                AfterSave::Reply(reply) => complete(waiter.callback, Ok(reply)),
-                AfterSave::Storage(action) => self.storage(action, waiter.callback),
+                AfterSave::Reply => complete(waiter.callback, Ok(())),
+                AfterSave::Storage(work) => work(self, waiter.callback),
                 AfterSave::Close { preview, icon } => {
                     let job = if self.mode == store::Mode::Document {
                         catch_unwind(AssertUnwindSafe(|| {
@@ -118,9 +113,43 @@ impl Actor {
             }
         }
     }
-    pub(super) fn storage(&mut self, action: StorageAction, callback: Completion) {
-        self.pending_membership += usize::from(matches!(action, StorageAction::Share(_) | StorageAction::Unshare));
-        self.persist(Work::Store { generation: self.generation, action, callback });
+    pub(super) fn wait_reply<T: Send + 'static>(
+        &mut self,
+        callback: &mut Option<Completion<T>>,
+        value: T,
+    ) -> Result<()> {
+        self.can_wait()?;
+        let callback = take(callback);
+        let mut unit: Option<Completion<()>> = Some(Box::new(move |result| complete(callback, result.map(|()| value))));
+        self.wait(&mut unit, AfterSave::Reply)
+    }
+    fn can_wait(&self) -> Result<()> {
+        if self.discarding {
+            return Err(replaced());
+        }
+        if self.lifecycle == Lifecycle::Releasing {
+            return Err(Failure::new(FailureKind::Closing, "Document is closing"));
+        }
+        Ok(())
+    }
+    pub(super) fn wait_storage(
+        &mut self,
+        callback: &mut Option<Completion<()>>,
+        work: impl FnOnce(&store::Store) -> Result<()> + Send + 'static,
+    ) -> Result<()> {
+        self.can_wait()?;
+        self.wait(callback, AfterSave::Storage(Box::new(move |actor, callback| actor.storage(false, work, callback))))
+    }
+
+    pub(super) fn storage<T: Send + 'static>(
+        &mut self,
+        refresh_status: bool,
+        work: impl FnOnce(&store::Store) -> Result<T> + Send + 'static,
+        callback: Completion<T>,
+    ) {
+        self.pending_membership += usize::from(refresh_status);
+        let job = persistence::StorageJob::new(refresh_status, work, callback);
+        self.persist(Work::Store { generation: self.generation, job });
     }
     pub(super) fn persist(&mut self, work: Work) {
         if let Err(mpsc::SendError(work)) = self.persist.send(work) {
@@ -130,14 +159,13 @@ impl Actor {
                 self.lifecycle = Lifecycle::Open;
             }
             self.fail(poisoned(), u64::MAX);
-            if matches!(&work, Work::Store { action: StorageAction::Share(_) | StorageAction::Unshare, .. }) {
+            if matches!(&work, Work::Store { job, .. } if job.refresh_status) {
                 self.pending_membership -= 1;
             }
             match work {
-                Work::Store { callback, .. } | Work::Restore { callback, .. } | Work::Close { callback, .. } => {
-                    complete(callback, Err(poisoned()))
-                }
+                Work::Restore { callback, .. } | Work::Close { callback, .. } => complete(callback, Err(poisoned())),
                 Work::Handoff { callback, .. } => complete(callback, Err(poisoned())),
+                Work::Store { job, .. } => job.reject(poisoned()),
                 Work::Save { .. } | Work::Control(_) => {}
             }
         }

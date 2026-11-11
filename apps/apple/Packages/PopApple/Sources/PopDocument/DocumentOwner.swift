@@ -185,8 +185,8 @@ public final class DocumentOwner: Sendable {
     try await unit(.flush)
   }
   public func discardPending() async throws { try await unit(.discard) }
-  func startServer(exporter: any NativeExportHandler) throws -> NativeSocketServer {
-    try storeCall { try NativeSocketServer.start(owner: native, exporter: exporter) }
+  func startServer(page: any NativePageBarrier) throws -> NativeSocketServer {
+    try storeCall { try NativeSocketServer.start(owner: native, page: page) }
   }
   /// The accepted live state at `destination` as a document of its own, without saving
   /// the source history first: its current state

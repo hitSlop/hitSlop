@@ -2,7 +2,7 @@
 use crate::{attachments, cloud, journal, local, transport};
 use pop_contracts::hex;
 use pop_contracts::relay::SyncPhase;
-use pop_runtime::owner::{Owner, Reply, Request};
+use pop_runtime::owner::{CallOptions, Completion, Owner};
 use pop_sharing_protocol::http::{Invitation, RoomInfo};
 use pop_storage::store::{Mode, Share, Store};
 use sha2::{Digest, Sha256};
@@ -26,16 +26,19 @@ pub(crate) fn connection_notices(primary: &Notice, observer: &Notice) -> Notice 
 pub(crate) fn fail(error: impl std::fmt::Display) -> String {
     error.to_string()
 }
-pub(crate) fn request(owner: &Owner, request: Request) -> std::result::Result<Reply, transport::HttpFailure> {
-    transport::owner_request(owner, request)
-}
-pub(crate) fn retry_busy(
+pub(crate) fn request<T: Send + 'static>(
     owner: &Owner,
-    build: impl Fn() -> Request,
-) -> std::result::Result<Reply, transport::HttpFailure> {
+    request: impl FnOnce(&Owner, CallOptions, Completion<T>),
+) -> std::result::Result<T, transport::HttpFailure> {
+    transport::owner_request(owner, request, transport::OwnerEffect::Other)
+}
+pub(crate) fn retry_busy<T: Send + 'static>(
+    owner: &Owner,
+    build: impl Fn(&Owner, CallOptions, Completion<T>),
+) -> std::result::Result<T, transport::HttpFailure> {
     let deadline = Instant::now() + std::time::Duration::from_secs(2);
     loop {
-        match request(owner, build()) {
+        match request(owner, &build) {
             Err(transport::HttpFailure { kind: PauseKind::Busy, .. }) if Instant::now() < deadline => {
                 transport::pause(std::time::Duration::from_millis(25))?
             }
@@ -93,7 +96,9 @@ pub(crate) fn bind_owner(owner: &Owner, key: &RoomKey, document: &str) -> Result
         return Err("Different cloud document".into());
     }
     validate_membership(owner.share().map_err(fail)?, key)?;
-    retry_busy(owner, || Request::Share { share: Share { endpoint: key.origin.clone() } })?;
+    retry_busy(owner, |owner: &Owner, options, callback| {
+        owner.set_share(Share { endpoint: key.origin.clone() }, options, callback)
+    })?;
     Ok(())
 }
 /// The saved document as uploaded once, before the room goes live. Its history is the
@@ -124,7 +129,7 @@ pub(crate) fn stage(owner: &Owner) -> Result<Seed> {
     let path = directory.join("seed.pop");
     let snapshot = directory.join("snapshot.pop");
     let result = (|| {
-        retry_busy(owner, || Request::StageSeed { destination: snapshot.clone() })?;
+        retry_busy(owner, |owner: &Owner, options, callback| owner.stage_seed(snapshot.clone(), options, callback))?;
         let source = Store::open(&snapshot, Mode::Snapshot).map_err(fail)?;
         source.seed_without_attachments(&path).map_err(fail)?;
         source.close().map_err(fail)?;
@@ -225,7 +230,7 @@ impl Client {
         }
     }
     pub(crate) fn flush(&self) -> Result<()> {
-        retry_busy(&self.owner, || Request::Flush)?;
+        retry_busy(&self.owner, Owner::flush)?;
         Ok(())
     }
     /// Internal owner of catalog snapshots; independent from the document UI listener.
@@ -283,11 +288,13 @@ pub(crate) fn install_seed(
         // new replica through its owner before callers restore the new credential.
         let owner = Owner::open(&stage, Mode::Document, Arc::new(|_| {})).map_err(fail)?;
         let binding: Result<()> = (|| {
-            request(&owner, Request::Share { share: Share { endpoint: key.origin.clone() } })?;
+            request(&owner, |owner: &Owner, options, callback| {
+                owner.set_share(Share { endpoint: key.origin.clone() }, options, callback)
+            })?;
             attachments::download_blobs(&owner, key, &mut Vec::new())?;
             Ok(())
         })();
-        let closed = request(&owner, Request::Close { preview: None, icon: None });
+        let closed = request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback));
         binding?;
         closed?;
         current()?;

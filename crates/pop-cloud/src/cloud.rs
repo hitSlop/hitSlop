@@ -169,7 +169,7 @@ fn upload_seed(key: &RoomKey, seed: &Seed, token: &str, state_directory: &Path) 
 mod tests {
     use super::*;
     use pop_contracts::hex;
-    use pop_runtime::owner::{Reply, Request};
+
     use pop_sharing_protocol::http::RoomInfo;
     use sha2::{Digest, Sha256};
     use std::io::{Read, Write};
@@ -317,17 +317,15 @@ mod tests {
     }
     fn set_title(owner: &Owner, title: &str) {
         let batch = serde_json::json!({"intents":[{"type":"set","path":["title"],"value":title}]});
-        request(
-            owner,
-            Request::Apply { batch: serde_json::from_value(batch).unwrap(), origin: pop_core::Origin::Page },
-        )
+        request(owner, |owner: &Owner, options, callback| {
+            owner.apply(serde_json::from_value(batch).unwrap(), pop_core::Origin::Page, options, callback)
+        })
         .unwrap();
     }
     fn put_attachment(owner: &Owner, bytes: &[u8]) -> String {
-        let Reply::Attachment { item } = request(owner, Request::PutAttachment { bytes: bytes.to_vec() }).unwrap()
-        else {
-            panic!("attachment")
-        };
+        let item =
+            request(owner, |owner: &Owner, options, callback| owner.put_attachment(bytes.to_vec(), options, callback))
+                .unwrap();
         item.id
     }
     /// Stores attachments the document references, sorted by identity.
@@ -383,7 +381,7 @@ mod tests {
         assert_eq!(room.phase, Some(RoomPhase::Live));
         drop(room);
         assert_eq!(endpoint(&owner), Some(relay.origin.clone()));
-        request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+        request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap();
     }
 
     #[test]
@@ -404,7 +402,7 @@ mod tests {
         assert_eq!(stored(&room), ids, "the upload set is the staged snapshot's");
         assert_eq!(room.opened, [room.seed.clone().unwrap()]);
         drop(room);
-        request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+        request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap();
     }
 
     /// The checklist fixture with an incompressible app resource the seed cannot hold.
@@ -463,6 +461,6 @@ mod tests {
         let requests = relay.room().requests.clone();
         assert!(!requests.iter().any(|request| request.starts_with("PUT ")), "{requests:?}");
         assert_eq!(endpoint(&owner), Some(relay.origin.clone()));
-        request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+        request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap();
     }
 }

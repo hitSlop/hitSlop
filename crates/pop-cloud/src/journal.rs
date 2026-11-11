@@ -4,7 +4,7 @@ use crate::client::*;
 use crate::transport;
 use pop_contracts::hex;
 use pop_contracts::relay::PauseKind;
-use pop_runtime::owner::{Owner, Reply, Request};
+use pop_runtime::owner::Owner;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::{File, OpenOptions};
@@ -249,9 +249,7 @@ pub(crate) fn confirm(
     };
     // The owner checked both relay acknowledgement and its exact durable history.
     // A normal save completion wakes the connection if Synced arrived first.
-    let Reply::State { reading, .. } = request(owner, Request::State)? else {
-        return Err(local("Owner state unavailable"));
-    };
+    let reading = request(owner, Owner::version)?;
     if reading.version != confirmed.version {
         return Ok(false);
     }

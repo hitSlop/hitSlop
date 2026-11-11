@@ -1,7 +1,7 @@
 //! Local index/cache behavior, independent from authored apps and platform SDKs.
 use crate::support;
 use pop_cloud::{Library, LibraryUpdate, local};
-use pop_runtime::owner::{Owner, Request};
+use pop_runtime::owner::Owner;
 use pop_sharing_protocol::document::DocumentRole;
 use pop_sharing_protocol::library::AccountEntry;
 use pop_storage::store::Mode;
@@ -48,7 +48,7 @@ fn local_creation_and_indexing_preserve_identity_and_existing_file_location() {
     assert_eq!(indexed.path, created.path);
     assert!(indexed.local_only);
     assert!(local.connection(&identity).is_none());
-    local::request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+    local::request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap();
     assert_eq!(pop_cloud::local_document(Path::new(&created.path)).unwrap(), Some(identity));
 }
 #[test]
@@ -103,20 +103,19 @@ fn registering_an_owner_from_another_account_cannot_adopt_or_connect_it() {
     other.register(&owner).unwrap();
     assert!(other.entries().unwrap().is_empty());
     assert!(other.connection(owner.app().document_uuid.as_deref().unwrap()).is_none());
-    local::request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+    local::request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap();
 }
 
 fn edit(owner: &Owner, title: &str) {
-    local::request(
-        owner,
-        Request::Apply {
-            batch: serde_json::from_value(
-                serde_json::json!({"intents":[{"type":"set","path":["title"],"value":title}]}),
-            )
-            .unwrap(),
-            origin: pop_core::Origin::Page,
-        },
-    )
+    local::request(owner, |owner: &Owner, options, callback| {
+        owner.apply(
+            serde_json::from_value(serde_json::json!({"intents":[{"type":"set","path":["title"],"value":title}]}))
+                .unwrap(),
+            pop_core::Origin::Page,
+            options,
+            callback,
+        )
+    })
     .unwrap();
 }
 #[test]
@@ -130,8 +129,9 @@ fn reading_entries_does_not_index_a_new_recovery_file() {
     let recovered = root.join("accounts").join(scope).join("relay-state/Recovered/complete.pop");
     std::fs::create_dir_all(recovered.parent().unwrap()).unwrap();
     let owner = Owner::open(Path::new(&source.path), Mode::Document, Arc::new(|_| {})).unwrap();
-    local::request(&owner, Request::Copy { destination: recovered, preview: None, icon: None }).unwrap();
-    local::request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+    local::request(&owner, |owner: &Owner, options, callback| owner.copy(recovered, None, None, options, callback))
+        .unwrap();
+    local::request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap();
     let db = rusqlite::Connection::open(root.join("index.sqlite")).unwrap();
     let count = || db.query_row("SELECT count(*) FROM documents", [], |row| row.get::<_, i64>(0)).unwrap();
     let before = count();
@@ -154,8 +154,11 @@ fn recovery_completed_before_indexing_is_discovered_after_restart_and_hidden_fro
     std::fs::create_dir_all(recovered.parent().unwrap()).unwrap();
     let owner = Owner::open(Path::new(&source.path), Mode::Document, Arc::new(|_| {})).unwrap();
     edit(&owner, "Recovered before crash");
-    local::request(&owner, Request::Copy { destination: recovered.clone(), preview: None, icon: None }).unwrap();
-    local::request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+    local::request(&owner, |owner: &Owner, options, callback| {
+        owner.copy(recovered.clone(), None, None, options, callback)
+    })
+    .unwrap();
+    local::request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap();
     drop(account);
     let entries = Library::open(&root, "account-a").unwrap().entries().unwrap();
     let recovered = std::fs::canonicalize(recovered).unwrap();
@@ -205,7 +208,7 @@ fn inbox_tracks_first_real_open_and_survives_reopen_and_download_removal() {
     let owner = Arc::new(Owner::open(Path::new(&incoming.path), Mode::Document, Arc::new(|_| {})).unwrap());
     account.register(&owner).unwrap();
     assert!(!account.entries().unwrap().iter().find(|entry| entry.id == id).unwrap().inbox);
-    local::request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+    local::request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap();
     account.unregister(&id).unwrap();
     assert!(
         account.remove_download(&id).is_err(),
@@ -244,7 +247,7 @@ fn library_root_relocation_preserves_managed_files_accounts_and_external_paths()
     local::install(&incoming, Path::new(&remote_path), &remote_id).unwrap();
     let owner = Arc::new(Owner::open(Path::new(&remote_path), Mode::Document, Arc::new(|_| {})).unwrap());
     library.register(&owner).unwrap();
-    local::request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+    local::request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap();
     library.unregister(&remote_id).unwrap();
     let other = Library::open(&old, "account-b").unwrap();
     let missing_source = dir.path().join("future-download.pop");
@@ -269,7 +272,7 @@ fn library_root_relocation_preserves_managed_files_accounts_and_external_paths()
     let owner = Arc::new(Owner::open(Path::new(&remote.path), Mode::Document, Arc::new(|_| {})).unwrap());
     library.register(&owner).unwrap();
     assert_eq!(library.adopt(Path::new(&remote.path), "Reopened").unwrap().id, remote_id);
-    local::request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+    local::request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap();
     library.unregister(&remote_id).unwrap();
     let other = Library::open(&moved, "account-b").unwrap();
     let pending = other.entries().unwrap().into_iter().find(|entry| entry.id == missing).unwrap();
@@ -278,7 +281,7 @@ fn library_root_relocation_preserves_managed_files_accounts_and_external_paths()
     local::install(&missing_source, Path::new(&pending.path), &missing).unwrap();
     let next_owner = Arc::new(Owner::open(Path::new(&pending.path), Mode::Document, Arc::new(|_| {})).unwrap());
     other.register(&next_owner).unwrap();
-    local::request(&next_owner, Request::Close { preview: None, icon: None }).unwrap();
+    local::request(&next_owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap();
     other.unregister(&missing).unwrap();
     assert!(other.entries().unwrap().iter().find(|entry| entry.id == missing).unwrap().downloaded);
     assert!(library.account_paths().unwrap().iter().all(|path| Path::new(path).starts_with(&moved)));

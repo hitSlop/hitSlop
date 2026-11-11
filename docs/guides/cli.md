@@ -48,7 +48,7 @@ map it to one `batch`, supplying row `id`s so a retried batch is refused as a du
 
 ## Ownership and retries
 
-An OS lock on the document's file in the account's registry (`~/.pop/live`) decides ownership. Closed editing runs the Rust owner in the engine process, without WebKit or authored app code. Busy documents route through their owner's Unix socket, which lives as long as the owner. Missing or failed discovery never permits a second writer. Each request names the command protocol it is written in; the owner checks it before anything else. A closed `export` renders the saved state without taking the lock, so it works while another process holds the document.
+An OS lock on the document's file in the account's registry (`~/.pop/live`) decides ownership. Closed editing runs the Rust owner in the engine process, without WebKit or authored app code. Busy documents route through their owner's Unix socket, which lives as long as the owner. Missing or failed discovery never permits a second writer. Each request names the command protocol it is written in; the owner checks it before anything else. An `export` probes the writer lock before trusting discovery, clearing a crashed owner’s discovery while holding the lock. Rendering reads an independent saved source without holding the writer lock, so a closed export also works while another process holds the document without publishing a session.
 
 Successful mutations acknowledge persistence. Generic edits are never automatically replayed and have no public retry flags. Named commands may reevaluate once after a definite pre-admission conflict, keeping their original time and seed. After an unknown outcome, run `pop get` before issuing another edit. A live `get` saves and returns owner-accepted state; text still being typed in an open window is not included. Edit ▸ Undo in the window reverts CLI edits made while the document is open, consecutive generic edits as one step and each named command as its own step. Save failures return an error. Theme, attachment and export commands follow the same rules; the socket deadlines are in the [runtime reference](../reference/runtime.md#security-boundaries).
 
@@ -83,7 +83,7 @@ It opens the document with `/usr/bin/open -a` in the app that contains the runni
 engine, else the app `POP_APP` names, else `/Applications/dotpop.app`, then
 `~/Applications/dotpop.app`; a `POP_APP` that names no app is an error rather than a
 cue to try another copy. A document that is already open in the app is edited and
-exported by that app's owner, which the engine reaches through its socket. Everything
+exported by that app's Rust owner, which the engine reaches through its socket. The owner drains pending page edits, saves and captures an independent source, then renders through the same capture path as a closed export. Everything
 else runs in the engine, including a closed document's export and the artwork a build
 renders. The one other thing read from an app is the bundled starter templates:
 `templates` and `create --from` list them from an app found the same way (a

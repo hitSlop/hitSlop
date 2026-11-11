@@ -15,6 +15,27 @@ import PopWidgets
     return try CaptureRuntime(evaluatorPath: evaluator)
   }
 
+  public static func exportDocument(session: DocumentSession, format: ExportFormat, output: URL) async throws {
+    let runtime = try nativeRuntime.get()
+    do {
+      try await session.withCaptureSnapshot { source in
+        try await PopPreparation.run(on: captureQueue) {
+          try runtime.exportSaved(path: source.path, format: format, output: output.path)
+        }
+      }
+    } catch CoreError.Failure(let failure) {
+      if failure.reason == .exists {
+        let exists = OwnerFailure(
+          kind: .rejected,
+          message:
+            "A file already exists at “\(output.lastPathComponent)”. Export cannot replace existing files. Choose a different name or location.",
+          reason: .exists, opIndex: nil, path: [])
+        throw PopDiagnosticError(exists, diagnostic: .init(.rejection, reason: .operationRejected))
+      }
+      throw PopDiagnosticError(failure, diagnostic: .classify(failure))
+    }
+  }
+
   public static func previewPNGData(url: URL) async throws -> Data {
     try await capture(url: url, output: .preview)
   }

@@ -1,5 +1,5 @@
 //! Native transport adapter. All routing, framing and document commands live in Rust;
-//! only a live owner's validated export request is handed to the native renderer.
+//! the native page only drains pending edits before Rust acquires a saved source.
 use super::*;
 use pop_contracts::wire::engine::ExportFormat;
 use pop_contracts::wire::{Code, OutcomeCode};
@@ -59,49 +59,21 @@ pub fn outcome_code_name(code: OutcomeCode) -> String {
     code.name()
 }
 
-#[derive(uniffi::Record)]
-pub struct NativeExportRequest {
-    pub document_path: String,
-    pub format: Option<ExportFormat>,
-    pub output: String,
-}
-#[derive(uniffi::Enum)]
-pub enum NativeExportOutcome {
-    Success { output: String },
-    Failure { failure: Failure },
-}
 #[derive(uniffi::Object)]
-pub struct NativeExportCompletion(Arc<core::ExportCompletion>);
+pub struct NativePageSettlement(Arc<core::PageSettlement>);
 #[uniffi::export]
-impl NativeExportCompletion {
+impl NativePageSettlement {
     pub fn is_active(&self) -> bool {
         self.0.is_active()
     }
-    pub fn complete(&self, outcome: NativeExportOutcome) {
-        self.0.complete(match outcome {
-            NativeExportOutcome::Success { output } => Ok(output),
-            NativeExportOutcome::Failure { failure } => Err(failure),
-        });
+    pub fn complete(&self, failure: Option<Failure>) -> bool {
+        self.0.complete(failure.map_or(Ok(()), Err))
     }
 }
 #[uniffi::export(callback_interface)]
-pub trait NativeExportHandler: Send + Sync {
-    fn export(&self, request: NativeExportRequest, completion: Arc<NativeExportCompletion>);
-}
-/// Consulted synchronously after the staged export is synced, immediately before publishing.
-#[uniffi::export(callback_interface)]
-pub trait NativeExportActivity: Send + Sync {
-    fn is_active(&self) -> bool;
-}
-/// The same exclusive, durable publisher used by closed-document exports. CoreError
-/// preserves rejected/exists and the unknown outcome of a post-publication sync failure.
-#[uniffi::export]
-pub fn publish_export(
-    bytes: Vec<u8>,
-    output: String,
-    activity: Box<dyn NativeExportActivity>,
-) -> Result<(), CoreError> {
-    Ok(pop_runtime::capture::publish_export(&bytes, Path::new(&output), || activity.is_active())?)
+pub trait NativePageBarrier: Send + Sync {
+    fn settle(&self, completion: Arc<NativePageSettlement>);
+    fn resume(&self);
 }
 #[uniffi::export(callback_interface)]
 pub trait NativeCommandCompletion: Send + Sync {
@@ -112,17 +84,13 @@ pub trait NativeCommandCompletion: Send + Sync {
 pub trait PageCompletion: Send + Sync {
     fn complete(&self, reply: core::PageDispatch);
 }
-struct Exporter(Box<dyn NativeExportHandler>);
-impl core::ExportHandler for Exporter {
-    fn export(&self, request: core::ExportRequest, completion: Arc<core::ExportCompletion>) {
-        self.0.export(
-            NativeExportRequest {
-                document_path: request.document_path,
-                format: request.format,
-                output: request.output,
-            },
-            Arc::new(NativeExportCompletion(completion)),
-        );
+struct PageBarrier(Box<dyn NativePageBarrier>);
+impl core::PageBarrier for PageBarrier {
+    fn settle(&self, completion: Arc<core::PageSettlement>) {
+        self.0.settle(Arc::new(NativePageSettlement(completion)));
+    }
+    fn resume(&self) {
+        self.0.resume();
     }
 }
 #[derive(uniffi::Object)]
@@ -130,8 +98,8 @@ pub struct NativeSocketServer(pop_runtime::socket::Server);
 #[uniffi::export]
 impl NativeSocketServer {
     #[uniffi::constructor]
-    pub fn start(owner: Arc<NativeOwner>, exporter: Box<dyn NativeExportHandler>) -> Result<Arc<Self>, CoreError> {
-        Ok(Arc::new(Self(pop_runtime::socket::Server::start(owner.0.clone(), Arc::new(Exporter(exporter)))?)))
+    pub fn start(owner: Arc<NativeOwner>, page: Box<dyn NativePageBarrier>) -> Result<Arc<Self>, CoreError> {
+        Ok(Arc::new(Self(pop_runtime::socket::Server::start(owner.0.clone(), Some(Arc::new(PageBarrier(page))))?)))
     }
     pub fn publish(&self) -> Result<(), CoreError> {
         Ok(self.0.publish()?)

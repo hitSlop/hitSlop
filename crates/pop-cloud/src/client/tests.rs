@@ -58,19 +58,23 @@ fn failed_receipt_confirmation_keeps_the_previous_receipt() {
     let (_directory, owner) = fixture();
     let document = owner.app().document_uuid.as_deref().unwrap();
     let key = RoomKey::identity(document, "test-token").unwrap();
-    request(&owner, Request::Share { share: pop_storage::store::Share { endpoint: key.origin.clone() } }).unwrap();
+    request(&owner, |owner: &Owner, options, callback| {
+        owner.set_share(pop_storage::store::Share { endpoint: key.origin.clone() }, options, callback)
+    })
+    .unwrap();
     let journal = test_journal(&owner, &key, true);
     let previous = journal.transaction().unwrap().current().unwrap().unwrap().owner_version;
-    request(
-        &owner,
-        Request::Apply {
-            batch: serde_json::from_value(serde_json::json!({"intents":[{"type":"increment","path":["hits"],"by":1}]}))
+    request(&owner, |owner: &Owner, options, callback| {
+        owner.apply(
+            serde_json::from_value(serde_json::json!({"intents":[{"type":"increment","path":["hits"],"by":1}]}))
                 .unwrap(),
-            origin: pop_core::Origin::Page,
-        },
-    )
+            pop_core::Origin::Page,
+            options,
+            callback,
+        )
+    })
     .unwrap();
-    request(&owner, Request::Flush).unwrap();
+    request(&owner, Owner::flush).unwrap();
     let saved = Store::open(owner.path(), Mode::Snapshot).unwrap();
     let heads = saved.document().unwrap().wire_history();
     saved.close().unwrap();
@@ -84,8 +88,8 @@ fn failed_receipt_confirmation_keeps_the_previous_receipt() {
         .encode(),
     );
     connection.frame(pop_contracts::relay::frame::Frame::CaughtUp.encode());
-    // State is a serial-owner barrier after the handshake messages.
-    request(&owner, Request::State).unwrap();
+    // A version probe orders after the handshake messages.
+    request(&owner, Owner::version).unwrap();
     let receipt_path = std::fs::read_dir(owner.path().parent().unwrap().join("relay-state"))
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -152,7 +156,7 @@ fn receipt_inspections_share_reads_but_fence_writers() {
     drop(writer);
     let state = directory.path().join("relay-state");
     assert_eq!(confirmed_saved_version(&state, document).unwrap().as_deref(), Some("next-frontier"));
-    request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+    request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap();
 }
 
 #[test]
@@ -160,23 +164,23 @@ fn attachment_heavy_documents_stage_a_small_seed_without_losing_source_blobs() {
     let (_directory, owner) = fixture();
     let mut ids = Vec::new();
     for byte in [17, 29] {
-        let Reply::Attachment { item } =
-            request(&owner, Request::PutAttachment { bytes: vec![byte; 9 << 20] }).unwrap()
-        else {
-            panic!("attachment")
-        };
+        let item = request(&owner, |owner: &Owner, options, callback| {
+            owner.put_attachment(vec![byte; 9 << 20], options, callback)
+        })
+        .unwrap();
         ids.push(item.id);
     }
-    request(
-        &owner,
-        Request::Apply {
-            batch: serde_json::from_value(
+    request(&owner, |owner: &Owner, options, callback| {
+        owner.apply(
+            serde_json::from_value(
                 serde_json::json!({"intents":[{"type":"set","path":["title"],"value":ids.join(" ")}]}),
             )
             .unwrap(),
-            origin: pop_core::Origin::Page,
-        },
-    )
+            pop_core::Origin::Page,
+            options,
+            callback,
+        )
+    })
     .unwrap();
     let seed = stage(&owner).expect("valid attachments must not consume the seed budget");
     assert!(std::fs::metadata(&seed.path).unwrap().len() < pop_sharing_protocol::SEED_BYTES as u64);
@@ -192,9 +196,12 @@ fn attachment_heavy_documents_stage_a_small_seed_without_losing_source_blobs() {
     assert_eq!(source.app_digest().unwrap(), app);
     source.close().unwrap();
     for id in ids {
-        assert!(matches!(request(&owner, Request::ReadAttachment { id }).unwrap(), Reply::Bytes { bytes: Some(_) }));
+        assert!(matches!(
+            request(&owner, |owner: &Owner, options, callback| owner.read_attachment(id, options, callback)).unwrap(),
+            bytes if !bytes.is_empty()
+        ));
     }
-    request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+    request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap();
 }
 
 #[test]
@@ -205,10 +212,9 @@ fn initial_download_hydrates_without_records_and_failed_download_never_publishes
     let blobs: Vec<Vec<u8>> = [17, 29].into_iter().map(|byte| vec![byte; 9 << 20]).collect();
     let mut inventory = Vec::new();
     for bytes in &blobs {
-        let Reply::Attachment { item } = request(&owner, Request::PutAttachment { bytes: bytes.clone() }).unwrap()
-        else {
-            panic!("attachment")
-        };
+        let item =
+            request(&owner, |owner: &Owner, options, callback| owner.put_attachment(bytes.clone(), options, callback))
+                .unwrap();
         inventory.push(pop_sharing_protocol::resources::Resource {
             key: item.id.clone(),
             hash: item.id,
@@ -216,10 +222,7 @@ fn initial_download_hydrates_without_records_and_failed_download_never_publishes
             media_type: item.media_type,
         });
     }
-    request(&owner, Request::Apply {
-        batch:serde_json::from_value(serde_json::json!({"intents":[{"type":"set","path":["title"],"value":inventory.iter().map(|item|item.hash.clone()).collect::<Vec<_>>().join(" ")}]})).unwrap(),
-        origin:pop_core::Origin::Page,
-    }).unwrap();
+    request(&owner, |owner: &Owner, options, callback| owner.apply(serde_json::from_value(serde_json::json!({"intents":[{"type":"set","path":["title"],"value":inventory.iter().map(|item|item.hash.clone()).collect::<Vec<_>>().join(" ")}]})).unwrap(), pop_core::Origin::Page, options, callback)).unwrap();
     let seed = stage(&owner).unwrap();
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
@@ -303,5 +306,5 @@ fn initial_download_hydrates_without_records_and_failed_download_never_publishes
         assert_eq!(downloaded.attachment(&item.hash).unwrap(), bytes);
     }
     downloaded.close().unwrap();
-    request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+    request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap();
 }

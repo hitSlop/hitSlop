@@ -6,7 +6,7 @@ use pop_contracts::wire::page::{HostAction, HostReply, SpeechOutcome};
 use pop_contracts::wire::preview::{PreviewEvent, PreviewRequest, PreviewResource, PreviewSaveStatus};
 use pop_runtime::command;
 use pop_runtime::command::PageDispatch;
-use pop_runtime::owner::{Event, Owner, Reply, Request, SaveStatus};
+use pop_runtime::owner::{CallOptions, Event, Owner, SaveStatus};
 use pop_storage::store::Mode;
 use serde_json::Value;
 use serde_json::value::RawValue;
@@ -18,15 +18,16 @@ use std::time::{Duration, Instant};
 
 fn close(owner: &Owner, deadline: Instant) -> Result<(), String> {
     let (sender, receiver) = mpsc::channel();
-    owner.submit(
-        Request::Close { preview: None, icon: None },
+    owner.close(
         None,
+        None,
+        CallOptions::default(),
         Box::new(move |reply| {
             let _ = sender.send(reply);
         }),
     );
     match receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-        Ok(Ok(Reply::Unit)) => Ok(()),
+        Ok(Ok(())) => Ok(()),
         Ok(Err(e)) => Err(e.message),
         _ => Err("Preview close timed out".into()),
     }
@@ -82,7 +83,8 @@ pub fn serve(path: &Path) -> ExitCode {
                         };
                         send.send(PreviewEvent::Reply {
                             id: id.try_into().map_err(|_| "Invalid preview request ID")?,
-                            reply: crate::rejected(Code::InvalidRequest, error),
+                            reply: serde_json::to_string(&crate::rejected(Code::InvalidRequest, error))
+                                .expect("serializable failure"),
                         });
                         continue;
                     }
@@ -181,7 +183,7 @@ pub fn serve(path: &Path) -> ExitCode {
     })();
     let mut failed = result.is_err();
     if let Err(error) = result {
-        let error = serde_json::from_str(&crate::rejected(Code::InvalidRequest, error)).expect("serialized failure");
+        let error = crate::rejected(Code::InvalidRequest, error);
         send.send(PreviewEvent::Fatal { error });
     }
     drop(send);

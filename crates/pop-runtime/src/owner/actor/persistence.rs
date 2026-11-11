@@ -16,19 +16,18 @@ pub(super) enum Work {
     },
     Restore {
         generation: u64,
-        callback: Completion,
+        callback: Completion<()>,
     },
     Store {
         generation: u64,
-        action: StorageAction,
-        callback: Completion,
+        job: StorageJob,
     },
     Close {
         generation: u64,
         job: Option<store::SaveJob>,
         preview: Option<Vec<u8>>,
         icon: Option<Vec<u8>>,
-        callback: Completion,
+        callback: Completion<()>,
     },
     /// Publishes a verified copy of the live state at `dest`, then releases the store
     /// without saving.
@@ -40,28 +39,40 @@ pub(super) enum Work {
         icon: Option<Vec<u8>>,
         value: serde_json::Value,
         theme: std::collections::BTreeMap<String, String>,
-        callback: Completion,
+        callback: Completion<()>,
     },
 }
 /// The artwork a window rendered, by name, leaving out what it did not render.
-fn named_artwork<'a>(preview: &'a Option<Vec<u8>>, icon: &'a Option<Vec<u8>>) -> Vec<(Artwork, &'a [u8])> {
+pub(super) fn named_artwork<'a>(preview: &'a Option<Vec<u8>>, icon: &'a Option<Vec<u8>>) -> Vec<(Artwork, &'a [u8])> {
     [(Artwork::Preview, preview), (Artwork::Icon, icon)]
         .into_iter()
         .filter_map(|(name, png)| Some((name, png.as_deref()?)))
         .collect()
 }
-pub(super) enum StorageAction {
-    Copy { path: PathBuf, state: Vec<u8>, preview: Option<Vec<u8>>, icon: Option<Vec<u8>> },
-    CaptureSource(PathBuf),
-    Backup(PathBuf),
-    StageSeed(PathBuf),
-    Artwork(Artwork),
-    SetArtwork { preview: Option<Vec<u8>>, icon: Option<Vec<u8>> },
-    Attachments,
-    ReadAttachment(String),
-    PutAttachment(Vec<u8>),
-    Share(store::Share),
-    Unshare,
+type StorageWork = Box<dyn FnOnce(Result<&store::Store>) -> (Result<()>, Completion<()>) + Send>;
+pub(super) struct StorageJob {
+    pub refresh_status: bool,
+    work: StorageWork,
+}
+impl StorageJob {
+    pub(super) fn new<T: Send + 'static>(
+        refresh_status: bool,
+        work: impl FnOnce(&store::Store) -> Result<T> + Send + 'static,
+        callback: Completion<T>,
+    ) -> Self {
+        Self {
+            refresh_status,
+            work: Box::new(move |store| {
+                let result = store.and_then(|store| contained(|| work(store)));
+                let status = result.as_ref().map(|_| ()).map_err(Clone::clone);
+                (status, Box::new(move |status| complete(callback, status.and(result))))
+            }),
+        }
+    }
+    pub(super) fn reject(self, error: Failure) {
+        let (result, callback) = (self.work)(Err(error));
+        complete(callback, result);
+    }
 }
 pub(in crate::owner) struct Persisted {
     pub generation: u64,
@@ -70,8 +81,8 @@ pub(in crate::owner) struct Persisted {
 }
 pub(in crate::owner) enum Outcome {
     Saved { target: u64, result: Result<()> },
-    Restored { result: Result<Box<Document>>, callback: Completion },
-    Stored { result: Result<Reply>, callback: Completion, closing: bool, refresh_status: bool },
+    Restored { result: Result<Box<Document>>, callback: Completion<()> },
+    Stored { result: Result<()>, callback: Completion<()>, closing: bool, refresh_status: bool },
 }
 pub(super) fn persistence(store: store::Store, work: mpsc::Receiver<Work>, sender: mpsc::Sender<Message>) {
     for work in work {
@@ -119,44 +130,9 @@ pub(super) fn perform(store: &store::Store, work: Work) -> Message {
             callback,
             result: contained(|| store.open_document().map(Box::new).map_err(Failure::from)),
         },
-        Work::Store { action, callback, .. } => {
-            let refresh_status = matches!(action, StorageAction::Share(_) | StorageAction::Unshare);
-            let result = contained(|| {
-                Ok(match action {
-                    StorageAction::Copy { path, state, preview, icon } => {
-                        store.copy_clean(&path, &state, &named_artwork(&preview, &icon))?;
-                        Reply::Unit
-                    }
-                    StorageAction::CaptureSource(path) => {
-                        store.capture_source(&path)?;
-                        Reply::Unit
-                    }
-                    StorageAction::Backup(path) => {
-                        store.backup(&path)?;
-                        Reply::Unit
-                    }
-                    StorageAction::StageSeed(path) => {
-                        store.stage_seed(&path)?;
-                        Reply::Unit
-                    }
-                    StorageAction::SetArtwork { preview, icon } => {
-                        store.set_artwork(&named_artwork(&preview, &icon))?;
-                        Reply::Unit
-                    }
-                    StorageAction::Artwork(name) => Reply::Bytes { bytes: store.artwork(name)? },
-                    StorageAction::Attachments => Reply::Attachments { items: store.attachments()? },
-                    StorageAction::ReadAttachment(id) => Reply::Bytes { bytes: Some(store.attachment(&id)?) },
-                    StorageAction::PutAttachment(bytes) => Reply::Attachment { item: store.put_attachment(&bytes)? },
-                    StorageAction::Share(share) => {
-                        store.set_share(&share)?;
-                        Reply::Unit
-                    }
-                    StorageAction::Unshare => {
-                        store.clear_share()?;
-                        Reply::Unit
-                    }
-                })
-            });
+        Work::Store { job, .. } => {
+            let refresh_status = job.refresh_status;
+            let (result, callback) = (job.work)(Ok(store));
             Outcome::Stored { result, callback, closing: false, refresh_status }
         }
         Work::Close { job, preview, icon, callback, .. } => {
@@ -172,7 +148,7 @@ pub(super) fn perform(store: &store::Store, work: Work) -> Message {
                 // Only a confirmed close ends the undo session. Reclamation then takes
                 // a fresh lease, so a failed close keeps its undo attachments intact.
                 store.close_reclaiming()?;
-                Ok(Reply::Unit)
+                Ok(())
             });
             Outcome::Stored { result, callback, closing: true, refresh_status: false }
         }
@@ -180,7 +156,7 @@ pub(super) fn perform(store: &store::Store, work: Work) -> Message {
             let result = contained(|| {
                 store.handoff_copy(&dest, &state, &named_artwork(&preview, &icon), &value, &theme)?;
                 store.close()?;
-                Ok(Reply::Unit)
+                Ok(())
             });
             Outcome::Stored { result, callback, closing: true, refresh_status: false }
         }

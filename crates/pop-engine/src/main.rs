@@ -19,8 +19,8 @@ mod open;
 mod preview;
 
 /// A classified refusal, as every engine reply spells one.
-fn rejected(reason: Code, error: impl std::fmt::Display) -> String {
-    command::failure(
+fn rejected(reason: Code, error: impl std::fmt::Display) -> pop_contracts::wire::engine::Failure {
+    command::classified_failure(
         Failure {
             kind: FailureKind::Rejected,
             message: error.to_string(),
@@ -45,10 +45,7 @@ fn evaluator() -> Result<pop_runner::Evaluator, String> {
     .map_err(|error| error.to_string())
 }
 
-fn success(result: EngineSuccess) -> String {
-    serde_json::to_string(&result).expect("serializable reply")
-}
-fn dispatch(request: FileRequest) -> String {
+fn dispatch(request: FileRequest) -> command::DocumentResult {
     let result = (|| -> Result<EngineSuccess, store::Error> {
         Ok(match request {
             FileRequest::AttachmentRef { file } => {
@@ -106,22 +103,16 @@ fn dispatch(request: FileRequest) -> String {
             }
         })
     })();
-    match result {
-        Ok(result) => success(result),
-        Err(error) => command::failure(error.into(), false, false),
-    }
+    result.map_err(|error| command::classified_failure(error.into(), false, false))
 }
-fn request(input: &str, protocol: u64) -> String {
-    if input.len() > command::MAX_REQUEST_BYTES {
-        return rejected(Code::TooLarge, "Engine request is too large");
-    }
+fn request(input: &str, protocol: u64) -> command::CommandReply {
     let request = match EngineRequest::parse(input) {
         Ok(request) => request,
-        Err(error) => return rejected(Code::InvalidRequest, error),
+        Err(error) => return Err(command::classified_failure(error.into(), false, false)).into(),
     };
     match request {
         EngineRequest::Document(request) => command::request_with_evaluator(request, protocol, evaluator().ok()),
-        EngineRequest::File(request) => dispatch(request),
+        EngineRequest::File(request) => dispatch(request).into(),
     }
 }
 fn main() -> ExitCode {
@@ -167,8 +158,8 @@ fn main() -> ExitCode {
     let mut input = String::new();
     let reply = match std::io::stdin().take(command::MAX_REQUEST_BYTES as u64 + 1).read_to_string(&mut input) {
         Ok(_) => request(&input, protocol),
-        Err(error) => rejected(Code::InvalidRequest, error),
+        Err(error) => Err(rejected(Code::InvalidRequest, error)).into(),
     };
-    println!("{}", reply.trim_end());
+    println!("{}", command::encode_reply(reply));
     ExitCode::SUCCESS
 }

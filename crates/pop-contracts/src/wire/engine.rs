@@ -145,11 +145,15 @@ impl EngineRequest {
     /// Decode and check one bounded request. A future app must reach its marker
     /// check before any JSON value inside it is interpreted; serde's tagged-enum
     /// buffering cannot retain RawValue, so only that variant needs a raw path.
-    pub fn parse(input: &str) -> serde_json::Result<Self> {
-        use serde::de::Error;
+    pub fn parse(input: &str) -> Result<Self, crate::Error> {
         if input.len() > super::SOCKET_ATTACHMENT {
-            return Err(serde_json::Error::custom("Engine request is too large"));
+            return Err(crate::Error::new(Code::TooLarge, "Engine request is too large"));
         }
+        Self::decode(input).map_err(invalid)
+    }
+
+    fn decode(input: &str) -> serde_json::Result<Self> {
+        use serde::de::Error;
         #[derive(Deserialize)]
         struct Header {
             method: String,

@@ -4,14 +4,13 @@
 use crate::support;
 use pop_contracts::resources::{ResourceRoute, resource_response};
 use pop_core::Origin;
-use pop_runtime::owner::{Failure, Owner, Reply, Request};
+use pop_runtime::owner::{CommandResult, Owner};
 use pop_storage::store::{Mode, Store};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, mpsc};
-use std::time::Duration;
+use std::sync::Arc;
 use support::ApplyJson;
 
 fn entries(path: &Path) -> Vec<PathBuf> {
@@ -136,17 +135,7 @@ fn resources(root: &Path, expected: &Value) {
         check(ResourceRoute::Attachment, id, a["mimeType"].as_str().unwrap(), bytes);
     }
 }
-fn owner_request(owner: &Owner, request: Request) -> Result<Reply, Failure> {
-    let (tx, rx) = mpsc::channel();
-    owner.submit(
-        request,
-        None,
-        Box::new(move |reply| {
-            tx.send(reply).unwrap();
-        }),
-    );
-    rx.recv_timeout(Duration::from_secs(10)).expect("owner did not reply")
-}
+use pop_testkit::owner::call as owner_request;
 
 #[test]
 fn every_saved_document_reads_edits_and_reopens_as_its_release_recorded() {
@@ -321,14 +310,15 @@ fn every_stored_command_probe_evaluates_and_passes_owner_admission() {
                 .unwrap();
                 let owner =
                     Owner::open_with_evaluator(&root, Mode::Document, Arc::new(|_| {}), Some(evaluator)).unwrap();
-                let reply = owner_request(
-                    &owner,
-                    Request::Command {
-                        name: probe["name"].as_str().unwrap().into(),
-                        args_json: probe["args"].to_string(),
-                        origin: Origin::Agent,
-                    },
-                );
+                let reply = owner_request(&owner, |owner: &Owner, options, callback| {
+                    owner.command(
+                        probe["name"].as_str().unwrap().into(),
+                        probe["args"].to_string(),
+                        Origin::Agent,
+                        options,
+                        callback,
+                    )
+                });
                 assert_eq!(reply.is_ok(), probe["expected"]["ok"].as_bool().unwrap(), "{name}: {reply:?}");
                 if output.is_some() {
                     let input = json_file(&input_path).expect("owner did not invoke evaluator");
@@ -342,10 +332,9 @@ fn every_stored_command_probe_evaluates_and_passes_owner_admission() {
                     assert!(!input_path.exists(), "invalid arguments reached the evaluator");
                 }
                 match reply {
-                    Ok(Reply::Command { result_json, .. }) => {
+                    Ok(CommandResult { result_json, .. }) => {
                         assert_eq!(serde_json::from_str::<Value>(&result_json).unwrap(), probe["evaluated"]["result"])
                     }
-                    Ok(other) => panic!("unexpected command reply: {other:?}"),
                     Err(error) => {
                         if probe["expected"]["code"] == "rejected" {
                             assert_eq!(error.kind, pop_runtime::owner::FailureKind::Rejected);
@@ -358,7 +347,8 @@ fn every_stored_command_probe_evaluates_and_passes_owner_admission() {
                         }
                     }
                 }
-                owner_request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+                owner_request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback))
+                    .unwrap();
                 assert_eq!(read(&root).0, probe["value"], "{name}: command saved value");
                 if probe["expected"]["ok"] == false {
                     assert_eq!(read(&root).0, before, "refusal changed state");
