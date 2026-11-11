@@ -1,6 +1,6 @@
-# Sharing fixtures: the 2.0.0 baseline
+# Sharing fixtures: the `/v1` routes
 
-These examples are the pop 2.0.0 sharing contract under the `/v1` routes. They freeze with
+These examples are the sharing contract under the `/v1` routes. They freeze with
 the first public release: from then on, add fixtures and never regenerate, replace or delete
 existing ones or their expectations. A change an old client cannot read needs a new route
 version. Until that release, a contract change rewrites the fixture it changes.

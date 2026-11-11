@@ -11,7 +11,7 @@ workspace = true
 
 [features]
 default = []
-# The evaluator process itself. Hosts that only spawn it depend without default features.
+# The evaluator process itself.
 child = ["dep:rquickjs", "dep:seccompiler"]
 # In-process PNG artwork/widget capture for iOS. Commands stay unavailable.
 in-process = ["capture", "dep:rquickjs-sys"]
