@@ -49,23 +49,6 @@ pub struct ApiFailure {
     pub message: String,
 }
 
-impl ApiFailure {
-    /// Public v1 refusal codes are stable; clients may also receive unfamiliar strings.
-    pub fn refused(status: u16) -> Self {
-        let code = match status {
-            401 => "sign_in_required",
-            400 | 413 | 422 => "invalid_request",
-            403 => "denied",
-            404 => "not_found",
-            409 => "conflict",
-            410 => "sharing_ended",
-            429 => "limited",
-            _ => "unavailable",
-        };
-        Self { code: code.into(), message: "The sharing service refused this request".into() }
-    }
-}
-
 /// An invitation secret stays in the fragment of a pinned-origin link.
 /// It grants membership only through the authenticated members exchange.
 #[derive(Clone)]

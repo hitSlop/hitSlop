@@ -49,7 +49,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::to_string(&serde_json::json!({
             "origin": pop_sharing_protocol::TRUSTED_ORIGIN,
             "seedBytes": pop_sharing_protocol::SEED_BYTES,
-            "socketProtocol": pop_sharing_protocol::SOCKET_PROTOCOL,
         }))?
     ));
     std::fs::write(directory.join("constants.generated.ts"), constants)?;

@@ -161,9 +161,9 @@ async fn response_body(mut response: reqwest::Response, limit: u64) -> Transport
 type AsyncSocket = WebSocketStream<reqwest::Upgraded>;
 async fn upgrade_async(key: &RoomKey) -> TransportResult<AsyncSocket> {
     let url = format!("{}/v1/documents/{}/sync", key.origin, key.room);
-    upgrade_at(&url, key.bearer(), pop_sharing_protocol::SOCKET_PROTOCOL).await
+    upgrade_at(&url, key.bearer()).await
 }
-async fn upgrade_at(url: &str, capability: &str, protocol: &str) -> TransportResult<AsyncSocket> {
+async fn upgrade_at(url: &str, capability: &str) -> TransportResult<AsyncSocket> {
     let client = network()?.http.clone();
     let nonce = tungstenite::handshake::client::generate_key();
     let response = client
@@ -172,7 +172,6 @@ async fn upgrade_at(url: &str, capability: &str, protocol: &str) -> TransportRes
         .header("Upgrade", "websocket")
         .header("Sec-WebSocket-Version", "13")
         .header("Sec-WebSocket-Key", &nonce)
-        .header("Sec-WebSocket-Protocol", protocol)
         .bearer_auth(capability)
         .timeout(Duration::from_secs(10))
         .send()
@@ -182,7 +181,7 @@ async fn upgrade_at(url: &str, capability: &str, protocol: &str) -> TransportRes
         .map_err(|_| HttpFailure::from("Relay socket unavailable"))?;
     let status = response.status().as_u16();
     if status != 101 {
-        if status == 401 && protocol == pop_sharing_protocol::library::SOCKET_PROTOCOL {
+        if status == 401 && url.ends_with("/v1/account/library") {
             return Err(HttpFailure::from(pop_core::sync::Pause {
                 kind: PauseKind::Refused,
                 reason: "Refresh your account identity".into(),
@@ -202,17 +201,12 @@ async fn upgrade_at(url: &str, capability: &str, protocol: &str) -> TransportRes
         || !token("Upgrade", "websocket")
         || headers.get("Sec-WebSocket-Accept").map(|h| h.as_bytes())
             != Some(tungstenite::handshake::derive_accept_key(nonce.as_bytes()).as_bytes())
-        || headers.get("Sec-WebSocket-Protocol").map(|h| h.as_bytes()) != Some(protocol.as_bytes())
     {
         return Err("Invalid relay socket upgrade".into());
     }
     let upgraded = response.upgrade().await.map_err(|_| HttpFailure::from("Relay socket unavailable"))?;
     let mut config = tungstenite::protocol::WebSocketConfig::default();
-    let limit = if protocol == pop_sharing_protocol::library::SOCKET_PROTOCOL {
-        pop_sharing_protocol::CONTROL_BYTES
-    } else {
-        MAX_FRAME
-    };
+    let limit = if url.ends_with("/v1/account/library") { pop_sharing_protocol::CONTROL_BYTES } else { MAX_FRAME };
     config.max_message_size = Some(limit);
     config.max_frame_size = Some(limit);
     let socket = WebSocketStream::from_raw_socket(upgraded, tungstenite::protocol::Role::Client, Some(config)).await;
@@ -803,11 +797,8 @@ mod tests {
                         let mut ws = tungstenite::accept_hdr(
                             stream,
                             |request: &tungstenite::handshake::server::Request,
-                             mut response: tungstenite::handshake::server::Response| {
-                                response.headers_mut().insert(
-                                    "Sec-WebSocket-Protocol",
-                                    request.headers()["Sec-WebSocket-Protocol"].clone(),
-                                );
+                             response: tungstenite::handshake::server::Response| {
+                                assert!(!request.headers().contains_key("Sec-WebSocket-Protocol"));
                                 Ok(response)
                             },
                         )

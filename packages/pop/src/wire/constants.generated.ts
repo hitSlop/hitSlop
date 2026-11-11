@@ -25,4 +25,4 @@ export const PackageFormat = 1 as const;
 export const RuntimeABI = 1 as const;
 export const EngineProtocol = {"version":1} as const;
 export const OutcomeCodes = ["rejected","owner_replaced","closing","save_failed","owner_invalidated","unknown_outcome"] as const;
-export const SharingHost = {"origin":"https://share.dotpop.click","seedBytes":16777216,"socketProtocol":"pop.sync.v2"} as const;
+export const SharingHost = {"origin":"https://share.dotpop.click","seedBytes":16777216} as const;

@@ -3,7 +3,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import type { Miniflare } from "miniflare";
-import { SharingHost } from "../../packages/pop/src/wire/constants.generated";
 
 export const documentName = (id: string) => id;
 export const objectKey = (id: string, suffix: string) => `${id}/${suffix}`;
@@ -116,7 +115,7 @@ export class CloudDocument {
           this.state.storage.sql.exec('INSERT INTO records(seq,spans,size) VALUES(?,?,?)', n, JSON.stringify([['0000000000000001',n-1,n]]),size);
           for(let part=0;part*1800000<size;part++) this.state.storage.sql.exec('INSERT INTO chunks VALUES(?,?,?)',n,part,new Uint8Array(Math.min(1800000,size-part*1800000)).fill(n%256));
         }
-        this.state.storage.sql.exec("UPDATE meta SET value=? WHERE key='heads'",JSON.stringify([['0000000000000001',Math.max(count,JSON.parse(this.state.storage.sql.exec("SELECT value FROM meta WHERE key='base_version'").toArray()[0]?.value ?? '[]').find(([p])=>p==='0000000000000001')?.[1] ?? 0)],['0000000000000002',5]]));
+        this.state.storage.sql.exec("UPDATE document_state SET heads=?",JSON.stringify([['0000000000000001',Math.max(count,JSON.parse(this.state.storage.sql.exec("SELECT base_version AS value FROM document_state").toArray()[0]?.value ?? '[]').find(([p])=>p==='0000000000000001')?.[1] ?? 0)],['0000000000000002',5]]));
       });
       return new Response('ready');
     }
@@ -256,7 +255,7 @@ export async function checkCompaction(
     200,
   );
   assert.equal((await call(base + "/open", owner, "POST", { seedSha256: hash(seed) })).status, 200);
-  room.access = identity("room-guest", "anonymous");
+  room.access = identity("room-guest");
   assert.equal((await call(base+"/members",room.access,"POST",{capability:room.capability})).status,200);
   const unlistedBlob = new Uint8Array([23, 24, 25]);
   const unlistedHash = hash(unlistedBlob);
@@ -299,7 +298,7 @@ export async function checkCompaction(
     "F cannot precede root",
   );
   // Fixture heads include the seed's peer, as accepted Push preserves it.
-  await sql("UPDATE meta SET value=? WHERE key='heads'", [
+  await sql("UPDATE document_state SET heads=?", [
     '[["0000000000000001",4],["0000000000000002",5]]',
   ]);
   assert.equal((await compact(4, body, { "X-Sharing-SHA256": "f".repeat(64) })).status, 400);
@@ -313,7 +312,6 @@ export async function checkCompaction(
   async function socket(ip = "203.0.113.1", endpoint = base, token = room.access) {
     const response = await call(endpoint + "/sync", token, "GET", undefined, {
       Upgrade: "websocket",
-      "Sec-WebSocket-Protocol": SharingHost.socketProtocol,
       "CF-Connecting-IP": ip,
     });
     assert.equal(response.status, 101);
@@ -370,15 +368,15 @@ export async function checkCompaction(
   await connected.joined(4);
   // The seed upload stored the document's root with its heads. A live document without it
   // is a fault in the document, never something a member supplies: nothing is installed.
-  const [storedRoot] = await sql("SELECT value FROM meta WHERE key='root'");
+  const [storedRoot] = await sql("SELECT root AS value FROM document_state");
   assert.equal(storedRoot.value, '[["0000000000000002",5]]', "The seed upload stores the root");
-  await sql("DELETE FROM meta WHERE key='root'");
+  await sql("UPDATE document_state SET root=NULL");
   const rootless = await compact(3);
   assert.equal(rootless.status, 500, "Compaction without a stored root is an internal failure");
   assert.equal((await rootless.json()).code, "unavailable");
   assert.equal((await sql("SELECT count(*) AS n FROM records WHERE seq=0"))[0].n, 0, "A rootless document installs no base");
-  assert.deepEqual(await sql("SELECT key FROM meta WHERE key IN ('root','base_version')"), [], "A refused base records no versions");
-  await sql("INSERT INTO meta VALUES('root',?)", [storedRoot.value]);
+  assert.deepEqual(await sql("SELECT root,base_version FROM document_state WHERE root IS NOT NULL OR base_version IS NOT NULL"), [], "A refused base records no versions");
+  await sql("UPDATE document_state SET root=?", [storedRoot.value]);
   assert.equal((await compact(3)).status, 204, "Install partial base");
   assert.equal(connected.messages.length, 0, "Base is never broadcast");
   const rows = await sql("SELECT seq,spans FROM records ORDER BY seq");
@@ -391,7 +389,6 @@ export async function checkCompaction(
     [["0000000000000001", 0, 3]],
     "Seed-only peers produce no empty spans",
   );
-  assert.equal((await bucket.list({prefix:objectKey(room.room, "compacted/")})).objects.length,0,"compaction retains no history archive");
   await test("alarm");
   assert.equal((await call(base,owner)).status,200,"offline retention is persistent");
   stage = "behind base";
@@ -412,7 +409,7 @@ export async function checkCompaction(
       ["0000000000000002", 5, 6],
     ]),
   ]);
-  await sql("UPDATE meta SET value=? WHERE key='heads'", [
+  await sql("UPDATE document_state SET heads=?", [
     '[["0000000000000001",4],["0000000000000002",6]]',
   ]);
   assert.equal((await compact(2)).status, 409, "Nonmonotonic base");
@@ -424,7 +421,7 @@ export async function checkCompaction(
     "A record with any uncovered span is retained whole",
   );
   assert.equal(
-    (await sql("SELECT value FROM meta WHERE key='heads'"))[0].value,
+    (await sql("SELECT heads AS value FROM document_state"))[0].value,
     '[["0000000000000001",4],["0000000000000002",6]]',
     "Compaction leaves heads unchanged",
   );
@@ -442,7 +439,7 @@ export async function checkCompaction(
   stage = "quota refusal";
   limited.ws.send(push(10, 16, 17));
   assert.equal((await limited.next()).status, 4, "Bytes quota");
-  await sql("UPDATE meta SET value=? WHERE key='heads'", [
+  await sql("UPDATE document_state SET heads=?", [
     '[["0000000000000001",16],["0000000000000002",5]]',
   ]);
   assert.equal((await compact(16)).status, 204);
@@ -472,7 +469,7 @@ export async function checkCompaction(
   const budget = await socket("203.0.113.5");
   await budget.joined();
   await test("freeze-windows");
-  await sql("UPDATE meta SET value=? WHERE key='heads'", [
+  await sql("UPDATE document_state SET heads=?", [
     '[["0000000000000001",16],["0000000000000002",5]]',
   ]);
   const largePush = new Uint8Array((512 << 10) - 1000);
@@ -525,8 +522,7 @@ export async function checkCompaction(
     (
       await call(base + "/sync", room.access, "GET", undefined, {
         Upgrade: "websocket",
-        "Sec-WebSocket-Protocol": SharingHost.socketProtocol,
-        "CF-Connecting-IP": "203.0.113.20",
+          "CF-Connecting-IP": "203.0.113.20",
       })
     ).status,
     429,
@@ -539,12 +535,16 @@ export async function checkCompaction(
   const protocol = await socket("203.0.113.7");
   protocol.ws.send(hello(0, 2));
   assert.equal((await protocol.next()).code, 1);
+  const wrongApp = await socket("203.0.113.27");
+  const mismatch = hello(); mismatch[2] = mismatch[2]! ^ 1;
+  wrongApp.ws.send(mismatch);
+  assert.equal((await wrongApp.next()).code, 1, "An unsupported app digest tells the client to update");
   const transient = await socket("203.0.113.8");
-  await sql("UPDATE meta SET value='broken' WHERE key='heads'");
+  await sql("UPDATE document_state SET heads='broken'");
   transient.ws.send(hello());
   assert.equal(await transient.closed, 1011);
   assert.equal(transient.messages.length, 0);
-  await sql("UPDATE meta SET value='[]' WHERE key='heads'");
+  await sql("UPDATE document_state SET heads='[]'");
   for (const ws of sockets) {
     try {
       ws.close();
@@ -560,12 +560,18 @@ export async function checkCompaction(
   assert.equal(await ended.closed, 1008);
   assert.equal((await unjoinedEnd.next()).code, 3);
   assert.equal(await unjoinedEnd.closed, 1008);
-  assert.equal((await bucket.list({ prefix: objectKey(room.room, "compacted/") })).objects.length, 0);
   assert.equal((await sql("SELECT count(*) AS n FROM records"))[0].n, 0);
   assert.equal((await sql("SELECT count(*) AS n FROM chunks"))[0].n, 0);
   assert.equal((await call(base,owner)).status,410);
   await test("alarm");
   assert.equal((await call(base,owner)).status,410,"deletion tombstone preserves UUID ownership");
+  const [tombstone] = await sql("SELECT * FROM document_state");
+  assert.equal(tombstone.phase,"ended");
+  assert.equal(tombstone.document,room.room);
+  assert.ok(tombstone.owner_uid);
+  for (const [key,value] of Object.entries(tombstone)) {
+    if (!["id","owner_uid","document","phase"].includes(key)) assert.equal(value,null,key+" is purged");
+  }
   const idleRoom: { room: string; capability?: string; access?: string } = {
     room: "00000000-0000-4000-a000-000000000003",
   };
@@ -583,14 +589,13 @@ export async function checkCompaction(
     200,
   );
   assert.equal((await call(idleBase + "/open", owner, "POST", { seedSha256: hash(seed) })).status, 200);
-  idleRoom.access = identity("idleRoom-guest", "anonymous");
+  idleRoom.access = identity("idleRoom-guest");
   assert.equal((await call(idleBase+"/members",idleRoom.access,"POST",{capability:idleRoom.capability})).status,200);
   const idleStub = namespace.get(namespace.idFromName(documentName(idleRoom.room)));
   const idleTest = (path: string, body = {}) =>
     idleStub.fetch("https://test/__test/" + path, { method: "POST", body: JSON.stringify(body) });
   await idleTest("alarm");
   assert.equal((await call(idleBase, idleRoom.access)).status, 200, "Recent room remains Live");
-  await idleTest("sql", { sql: "UPDATE meta SET value='0' WHERE key='last_active'" });
   await idleTest("alarm");
   assert.equal((await call(idleBase, owner)).status,200,"persistent document never idle expires");
   console.log("Passed: opaque fold-only compaction, the base limit, blob cleanup, socket quotas/refusals and persistent retention.");

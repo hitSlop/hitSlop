@@ -1,4 +1,4 @@
-//! The 2.0.0 baseline DTO and link examples (`tests/fixtures/v1`).
+//! HTTP DTO and link examples (`tests/fixtures/v1`).
 use crate::{document::*, http::*, resources::*};
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::Value;
@@ -99,14 +99,6 @@ fn baseline_http_dtos_and_extra_reply_fields() {
         let output = decode_as(case["type"].as_str().unwrap(), &case["input"])
             .unwrap_or_else(|error| panic!("{}: {error}", case["name"]));
         assert_eq!(output, case["canonical"], "{}", case["name"]);
-        if let Some(statuses) = case["statuses"].as_array() {
-            for status in statuses {
-                assert_eq!(
-                    serde_json::to_value(ApiFailure::refused(status.as_u64().unwrap() as u16)).unwrap(),
-                    case["canonical"]
-                );
-            }
-        }
     }
 }
 /// Keep HTTP wire coverage independent from documentation generators.

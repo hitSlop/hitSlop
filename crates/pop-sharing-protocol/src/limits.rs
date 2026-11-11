@@ -12,7 +12,7 @@ const _: () = assert!(
     pop_contracts::relay::limits::BASE_BYTES + crate::CONTROL_BYTES + 16 < pop_contracts::relay::frame::MAX_FRAME
 );
 
-/// Client timing, shared by the native supervisor and the browser worker.
+/// Client timing, used by native supervisors.
 /// A client rereads the room this often to learn whether it should compact.
 pub const ROOM_RECHECK_MS: u64 = 600_000;
 /// A compacting client waits up to this long first, so rivals usually find it done.

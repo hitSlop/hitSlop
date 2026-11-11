@@ -14,3 +14,20 @@ pub const COMPACT_AFTER_RECORDS: usize = 8_192;
 pub const ROOM_IP_CONNECTIONS: usize = 8;
 /// Maximum live library sockets per account.
 pub const ACCOUNT_CONNECTIONS: usize = 16;
+
+/// Other accounts admitted to a document; rejoining does not consume a second place.
+pub const DOCUMENT_MEMBERS: i64 = 64;
+/// Invitation exchange request budget.
+pub const JOIN_BODY_BYTES: usize = 4096;
+/// Metadata update request budget, including JSON escaping.
+pub const METADATA_BODY_BYTES: usize = 8192;
+/// Bound for one cross-object call; timeout does not establish whether it committed.
+pub const OBJECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+/// Bound for account library preparation across multiple object calls.
+pub const LIBRARY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
+/// Firebase key identifiers and subjects are bounded before they address storage.
+pub const IDENTITY_FIELD_BYTES: usize = 128;
+/// Clock skew tolerated for Firebase token timestamps.
+pub const IDENTITY_LEEWAY_SECONDS: u64 = 60;
+/// Cache lifetime when Google's certificate response omits max-age.
+pub const CERTIFICATE_CACHE_SECONDS: u64 = 3600;

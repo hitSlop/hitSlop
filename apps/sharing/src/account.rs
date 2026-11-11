@@ -14,8 +14,14 @@ pub(crate) struct DocumentInit {
 // Per-account registration/quota and deletion coordination; Document DO owns permissions.
 #[cfg(target_arch = "wasm32")]
 mod runtime {
-    use crate::room::{hash, identity_response};
+    use crate::room::hash;
     use crate::routes::{self, Op};
+    use crate::{
+        auth::VerifiedIdentity,
+        bounded::bounded,
+        limits::{LIBRARY_TIMEOUT, OBJECT_TIMEOUT},
+        refusal::Refusal,
+    };
     use pop_sharing_protocol::http::CreateRoom;
     use pop_sharing_protocol::library::{AccountEntry, LibraryFrame};
     use serde::{Deserialize, Serialize};
@@ -59,15 +65,13 @@ mod runtime {
                 init.with_body(Some(body.into()));
             }
             let stub = self.env.durable_object("DOCUMENTS")?.get_by_name(id)?;
-            let call = std::pin::pin!(
-                stub.fetch_with_request(Request::new_with_init(&format!("https://account.internal{path}"), &init)?)
-            );
-            let timeout = std::pin::pin!(worker::Delay::from(std::time::Duration::from_secs(5)));
-            match futures_util::future::select(call, timeout).await {
-                futures_util::future::Either::Left((reply, _)) => reply,
-                futures_util::future::Either::Right(_) => Err(Error::RustError("Document request timed out".into())),
-            }
+            bounded(
+                stub.fetch_with_request(Request::new_with_init(&format!("https://account.internal{path}"), &init)?),
+                OBJECT_TIMEOUT,
+            )
+            .await
         }
+
         fn send_frame(&self, ws: &WebSocket, frame: &str) -> Result<()> {
             if ws
                 .deserialize_attachment::<SocketIdentity>()?
@@ -88,12 +92,12 @@ mod runtime {
             }
             Ok(())
         }
-        async fn describe(&self, input: crate::room::publication::Description) -> Result<Response> {
+        async fn describe(&self, input: crate::publication::Description) -> Result<Response> {
             if input.entry.validate().is_err() {
-                return Response::error("Invalid entry", 400);
+                return Refusal::new(400, "invalid_request", "Invalid entry").response();
             }
             if self.sql.exec("SELECT count(*) AS n FROM deleting", None)?.one::<Number>()?.n > 0 {
-                return Response::error("Account deleted", 410);
+                return Refusal::new(410, "sharing_ended", "Account deleted").response();
             }
             let owned = i64::from(input.generation.is_none());
             let registered = self
@@ -166,12 +170,12 @@ mod runtime {
             self.sql.exec("DELETE FROM creation_intents WHERE document=?", vec![document.into()])?;
             Ok(())
         }
-        async fn bootstrap_library(&self, uid: &str) -> Result<()> {
+        async fn bootstrap_library(&self, identity: &VerifiedIdentity) -> Result<()> {
             use futures_util::{StreamExt, stream};
             let pending =
                 self.sql.exec("SELECT document,1 AS owned FROM creation_intents", None)?.to_array::<Registration>()?;
             for row in pending {
-                let reply = self.initialize_owned(&row.document, uid).await?;
+                let reply = self.initialize_owned(&row.document, &identity.uid).await?;
                 match reply.status_code() {
                     200..=299 => self.finish_creation(&row.document)?,
                     403 | 410 => {
@@ -182,12 +186,14 @@ mod runtime {
             }
             let missing = self.sql.exec("SELECT document,owned FROM documents LEFT JOIN projections USING(document) WHERE projections.document IS NULL", None)?.to_array::<Registration>()?;
             let mut replies = stream::iter(missing.into_iter().map(|row| async move {
+                let mut headers = Headers::new();
+                identity.forward(&mut headers)?;
                 self.document(
                     &row.document,
                     &format!("/internal/documents/{}/library", row.document),
                     Method::Post,
-                    Headers::new(),
-                    Some(serde_json::to_string(&serde_json::json!({"uid":uid}))?),
+                    headers,
+                    None,
                 )
                 .await
             }))
@@ -196,7 +202,7 @@ mod runtime {
                 let mut reply = reply?;
                 match reply.status_code() {
                     200 => {
-                        let input: crate::room::publication::Description = reply.json().await?;
+                        let input: crate::publication::Description = reply.json().await?;
                         self.describe(input).await?;
                     }
                     // The authority explicitly reports a hidden upload or lost access.
@@ -207,15 +213,28 @@ mod runtime {
             Ok(())
         }
         async fn serve(&self, mut req: Request) -> Result<Response> {
-            if req.path() == "/internal/describe" && req.method() == Method::Post {
-                let input: crate::room::publication::Description =
+            let Some((route, _, _)) = routes::resolve(&req)? else {
+                return Refusal::new(404, "not_found", "Not found").response();
+            };
+            if route.scope != routes::Scope::Account {
+                return Refusal::new(404, "not_found", "Not found").response();
+            }
+            let op = route.op;
+            if let Err(refusal) =
+                routes::authorize(route, routes::Caller { internal: route.internal, role: None }, None)
+            {
+                return refusal.response();
+            }
+
+            if op == Op::Describe {
+                let input: crate::publication::Description =
                     match crate::input::body(&mut req, pop_sharing_protocol::CONTROL_BYTES).await {
                         Ok(v) => v,
                         Err(e) => return e.response(),
                     };
                 return self.describe(input).await;
             }
-            if req.path() == "/internal/release" && req.method() == Method::Post {
+            if op == Op::Release {
                 let input: super::RegistryRequest =
                     match crate::input::body(&mut req, pop_sharing_protocol::CONTROL_BYTES).await {
                         Ok(input) => input,
@@ -257,48 +276,29 @@ mod runtime {
                 }
                 return Response::ok("released");
             }
-            if req.path() == "/internal/member" && req.method() == Method::Post {
+            if op == Op::Register {
                 let input: super::RegistryRequest =
                     match crate::input::body(&mut req, pop_sharing_protocol::CONTROL_BYTES).await {
                         Ok(input) => input,
                         Err(error) => return error.response(),
                     };
                 if !pop_contracts::identity::valid_document_id(&input.document) || input.generation.is_none() {
-                    return Response::error("Invalid document", 400);
+                    return Refusal::new(400, "invalid_request", "Invalid document").response();
                 }
                 if self.sql.exec("SELECT count(*) AS n FROM deleting", None)?.one::<Number>()?.n > 0 {
-                    return Response::error("Account deletion pending", 409);
+                    return Refusal::new(409, "conflict", "Account deletion pending").response();
                 }
                 self.sql.exec("INSERT INTO documents VALUES(?,0,?) ON CONFLICT(document) DO UPDATE SET generation=max(documents.generation,excluded.generation) WHERE documents.owned=0",vec![input.document.into(),(input.generation.unwrap_or(0) as i64).into()])?;
                 self.state.storage().sync().await?;
                 return Response::ok("registered");
             }
-            let path = req.path();
-            let Some(matched) = routes::find(req.method().as_ref(), &path) else {
-                return Response::error("Not found", 404);
-            };
-            let op = matched.route.op;
-            let claims = match crate::auth::identity(&req, &self.env).await {
-                Ok(c) => c,
-                Err(e) => return identity_response(e),
-            };
-            if self.state.id().to_string()
-                != self.env.durable_object("ACCOUNTS")?.id_from_name(&hash(&claims.sub))?.to_string()
-            {
-                return Response::error("Denied", 403);
-            }
+            let identity = VerifiedIdentity::from_request(&req)?;
             // The `/internal/*` calls above stay outside this lock: a document holding its
             // membership lock awaits them while account deletion, holding this one, leaves it.
-            if op == Op::AccountLibrary {
-                let lookup = std::pin::pin!(self.bootstrap_library(&claims.sub));
-                let deadline = std::pin::pin!(worker::Delay::from(std::time::Duration::from_secs(8)));
-                if !matches!(
-                    futures_util::future::select(lookup, deadline).await,
-                    futures_util::future::Either::Left((Ok(()), _))
-                ) {
-                    return Response::error("Library temporarily unavailable", 503);
-                }
+            if op == Op::AccountLibrary && bounded(self.bootstrap_library(&identity), LIBRARY_TIMEOUT).await.is_err() {
+                return Refusal::new(503, "unavailable", "The sharing service refused this request").response();
             }
+
             let _guard = self.operations.lock().await;
             if op == Op::DeleteAccount {
                 self.sql.exec("INSERT OR IGNORE INTO deleting VALUES(1)", None)?;
@@ -308,16 +308,17 @@ mod runtime {
                 self.state.storage().sync().await?;
                 for row in self.sql.exec("SELECT document,max(owned) AS owned FROM (SELECT document,owned FROM documents UNION ALL SELECT document,1 AS owned FROM creation_intents) GROUP BY document", None)?.to_array::<Registration>()? {
                     if self.sql.exec("SELECT count(*) AS n FROM creation_intents WHERE document=?", vec![row.document.clone().into()])?.one::<Number>()?.n > 0 {
-                        let reply = self.initialize_owned(&row.document, &claims.sub).await?;
+                        let reply = self.initialize_owned(&row.document, &identity.uid).await?;
                         if !matches!(reply.status_code(), 200..=299 | 403 | 410) { return Ok(reply); }
                     }
                     let path = if row.owned != 0 {
-                        format!("/v1/documents/{}", row.document)
+                        format!("/internal/documents/{}/delete", row.document)
                     } else {
-                        format!("/v1/documents/{}/members/me", row.document)
+                        format!("/internal/documents/{}/leave", row.document)
                     };
-                    let response =
-                        self.document(&row.document, &path, Method::Delete, req.headers().clone(), None).await?;
+                    let mut headers = Headers::new();
+                    identity.forward(&mut headers)?;
+                    let response = self.document(&row.document, &path, Method::Delete, headers, None).await?;
                     if !matches!(response.status_code(), 200 | 403 | 404 | 410) {
                         return Ok(response);
                     }
@@ -330,11 +331,11 @@ mod runtime {
                 return Response::ok("deleted");
             }
             if self.sql.exec("SELECT count(*) AS n FROM deleting", None)?.one::<Number>()?.n > 0 {
-                return Response::error("Account deleted", 410);
+                return Refusal::new(410, "sharing_ended", "Account deleted").response();
             }
             if op == Op::AccountLibrary {
                 if req.headers().get("Upgrade")?.as_deref() != Some("websocket") {
-                    return Response::error("WebSocket required", 426);
+                    return Refusal::new(426, "unavailable", "WebSocket required").response();
                 }
                 let sockets = self.state.get_websockets();
                 let active = sockets
@@ -347,7 +348,7 @@ mod runtime {
                     })
                     .count();
                 if active >= crate::limits::ACCOUNT_CONNECTIONS {
-                    return Response::error("Account connection limit", 429);
+                    return Refusal::new(429, "limited", "Account connection limit").response();
                 }
                 for ws in sockets {
                     if ws
@@ -367,7 +368,7 @@ mod runtime {
                 let pages = pop_sharing_protocol::library::snapshot_pages(entries)
                     .map_err(|e| Error::RustError(e.to_string()))?;
                 let pair = WebSocketPair::new()?;
-                pair.server.serialize_attachment(SocketIdentity { expires: claims.exp })?;
+                pair.server.serialize_attachment(SocketIdentity { expires: identity.expires })?;
                 self.state.accept_web_socket(&pair.server);
                 for page in pages {
                     self.send_frame(&pair.server, &page)?;
@@ -375,17 +376,14 @@ mod runtime {
                 return Response::from_websocket(pair.client);
             }
             if op != Op::CreateDocument {
-                return Response::error("Not found", 404);
-            }
-            if !claims.may_create() {
-                return Response::error("Sign in to create a cloud document", 401);
+                return Refusal::new(404, "not_found", "Not found").response();
             }
             let input: CreateRoom = match crate::input::body(&mut req, pop_sharing_protocol::CONTROL_BYTES).await {
                 Ok(input) => input,
                 Err(error) => return error.response(),
             };
             if !pop_contracts::identity::valid_document_id(&input.document) {
-                return Response::error("Invalid document", 400);
+                return Refusal::new(400, "invalid_request", "Invalid document").response();
             }
             let known = self
                 .sql
@@ -398,15 +396,15 @@ mod runtime {
                 > 0;
             if !known {
                 if self.env.var("CREATION_ENABLED").ok().is_none_or(|v| v.to_string() != "1") {
-                    return Response::error("Creation unavailable", 503);
+                    return Refusal::new(503, "unavailable", "The sharing service refused this request").response();
                 }
-                if !self.env.rate_limiter("ACCOUNT_CREATE_LIMIT")?.limit(hash(&claims.sub)).await?.success {
-                    return Response::error("Limited", 429);
+                if !self.env.rate_limiter("ACCOUNT_CREATE_LIMIT")?.limit(hash(&identity.uid)).await?.success {
+                    return Refusal::new(429, "limited", "Limited").response();
                 }
             }
             self.sql.exec("INSERT OR IGNORE INTO creation_intents VALUES(?)", vec![input.document.clone().into()])?;
             self.state.storage().sync().await?;
-            let result = self.initialize_owned(&input.document, &claims.sub).await?;
+            let result = self.initialize_owned(&input.document, &identity.uid).await?;
             match result.status_code() {
                 200..=299 => self.finish_creation(&input.document)?,
                 403 | 410 => {

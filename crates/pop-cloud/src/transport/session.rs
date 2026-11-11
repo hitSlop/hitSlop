@@ -746,10 +746,8 @@ mod tests {
             stream.set_read_timeout(Some(Duration::from_secs(2))).unwrap();
             let mut socket = tungstenite::accept_hdr(
                 stream,
-                |_: &tungstenite::handshake::server::Request, mut reply: tungstenite::handshake::server::Response| {
-                    reply
-                        .headers_mut()
-                        .insert("Sec-WebSocket-Protocol", pop_sharing_protocol::SOCKET_PROTOCOL.parse().unwrap());
+                |request: &tungstenite::handshake::server::Request, reply: tungstenite::handshake::server::Response| {
+                    assert!(!request.headers().contains_key("Sec-WebSocket-Protocol"));
                     Ok(reply)
                 },
             )

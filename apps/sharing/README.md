@@ -28,21 +28,15 @@ the byte limit, 400 when malformed, never a 500. Rust clients and the Worker sha
 Nothing here runs as part of local verification, and nothing is provisioned by this
 repository. Complete it before the first deployment.
 
-1. **Firebase console.** Enable the Anonymous sign-in provider (link guests depend on it)
-   in the `FIREBASE_PROJECT` named in `wrangler.jsonc`.
-2. **Library feed.** Account Durable Objects receive derived metadata from Document Objects. No Firestore configuration is required.
-3. **Fresh resources.** `wrangler.jsonc` names an R2 bucket `dotpop-documents` and an
-   Analytics dataset `dotpop_documents`. Create the bucket before deploying; the rate-limit
-   bindings reference the namespace ids in the same file. Isolation from earlier products
-   comes from these fresh names, not from code. Staging (`--env staging`) declares its own
-   Worker, bucket, dataset and namespaces.
-4. **Worker name.** The Worker is `dotpop` (`dotpop-staging` for `--env staging`) and owns
-   the `share.dotpop.click` custom domain. It is a new Worker, so migration tag
-   `documents-v1` declares the Durable Object classes without conflict. `dotpop` has never
-   had a live Durable Object, so its storage tables change without a migration until it ships.
-   Every client reaches the service through `share.dotpop.click`, so the deploy moves all
-   traffic to `dotpop` at once and nothing from the earlier Worker carries over.
-5. **Deploy.** `.github/workflows/sharing.yml` qualifies on matching `master` changes and
+1. **Firebase console.** Enable Sign in with Apple in the `FIREBASE_PROJECT` named
+   in `wrangler.jsonc`. Cloud documents require a signed-in account.
+2. **Resources.** Create the R2 bucket named in `wrangler.jsonc` before deploying.
+   That file also names the Analytics dataset and rate-limit namespaces. Staging
+   (`--env staging`) declares its own Worker, bucket, dataset and namespaces.
+3. **Worker.** `dotpop` (`dotpop-staging` for `--env staging`) owns the
+   `share.dotpop.click` custom domain. Migration tag `documents-v1` declares its
+   two SQLite Durable Object classes.
+4. **Deploy.** `.github/workflows/sharing.yml` qualifies on matching `master` changes and
    deploys the Worker with its assets on a `pop-v*` tag or manual run when the repository
    variable `POP_DEPLOY_ENABLED` is `true`. A smoke check requests
    `https://share.dotpop.click/health` and the association file. `wrangler rollback` reverses a deploy.
@@ -62,3 +56,9 @@ WASM, SQLite Durable Objects and R2:
   blob cleanup and the base size limit.
 
 Deployment and platform acceptance are separate from these local results.
+
+Native sockets upgrade without a subprotocol header. The route and relay Hello identify
+what they speak. A 2.0.0 client is recognized by its `Sec-WebSocket-Protocol` header
+(`pop.sync.v2` or `pop.library.v1`) and receives HTTP 426 with `requires_update`.
+A Hello with an unsupported protocol or app digest receives the relay protocol error
+frame, which native clients present as an update request.

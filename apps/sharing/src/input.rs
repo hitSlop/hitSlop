@@ -1,5 +1,6 @@
 //! Bounded untrusted request bodies; stored JSON keeps its separate failure path.
 //! Handlers match `body(..)` with `Err(error) => return error.response()`.
+use crate::refusal::Refusal;
 use futures_util::StreamExt;
 use serde::de::DeserializeOwned;
 use worker::{Request, Response, console_error};
@@ -13,13 +14,13 @@ pub(crate) enum InputError {
 impl InputError {
     /// A client mistake, never a 500. Only a fixed kind is logged, never the body.
     pub(crate) fn response(self) -> worker::Result<Response> {
-        let (kind, message, status) = match self {
-            Self::TooLarge => ("too_large", "Request exceeds its byte limit", 413),
-            Self::InvalidJson => ("invalid_json", "Invalid JSON request", 400),
-            Self::Read(_) => ("unreadable", "Request body could not be read", 400),
+        let (kind, message, status, code) = match self {
+            Self::TooLarge => ("too_large", "Request exceeds its byte limit", 413, "invalid_request"),
+            Self::InvalidJson => ("invalid_json", "Invalid JSON request", 400, "invalid_request"),
+            Self::Read(_) => ("unreadable", "Request body could not be read", 400, "invalid_request"),
         };
         console_error!("Sharing request rejected ({})", kind);
-        Response::error(message, status)
+        Refusal::new(status, code, message).response()
     }
 }
 impl std::fmt::Display for InputError {

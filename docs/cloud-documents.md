@@ -127,8 +127,6 @@ absence only after a complete snapshot; interruption preserves the last known li
 One account connection serves all library entries, and every device of that account
 has its own connection. Account entries never contain invitation secrets or document bytes.
 
-Existing registrations backfill from Document Object metadata when their account projection is missing; the cutover needs no cloud reset.
-
 Rust owns the subscription and local index. Foreground reconnect obtains a current
 snapshot; backgrounding stops the account socket. Account switches fence old callbacks.
 Expired sockets cannot receive private updates and reconnect with refreshed identity.

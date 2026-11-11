@@ -12,3 +12,24 @@ pub mod routes;
 
 #[cfg(target_arch = "wasm32")]
 mod metrics;
+
+#[cfg(target_arch = "wasm32")]
+mod access;
+#[cfg(target_arch = "wasm32")]
+mod blobs;
+#[cfg(target_arch = "wasm32")]
+mod bounded;
+#[cfg(target_arch = "wasm32")]
+mod compaction;
+#[cfg(target_arch = "wasm32")]
+mod document_state;
+#[cfg(target_arch = "wasm32")]
+mod lifecycle;
+pub mod policy;
+#[cfg(target_arch = "wasm32")]
+pub(crate) mod publication;
+pub mod refusal;
+#[cfg(target_arch = "wasm32")]
+mod seed;
+#[cfg(target_arch = "wasm32")]
+mod sync;

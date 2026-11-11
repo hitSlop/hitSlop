@@ -11,12 +11,12 @@
   "r2_buckets": [{ "binding": "SEEDS", "bucket_name": "dotpop-documents" }],
   "analytics_engine_datasets": [{ "binding": "METRICS", "dataset": "dotpop_documents" }],
   "ratelimits": [
-    { "name": "GUEST_COMPACT_LIMIT", "namespace_id": "27924748", "simple": { "limit": 6, "period": 60 } },
+    { "name": "COMPACT_LIMIT", "namespace_id": "27924748", "simple": { "limit": 6, "period": 60 } },
     { "name": "ACCOUNT_CREATE_LIMIT", "namespace_id": "27924743", "simple": { "limit": 5, "period": 60 } },
-    { "name": "GUEST_METADATA_LIMIT", "namespace_id": "27924744", "simple": { "limit": 120, "period": 60 } },
-    { "name": "GUEST_SEED_LIMIT", "namespace_id": "27924745", "simple": { "limit": 30, "period": 60 } },
-    { "name": "GUEST_CONNECT_LIMIT", "namespace_id": "27924746", "simple": { "limit": 60, "period": 60 } },
-    { "name": "GUEST_BLOB_LIMIT", "namespace_id": "27924747", "simple": { "limit": 120, "period": 60 } }
+    { "name": "METADATA_LIMIT", "namespace_id": "27924744", "simple": { "limit": 120, "period": 60 } },
+    { "name": "SEED_LIMIT", "namespace_id": "27924745", "simple": { "limit": 30, "period": 60 } },
+    { "name": "CONNECT_LIMIT", "namespace_id": "27924746", "simple": { "limit": 60, "period": 60 } },
+    { "name": "BLOB_LIMIT", "namespace_id": "27924747", "simple": { "limit": 120, "period": 60 } }
   ],
   "env": {
     "staging": {
@@ -52,7 +52,7 @@
       ],
       "ratelimits": [
         {
-          "name": "GUEST_COMPACT_LIMIT",
+          "name": "COMPACT_LIMIT",
           "namespace_id": "279247480",
           "simple": {
             "limit": 6,
@@ -68,7 +68,7 @@
           }
         },
         {
-          "name": "GUEST_METADATA_LIMIT",
+          "name": "METADATA_LIMIT",
           "namespace_id": "279247440",
           "simple": {
             "limit": 120,
@@ -76,7 +76,7 @@
           }
         },
         {
-          "name": "GUEST_SEED_LIMIT",
+          "name": "SEED_LIMIT",
           "namespace_id": "279247450",
           "simple": {
             "limit": 30,
@@ -84,7 +84,7 @@
           }
         },
         {
-          "name": "GUEST_CONNECT_LIMIT",
+          "name": "CONNECT_LIMIT",
           "namespace_id": "279247460",
           "simple": {
             "limit": 60,
@@ -92,7 +92,7 @@
           }
         },
         {
-          "name": "GUEST_BLOB_LIMIT",
+          "name": "BLOB_LIMIT",
           "namespace_id": "279247470",
           "simple": {
             "limit": 120,

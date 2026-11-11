@@ -35,18 +35,20 @@ const { privateKey, publicKey } = generateKeyPairSync("rsa", { modulusLength: 20
 const pem = publicKey.export({ type: "pkcs1", format: "pem" }).toString();
 const uid = (name: string, provider = "apple.com") => {
   const now = Math.floor(Date.now() / 1000);
-  const parts = [{ alg: "RS256", kid: "local-runtime-only" }, { sub: name, aud: "hitslopapp", iss: "https://securetoken.google.com/hitslopapp", iat: now, auth_time: now, exp: now + 3600, firebase: { sign_in_provider: provider }, jti: crypto.randomUUID() }]
+  const parts = [{ alg: "RS256", kid: "local-runtime-only" }, { sub: name, aud: relayConfig.vars.FIREBASE_PROJECT, iss: `https://securetoken.google.com/${relayConfig.vars.FIREBASE_PROJECT}`, iat: now, auth_time: now, exp: now + 3600, firebase: { sign_in_provider: provider }, jti: crypto.randomUUID() }]
     .map(value => Buffer.from(JSON.stringify(value)).toString("base64url")).join(".");
   return parts + "." + sign("RSA-SHA256", Buffer.from(parts), privateKey).toString("base64url");
 };
-const a = uid("creator-a"), secondSession = uid("creator-a"), b = uid("creator-b");
 const document = "00000000-0000-4000-8000-000000000001";
 const seed = Buffer.alloc(512, 42);
 const app = "a".repeat(64);
-const relayConfig = ts.parseConfigFileTextToJson("wrangler.jsonc", await readFile(join(repository, "apps/sharing/wrangler.jsonc"), "utf8")).config as {
+const environments = ts.parseConfigFileTextToJson("wrangler.jsonc", await readFile(join(repository, "apps/sharing/wrangler.jsonc"), "utf8")).config;
+const relayConfig = environments as {
+  compatibility_date: string;
+  vars: Record<string, string>;
   ratelimits: { name: string; simple: { limit: number; period: 60 } }[];
 };
-const environments = ts.parseConfigFileTextToJson("wrangler.jsonc", await readFile(join(repository, "apps/sharing/wrangler.jsonc"), "utf8")).config;
+const a = uid("creator-a"), secondSession = uid("creator-a"), b = uid("creator-b");
 const staging = environments.env.staging;
 assert.notEqual(staging.name, environments.name, "Staging uses a separate Worker");
 for (const kind of ["ratelimits", "r2_buckets", "analytics_engine_datasets"]) {
@@ -57,13 +59,13 @@ for (const kind of ["ratelimits", "r2_buckets", "analytics_engine_datasets"]) {
 }
 const harness = join(root, "relay-harness.mjs");
 await writeFile(harness, relayHarness(join(repository, "generated/sharing/relay/index.js")));
-function runtime(roomsAvailable = true) {
+function runtime(roomsAvailable = true, identityAvailable = true) {
   return new Miniflare({
     durableObjectsPersist: join(root, "objects"), r2Persist: join(root, "r2"),
     workers: [{
       name: "relay", modules: true, scriptPath: harness, modulesRoot: "/",
-      compatibilityDate: "2025-11-05", modulesRules: [{ type: "ESModule", include: ["**/*.js"], fallthrough: true }, { type: "CompiledWasm", include: ["**/*.wasm"], fallthrough: true }],
-      bindings: { FIREBASE_PROJECT: "hitslopapp", CREATION_ENABLED: "1" },
+      compatibilityDate: relayConfig.compatibility_date, modulesRules: [{ type: "ESModule", include: ["**/*.js"], fallthrough: true }, { type: "CompiledWasm", include: ["**/*.wasm"], fallthrough: true }],
+      bindings: relayConfig.vars,
       durableObjects: { ...(roomsAvailable ? { DOCUMENTS: { className: "CloudDocument", useSQLite: true } } : {}), ACCOUNTS: { className: "DocumentAccount", useSQLite: true } },
       r2Buckets: ["SEEDS"],
       analyticsEngineDatasets: { METRICS: { dataset: "dotpop_documents" } },
@@ -71,9 +73,12 @@ function runtime(roomsAvailable = true) {
       outboundService: "certificates",
     }, {
       name: "certificates", modules: true,
-      script: `export default { fetch(request) {
+      script: `let requests = 0; export default { fetch(request) {
+        if(new URL(request.url).pathname === '/__test/requests') return Response.json(requests);
+        requests++;
+        if(!${identityAvailable}) return new Response(null,{status:503});
         if(request.url!=='https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com')return new Response(null,{status:502});
-        return Response.json(${JSON.stringify({ "local-runtime-only": pem })},{headers:{"Cache-Control":"public,max-age=3600"}});
+        return Response.json(${JSON.stringify({ "local-runtime-only": pem })});
       } }`,
     }],
   });
@@ -102,11 +107,17 @@ try {
     "Oversized creation body is a bounded request refusal");
   assert.equal((await call("documents", a, "POST", new TextEncoder().encode("{not json"))).status, 400,
     "A malformed body is a client error, never a 500");
+  const certificateService = await worker.getWorker("certificates");
+  assert.equal(await (await certificateService.fetch("https://test/__test/requests")).json(), 1,
+    "A certificate response without max-age stays cached across requests");
   const oldSocket = await call("documents/" + document + "/sync", a, "GET", undefined, {
-    Upgrade: "websocket", "Sec-WebSocket-Protocol": "pop.sync.v1",
+    Upgrade: "websocket", "Sec-WebSocket-Protocol": "pop.sync.v2",
   });
   assert.equal(oldSocket.status, 426, "Old socket protocols are told to update");
   assert.equal((await oldSocket.json() as {code:string}).code, "requires_update");
+  const oldLibrary = await call("account/library", a, "GET", undefined, {Upgrade:"websocket", "Sec-WebSocket-Protocol":"pop.library.v1"});
+  assert.equal(oldLibrary.status,426);
+  assert.equal((await oldLibrary.json() as {code:string}).code,"requires_update");
   await checkCompaction(worker, call, uid("compaction-owner"), uid);
   // The join page, Apple callback, association file and icon deploy as static assets from
   // apps/sharing/public, with `_headers` and `_redirects`; this reads the files that ship.
@@ -178,9 +189,9 @@ try {
   assert.equal((await call(base+"/open",a,"POST",{seedSha256:hash(seed)})).status,200);
   // The live account feed is isolated by verified identity and survives reconnects.
   const library = async (token:string) => {
-    const reply = await call("account/library", token, "GET", undefined, {Upgrade:"websocket", "Sec-WebSocket-Protocol":"pop.library.v1"});
+    const reply = await call("account/library", token, "GET", undefined, {Upgrade:"websocket"});
     assert.equal(reply.status,101);
-    assert.equal(reply.headers.get("Sec-WebSocket-Protocol"),"pop.library.v1");
+    assert.equal(reply.headers.get("Sec-WebSocket-Protocol"),null);
     const socket = reply.webSocket!; socket.accept();
     const queue:any[]=[]; const waiters:((value:any)=>void)[]=[];
     socket.addEventListener("message", (event:any)=>{ if(event.data === "pong")return; const frame=JSON.parse(event.data); const waiter=waiters.shift(); if(waiter)waiter(frame);else queue.push(frame); });
@@ -203,8 +214,8 @@ try {
   await bootstrapAccount.fetch("https://test/__test/fail-descriptions",{method:"POST",body:JSON.stringify({enabled:true})});
   await json(base,a,"PATCH",{title:"Live title",templateId:"fixture"});
   await libraryDocument.fetch("https://test/__test/alarm");
-  const owed=await (await libraryDocument.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"SELECT value FROM meta WHERE key='library_pending'"})})).json() as {value:string}[];
-  assert.equal(owed[0]!.value,"1","Failed publication stays durable without another edit");
+  const owed=await (await libraryDocument.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"SELECT library_pending AS value FROM document_state"})})).json() as {value:number}[];
+  assert.equal(owed[0]!.value,1,"Failed publication stays durable without another edit");
   await bootstrapAccount.fetch("https://test/__test/fail-descriptions",{method:"POST",body:JSON.stringify({enabled:false})});
   await libraryDocument.fetch("https://test/__test/alarm");
   let changed=await ownerLibrary.next();
@@ -213,7 +224,7 @@ try {
   ownerLibrary.socket.close(); outsiderLibrary.socket.close();
   await bootstrapAccount.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"DELETE FROM projections"})});
   await libraryDocument.fetch("https://test/__test/hold-library",{method:"POST"});
-  const stalledSnapshot=call("account/library",secondSession,"GET",undefined,{Upgrade:"websocket","Sec-WebSocket-Protocol":"pop.library.v1"});
+  const stalledSnapshot=call("account/library",secondSession,"GET",undefined,{Upgrade:"websocket"});
   for(let n=0;n<500;n++) {
     if(await (await libraryDocument.fetch("https://test/__test/library-waiting")).json()) break;
     assert(n<499,"Bootstrap reached the stalled document");
@@ -227,7 +238,7 @@ try {
   assert.equal((await stalledSnapshot).status,503,"A stalled bootstrap has a bounded failure");
   await libraryDocument.fetch("https://test/__test/release-library",{method:"POST"});
   await libraryDocument.fetch("https://test/__test/library-unavailable",{method:"POST",body:JSON.stringify({enabled:true})});
-  const unavailableSnapshot=await call("account/library",secondSession,"GET",undefined,{Upgrade:"websocket","Sec-WebSocket-Protocol":"pop.library.v1"});
+  const unavailableSnapshot=await call("account/library",secondSession,"GET",undefined,{Upgrade:"websocket"});
   assert.equal(unavailableSnapshot.status,503,"An unresolved lookup must not produce authoritative absence");
   await libraryDocument.fetch("https://test/__test/library-unavailable",{method:"POST",body:JSON.stringify({enabled:false})});
   const reconnected=await library(secondSession);
@@ -238,6 +249,11 @@ try {
   assert.equal((await call(base+"/sharing",b)).status,403,"a valid nonmember is denied access");
   assert.equal((await call(base+"/seed",secondSession)).status,200,"same account on another device shares private bytes");
   assert.equal((await json<AccessState>(base+"/sharing",secondSession)).role,"owner");
+  const forgedIdentity = {"X-Pop-Verified-Identity":JSON.stringify({uid:"creator-a",named:true,expires:Math.floor(Date.now()/1000)+3600})};
+  const forged = await call(base+"/seed", b, "GET", undefined, forgedIdentity);
+  assert.equal(forged.status,403);
+  assert.deepEqual(await forged.json(),{code:"denied",message:"Access revoked"});
+  assert.equal((await call(base+"/seed",undefined,"GET",undefined,forgedIdentity)).status,401);
   const enabled=await json<AccessState>(base+"/sharing",a,"POST");assert(enabled.capability);assert(enabled.sharing);
   // Only the authorized access reply carries the invitation secret; document metadata never does,
   // even for the owner while sharing is on.
@@ -247,10 +263,11 @@ try {
     assert.equal(typeof info.compact,"boolean","Every reply states whether compaction is due");
     assert.ok(!("capability" in info) && !JSON.stringify(info).includes(enabled.capability!),"Document metadata never carries the invitation");
   }
-  const guest = uid("guest", "anonymous");
+  assert.equal((await call(base+"/members",uid("anonymous", "anonymous"),"POST",{capability:enabled.capability})).status,401);
+  const guest = uid("guest");
   await json(base+"/members",guest,"POST",{capability:enabled.capability});
-  assert.equal((await call(base+"/seed",guest)).status,200,"Verified anonymous identities may join");
-  assert.equal((await call(base+"/seed",enabled.capability!)).status,403,"Invitation secrets cannot authorize document reads");
+  assert.equal((await call(base+"/seed",guest)).status,200,"Signed-in identities may join");
+  assert.equal((await call(base+"/seed",enabled.capability!)).status,401,"Invitation secrets cannot authorize document reads");
   const member=await json<AccessState>(base+"/members",b,"POST",{capability:enabled.capability});assert.equal(member.role,"editor");
   assert.equal((await call(base+"/seed",b)).status,200);
   await libraryDocument.fetch("https://test/__test/alarm");
@@ -260,7 +277,7 @@ try {
   assert.equal(memberSnapshot.entries[0].role,"editor");
 
   const connect=async(token:string)=>{
-    const response=await call(base+"/sync",token,"GET",undefined,{Upgrade:"websocket","Sec-WebSocket-Protocol":SharingHost.socketProtocol});
+    const response=await call(base+"/sync",token,"GET",undefined,{Upgrade:"websocket"});
     assert.equal(response.status,101);const socket=response.webSocket;assert(socket);socket.accept();
     const queue:ReturnType<typeof decode>[]=[];const waiters:((frame:ReturnType<typeof decode>)=>void)[]=[];
     socket.addEventListener("message",(event:any)=>{const frame=decode(event.data);const resolve=waiters.shift();if(resolve)resolve(frame);else queue.push(frame);});
@@ -270,7 +287,7 @@ try {
     return {socket,next};
   };
   assert.equal((await call(base+"/sync",undefined,"GET",undefined,{
-    Upgrade:"websocket", "Sec-WebSocket-Protocol":`${SharingHost.socketProtocol}, cap.${enabled.capability}`,
+    Upgrade:"websocket", "Sec-WebSocket-Protocol":`pop.sync.v2, cap.${enabled.capability}`,
   })).status,426,"Credentials in a socket subprotocol are never read");
   const ownerConnection=await connect(a),guestConnection=await connect(guest);
   const ownerSocket=ownerConnection.socket,guestSocket=guestConnection.socket;let ownerClosed=false;
@@ -279,7 +296,12 @@ try {
   const documents = await worker.getDurableObjectNamespace("DOCUMENTS");
   const documentStub = documents.get(documents.idFromName(documentName(document)));
   const revoked=await json<AccessState>(base+"/sharing",a,"DELETE");assert(!revoked.sharing);assert(revoked.generation>enabled.generation);
-  assert.equal((await call(base+"/seed",enabled.capability!)).status,403);assert.equal((await call(base+"/seed",guest)).status,403);assert.equal((await call(base+"/seed",b)).status,403);
+  assert.equal((await call(base+"/seed",enabled.capability!)).status,401);assert.equal((await call(base+"/seed",guest)).status,403);assert.equal((await call(base+"/seed",b)).status,403);
+  for (const [suffix,method] of [["","GET"],["/sharing","GET"],["/metadata","GET"],["/seed","GET"],["/blobs","GET"],["/blob/"+"b".repeat(64),"GET"],["/blob/"+"b".repeat(64),"PUT"],["/compact","POST"],["/sync","GET"]]) {
+    const reply=await call(base+suffix,b,method);
+    assert.equal(reply.status,403,"Revoked membership on "+suffix);
+    assert.deepEqual(await reply.json(),{code:"denied",message:"Access revoked"});
+  }
   assert.equal((await call(base+"/seed",a)).status,200);assert(!ownerClosed,"revocation does not close private owner connection");
   assert.equal((await guestConnection.next()).code,3,"revocation delivers the real access-ended frame");
   try { guestSocket.send(push(2,0,1,new Uint8Array([8]))); } catch { /* Peer is already closing. */ }
@@ -288,11 +310,11 @@ try {
   ownerSocket.send(push(1,0,1));
   const ownerAck=await ownerConnection.next();assert.equal(ownerAck.tag,6);assert.equal(ownerAck.status,0,"owner still writes after invitation revocation");
   assert.equal((await ownerConnection.next()).tag,3,"owner still receives live accepted updates");
-  const heads=await (await documentStub.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"SELECT value FROM meta WHERE key='heads'"})})).json() as {value:string}[];
+  const heads=await (await documentStub.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"SELECT heads AS value FROM document_state"})})).json() as {value:string}[];
   assert.deepEqual(JSON.parse(heads[0]!.value),[["0000000000000001",1]],"a revoked guest push never enters the accepted frontier");
   ownerSocket.close();
   const reopened=await json<AccessState>(base+"/sharing",a,"POST");assert.notEqual(reopened.capability,enabled.capability);
-  const staying=uid("staying-guest","anonymous");
+  const staying=uid("staying-guest");
   await json(base+"/members",b,"POST",{capability:reopened.capability});
   await json(base+"/members",staying,"POST",{capability:reopened.capability});
   const attachment=new Uint8Array([3,1,4,1,5,9]);
@@ -312,7 +334,7 @@ try {
     const count=async(kind:string)=>Number(await (await account.fetch("https://test/__test/held-"+kind)).text());
     // A registration held before the account handles it, or stored with its reply held.
     const held=async()=>await count("registrations")>0,stored=async()=>await count("registration-responses")>0;
-    return {name,token:uid(name,"anonymous"),account,hook,held,stored};
+    return {name,token:uid(name),account,hook,held,stored};
   };
   const registered = async(token:string,id:string) => {
     const name = JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString()).sub;
@@ -497,7 +519,7 @@ try {
   const stoppingJoin=call(stopping.base+"/members",stopper.token,"POST",{capability:stopping.invite.capability});
   await until(stopper.held,"The join awaits its account registration");
   const stoppingDeletion=call(stopping.base,a,"DELETE");
-  await until(async()=>JSON.stringify(await stubSQL(stopping.stub,"SELECT value FROM meta WHERE key='phase'")).includes("ended"),"Deletion ends the document");
+  await until(async()=>JSON.stringify(await stubSQL(stopping.stub,"SELECT phase AS value FROM document_state")).includes("ended"),"Deletion ends the document");
   await stopper.hook("release-registration");
   assert.equal((await stoppingJoin).status,403,"A join pending at deletion fails closed");
   assert.equal((await stoppingDeletion).status,200);
@@ -565,7 +587,7 @@ try {
   const late=await delayedPatch;
   assert.equal(late.status,410,"A metadata write that outlives deletion is refused");
   assert.equal((await late.json() as {code:string}).code,"sharing_ended");
-  const lateMeta=await (await lateStub.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"SELECT key FROM meta WHERE key IN ('title','template_id')"})})).json();
+  const lateMeta=await (await lateStub.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"SELECT title,template_id FROM document_state WHERE title IS NOT NULL OR template_id IS NOT NULL"})})).json();
   assert.deepEqual(lateMeta,[],"A deleted document keeps no metadata written after deletion");
   assert.equal((await call("documents/"+lateDocument+"/metadata",a)).status,410);
   const repairDocument="00000000-0000-4000-8000-000000000098";
@@ -633,5 +655,11 @@ try {
   await recoveredAccount.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"INSERT INTO creation_intents VALUES(?)",args:[intentId]})});
   assert.equal((await call("account",intentToken,"DELETE")).status,200);
   assert.equal((await call("documents/"+intentId,intentToken)).status,410,"Account deletion includes unfinished initialization intents");
-  console.log("Passed: persistent UUID/private identity, anonymous links, generation-bound members, member-bound attachment reads, fail-closed and reset-safe joins, revoke-first leaves and registry cleanup, the member limit under racing joins, owner-preserving revocation/leave, restart-safe registry repair, deletion tombstones.");
+  await worker.dispose(); worker=runtime(true,false);
+  for (const [path,method] of [["documents", "POST"],["account/library","GET"],["documents/"+repairDocument,"GET"],["documents/"+repairDocument+"/sharing","GET"],["documents/"+repairDocument+"/seed","GET"],["documents/"+repairDocument+"/sync","GET"]]) {
+    const outage=await call(path!,b,method!);
+    assert.equal(outage.status,503,"Identity-provider outages are retryable on "+path);
+    assert.equal((await outage.json() as {code:string}).code,"unavailable");
+  }
+  console.log("Passed: persistent UUID/private identity, signed-in links, generation-bound members, member-bound attachment reads, fail-closed and reset-safe joins, revoke-first leaves and registry cleanup, the member limit under racing joins, owner-preserving revocation/leave, restart-safe registry repair, deletion tombstones.");
 } finally { await worker.dispose(); await rm(root,{recursive:true,force:true}); }

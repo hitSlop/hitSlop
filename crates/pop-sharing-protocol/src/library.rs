@@ -3,9 +3,6 @@ use crate::{CONTROL_BYTES, document::DocumentRole, limits};
 use pop_contracts::{Code, Error, Result};
 use serde::{Deserialize, Serialize};
 
-/// WebSocket subprotocol for complete library snapshots followed by changes.
-pub const SOCKET_PROTOCOL: &str = "pop.library.v1";
-
 /// A server-maintained projection of one document into an account's library.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

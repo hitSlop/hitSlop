@@ -1,7 +1,7 @@
 //! One account feed, with fresh snapshots after reconnect and bounded callback delivery.
 use super::*;
 use pop_contracts::relay::PauseKind;
-use pop_sharing_protocol::library::{AccountEntry, LibraryFrame, SOCKET_PROTOCOL};
+use pop_sharing_protocol::library::{AccountEntry, LibraryFrame};
 use std::sync::{
     Condvar,
     atomic::{AtomicU64, Ordering},
@@ -159,7 +159,7 @@ async fn run(
         let token = identity.borrow_and_update().clone();
         let session = async {
             let url = format!("{origin}/v1/account/library");
-            let mut socket = upgrade_at(&url, &token, SOCKET_PROTOCOL).await?;
+            let mut socket = upgrade_at(&url, &token).await?;
             let mut snapshot = Some(Vec::new());
             let mut ping = tokio::time::interval(Duration::from_millis(pop_sharing_protocol::limits::PING_MS));
             loop {
@@ -260,10 +260,9 @@ mod tests {
     fn accept(listener: &TcpListener) -> tungstenite::WebSocket<TcpStream> {
         let (stream, _) = listener.accept().unwrap();
         stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
-        tungstenite::accept_hdr(stream, |request: &Request, mut response: Response| {
+        tungstenite::accept_hdr(stream, |request: &Request, response: Response| {
             assert_eq!(request.uri().path(), "/v1/account/library");
-            assert_eq!(request.headers()["sec-websocket-protocol"], SOCKET_PROTOCOL);
-            response.headers_mut().insert("sec-websocket-protocol", SOCKET_PROTOCOL.parse().unwrap());
+            assert!(!request.headers().contains_key("sec-websocket-protocol"));
             Ok(response)
         })
         .unwrap()
