@@ -84,7 +84,7 @@ export async function buildCompat(): Promise<void> {
  * library's build dependencies add features), and each build would undo the other. */
 export async function buildEngine() {
   const library = process.platform === "darwin" ? ["-p", "pop-core-ffi"] : [];
-  await run(["cargo", "build", "--locked", "--profile", cargoProfile(), "-p", "pop-engine", "-p", "pop-runner", ...library]);
+  await run(["cargo", "build", "--locked", "--profile", cargoProfile(), "-p", "pop-engine", ...library]);
 }
 
 /** The app's core: the Swift binding and an arm64 XCFramework (the app ships for Apple

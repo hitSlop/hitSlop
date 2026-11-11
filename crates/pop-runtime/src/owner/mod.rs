@@ -236,7 +236,9 @@ pub struct Owner {
     admission: Arc<admission::Admission>,
     sync_admission: Arc<std::sync::Mutex<actor::Admission>>,
     sender: mpsc::Sender<Message>,
-    store: Arc<store::Store>,
+    app: Arc<file::OpenedApp>,
+    resources: store::ResourceSource,
+    thread: std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
     path: PathBuf,
     started: Instant,
 }
@@ -251,26 +253,37 @@ impl Owner {
         evaluator: Option<Evaluator>,
     ) -> Result<Self> {
         let path = file::resolve(path)?;
-        let store = Arc::new(store::Store::open(&path, mode)?);
+        let store = store::Store::open(&path, mode)?;
         Self::from_store(path, store, mode, listener, evaluator)
     }
-    pub(crate) fn from_store(
+    fn from_store(
         path: PathBuf,
-        store: Arc<store::Store>,
+        store: store::Store,
         mode: store::Mode,
         listener: Listener,
         evaluator: Option<Evaluator>,
     ) -> Result<Self> {
-        let (sender, started, admission) = match actor::spawn(store.clone(), mode, listener, evaluator) {
-            Ok(started) => started,
-            Err(failure) => {
-                // No actor admitted work. A worker may still hold an Arc while its
-                // channel shuts down; release ownership before returning the failure.
-                store.close()?;
-                return Err(failure);
-            }
-        };
-        Ok(Self { sender, store, path, started, sync_admission: Arc::default(), admission })
+        let app = store.opened_app();
+        let resources = store.resource_source();
+        let actor::Started { sender, started, admission, thread } = actor::spawn(store, mode, listener, evaluator)?;
+        Ok(Self {
+            sender,
+            app,
+            resources,
+            thread: std::sync::Mutex::new(Some(thread)),
+            path,
+            started,
+            sync_admission: Arc::default(),
+            admission,
+        })
+    }
+    fn storage_control<T>(
+        &self,
+        control: impl FnOnce(mpsc::Sender<Result<T>>) -> actor::persistence::Control,
+    ) -> Result<T> {
+        let (reply, result) = mpsc::channel();
+        self.sender.send(Message::Control(control(reply))).map_err(|_| closed())?;
+        result.recv().map_err(|_| closed())?
     }
     /// Serial admission for host actions, including immutable page configuration.
     /// The host still fences the WebView when the asynchronous result arrives.
@@ -289,19 +302,19 @@ impl Owner {
         &self.path
     }
     pub fn app(&self) -> &file::OpenedApp {
-        self.store.app()
+        &self.app
     }
     pub fn resource_reader(&self) -> Result<file::ResourceReader> {
-        Ok(self.store.resource_reader()?)
+        Ok(self.resources.reader()?)
     }
     pub fn attach(&self, view: String) {
         let _ = self.sender.send(Message::Attach(view));
     }
     pub fn publish_discovery(&self, json: &str) -> Result<()> {
-        Ok(self.store.publish_discovery(json)?)
+        self.storage_control(|reply| actor::persistence::Control::Publish(json.to_owned(), reply))
     }
     pub fn withdraw_discovery(&self) {
-        self.store.withdraw_discovery();
+        let _ = self.storage_control(actor::persistence::Control::Withdraw);
     }
     /// Enqueue without waiting. Exhausted request count or payload budgets answer Busy
     /// without applying the request; lifecycle requests have reserved admission capacity.
@@ -337,5 +350,11 @@ fn admitted_callback(callback: Completion, permit: Permit) -> Completion {
 impl Drop for Owner {
     fn drop(&mut self) {
         let _ = self.sender.send(Message::Stop);
+        if let Some(thread) = crate::lock(&self.thread).take() {
+            // A callback can release its final handle on the owner thread itself.
+            if thread.thread().id() != std::thread::current().id() {
+                let _ = thread.join();
+            }
+        }
     }
 }

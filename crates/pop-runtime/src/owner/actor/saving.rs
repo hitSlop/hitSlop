@@ -36,9 +36,9 @@ impl Actor {
             pressure: if self.failure.as_ref().is_some_and(|failure| failure.kind == FailureKind::Full) {
                 store::Pressure::Full
             } else {
-                self.store.pressure()
+                self.save_state.pressure()
             },
-            shared: self.store.is_shared(),
+            shared: self.save_state.is_shared(),
         });
     }
     pub(super) fn wait(&mut self, callback: &mut Option<Completion>, next: AfterSave) -> Result<()> {
@@ -67,7 +67,7 @@ impl Actor {
         self.requested = false;
         self.unsaved_since = None;
         self.deadline = None;
-        let job = catch_unwind(AssertUnwindSafe(|| self.store.job(&mut self.core).map_err(Failure::from)))
+        let job = catch_unwind(AssertUnwindSafe(|| self.save_state.job(&mut self.core).map_err(Failure::from)))
             .unwrap_or_else(|_| {
                 self.invalidated = true;
                 Err(poisoned())
@@ -98,10 +98,12 @@ impl Actor {
                 AfterSave::Storage(action) => self.storage(action, waiter.callback),
                 AfterSave::Close { preview, icon } => {
                     let job = if self.mode == store::Mode::Document {
-                        catch_unwind(AssertUnwindSafe(|| self.store.close_job(&mut self.core)))
-                            .ok()
-                            .and_then(|r| r.ok())
-                            .flatten()
+                        catch_unwind(AssertUnwindSafe(|| {
+                            self.save_state.close_job(&mut self.core, self.app.app.spec())
+                        }))
+                        .ok()
+                        .and_then(|r| r.ok())
+                        .flatten()
                     } else {
                         None
                     };
@@ -136,7 +138,7 @@ impl Actor {
                     complete(callback, Err(poisoned()))
                 }
                 Work::Handoff { callback, .. } => complete(callback, Err(poisoned())),
-                Work::Save { .. } => {}
+                Work::Save { .. } | Work::Control(_) => {}
             }
         }
     }

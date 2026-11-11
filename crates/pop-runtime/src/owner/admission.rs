@@ -51,7 +51,7 @@ impl Admission {
         self.reserve_request(bytes, false, false)
     }
     fn reserve_request(self: &Arc<Self>, bytes: usize, control: bool, copy: bool) -> Option<Permit> {
-        let mut usage = self.usage.lock().expect("owner request admission");
+        let mut usage = crate::lock(&self.usage);
         if (copy && usage.copies >= COPY_PRODUCERS)
             || bytes > TOTAL_BYTES.saturating_sub(usage.bytes)
             || if control {
@@ -73,7 +73,7 @@ impl Admission {
         Some(Permit { admission: Arc::clone(self), control, bytes, copy })
     }
     pub(super) fn reserve_bytes(self: &Arc<Self>, bytes: usize, control: bool) -> Option<ByteLease> {
-        let mut usage = self.usage.lock().expect("owner request admission");
+        let mut usage = crate::lock(&self.usage);
         if bytes > TOTAL_BYTES.saturating_sub(usage.bytes)
             || (!control && bytes > ORDINARY_BYTES.saturating_sub(usage.ordinary_bytes))
         {
@@ -88,7 +88,7 @@ impl Admission {
 }
 impl Drop for Permit {
     fn drop(&mut self) {
-        let mut usage = self.admission.usage.lock().expect("owner request admission");
+        let mut usage = crate::lock(&self.admission.usage);
         if self.control {
             usage.control -= 1;
         } else {
@@ -101,7 +101,7 @@ impl Drop for Permit {
 }
 impl Drop for ByteLease {
     fn drop(&mut self) {
-        let mut usage = self.admission.usage.lock().expect("owner request admission");
+        let mut usage = crate::lock(&self.admission.usage);
         usage.bytes -= self.bytes;
         if !self.control {
             usage.ordinary_bytes -= self.bytes;

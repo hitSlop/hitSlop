@@ -12,7 +12,7 @@ import UniformTypeIdentifiers
     #if os(iOS)
       guard let path = Bundle.main.executableURL?.path else { throw PopFailure("Artwork renderer is unavailable") }
     #else
-      guard let path = DocumentOwner.evaluatorPath else { throw PopFailure("Artwork renderer is unavailable") }
+      guard let path = DocumentOwner.enginePath else { throw PopFailure("Artwork renderer is unavailable") }
     #endif
     return try CaptureRuntime(evaluatorPath: path)
   }

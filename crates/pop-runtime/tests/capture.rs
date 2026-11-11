@@ -153,7 +153,7 @@ fn saved_images(path: &Path, count: usize, padded: bool) -> Vec<String> {
             store.put_attachment(&bytes).unwrap().id
         })
         .collect();
-    let mut doc = store.document().unwrap();
+    let mut doc = store.open_document().unwrap();
     doc.apply_json(
         &serde_json::json!({"intents":[{"type":"set","path":["title"],"value":ids.join(" ")}]}).to_string(),
         Origin::Page,

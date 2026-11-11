@@ -35,14 +35,14 @@ pub(in crate::owner) struct Reservation {
 }
 impl Drop for Reservation {
     fn drop(&mut self) {
-        let mut a = self.admission.lock().expect("sync admission");
+        let mut a = crate::lock(&self.admission);
         a.bytes -= self.size;
         a.frames -= 1;
     }
 }
 impl Reservation {
     fn current(&self) -> bool {
-        let a = self.admission.lock().expect("sync admission");
+        let a = crate::lock(&self.admission);
         a.connection == self.connection && !a.overflow
     }
 }
@@ -73,7 +73,7 @@ impl SyncConnection {
         }));
     }
     pub fn frame(&self, bytes: Vec<u8>) -> bool {
-        let mut a = self.admission.lock().expect("sync admission");
+        let mut a = crate::lock(&self.admission);
         if a.connection != self.connection || a.overflow {
             return false;
         }
@@ -129,7 +129,7 @@ impl SyncConnection {
         }));
     }
     pub fn detach(&self) {
-        let mut a = self.admission.lock().expect("sync admission");
+        let mut a = crate::lock(&self.admission);
         if a.connection != self.connection {
             return;
         }
@@ -216,7 +216,7 @@ impl Owner {
     /// A connection to the shared document's relay opened: the owner sends its Hello to
     /// `sink`, then every frame and status change, until the connection detaches.
     pub fn sync_connection(&self, sink: SyncSink) -> SyncConnection {
-        let mut a = self.sync_admission.lock().expect("sync admission");
+        let mut a = crate::lock(&self.sync_admission);
         a.connection += 1;
         a.overflow = false;
         let connection = a.connection;
@@ -230,7 +230,7 @@ impl Owner {
     }
     /// The room this document syncs through, when it is shared.
     pub fn share(&self) -> Result<Option<store::Share>> {
-        Ok(self.store.share()?)
+        self.storage_control(persistence::Control::Share)
     }
 }
 
@@ -247,7 +247,7 @@ impl Actor {
             || self.writing
             || self.failure.is_some()
             || self.revision != self.saved
-            || !self.store.confirms_saved(&self.core.history_version())
+            || !self.save_state.confirms_saved(&self.core.history_version())
         {
             return None;
         }
@@ -314,7 +314,7 @@ impl Actor {
                 }
             }
             SyncMessage::Attach { sink, connection, admission } => {
-                if admission.lock().expect("sync admission").connection != connection {
+                if crate::lock(&admission).connection != connection {
                     return;
                 }
                 self.link.connection = connection;
@@ -322,7 +322,7 @@ impl Actor {
                 self.link.durable = None;
                 self.link.sink = Some(sink);
                 self.link.reported = Status::Offline;
-                if self.mode != store::Mode::Document || !self.store.is_shared() {
+                if self.mode != store::Mode::Document || !self.save_state.is_shared() {
                     self.link.session = None;
                     self.report(Status::Paused {
                         kind: pop_contracts::relay::PauseKind::Refused,
@@ -332,16 +332,7 @@ impl Actor {
                 }
                 if self.link.session.is_none() {
                     // The relay admits only replicas of the app its room was created with.
-                    match self.store.app_digest() {
-                        Ok(digest) => self.link.session = Some(Session::new(digest)),
-                        Err(error) => {
-                            self.report(Status::Paused {
-                                kind: pop_contracts::relay::PauseKind::Refused,
-                                reason: error.to_string(),
-                            });
-                            return;
-                        }
-                    }
+                    self.link.session = Some(Session::new(self.digest));
                 }
                 let hello = self.link.session.as_mut().expect("created above").connect(&self.core);
                 self.send(hello);

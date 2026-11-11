@@ -255,7 +255,7 @@ fn document_uuid_survives_reopen_and_capture_but_independent_copies_get_new_uuid
     assert_eq!(original.len(), 36);
     assert_ne!(uuid(&second), original);
     let store = Store::open(&first, Mode::Document).unwrap();
-    let mut document = store.document().unwrap();
+    let mut document = store.open_document().unwrap();
     document.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"Saved"}]}"#, Origin::Page).unwrap();
     store.write(&store.job(&mut document).unwrap().unwrap()).unwrap();
     assert_eq!(uuid(&first), original);
@@ -379,7 +379,7 @@ fn app_digest_excludes_saved_state_and_tracks_embedded_app_changes() {
     let path = document(dir.path());
     let store = Store::open(&path, Mode::Document).unwrap();
     let original = store.app_digest().unwrap();
-    let mut state = store.document().unwrap();
+    let mut state = store.open_document().unwrap();
     state.apply_json(
         r##"{"intents":[{"type":"set","path":["title"],"value":"State only"},{"type":"setTheme","values":{"accent":"#abcdef"}}]}"##,
         Origin::Window,
@@ -1192,7 +1192,7 @@ fn an_open_document_copies_through_its_owner() {
     let dir = tempfile::tempdir().unwrap();
     let doc = document(dir.path());
     let store = Store::open(&doc, Mode::Document).unwrap();
-    let mut state = store.document().unwrap();
+    let mut state = store.open_document().unwrap();
     state.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"Shared"}]}"#, Origin::Page).unwrap();
     store.write(&store.job(&mut state).unwrap().unwrap()).unwrap();
     let photo = store.put_attachment(b"photo").unwrap().id;
@@ -1675,7 +1675,7 @@ fn saved_apps_open_under_their_format_and_damaged_artwork_reads_as_absent() {
     assert_eq!(file::artwork(&doc, &[Artwork::Preview, Artwork::Icon]).unwrap(), None);
     let store = Store::open(&doc, Mode::Document).unwrap();
     assert_eq!(store.artwork(Artwork::Preview).unwrap(), None);
-    let mut state = store.document().unwrap();
+    let mut state = store.open_document().unwrap();
     state.apply_json(r#"{"intents":[{"type":"set","path":["title"],"value":"Edited"}]}"#, Origin::Page).unwrap();
     store.write(&store.job(&mut state).unwrap().unwrap()).unwrap();
     store.close().unwrap();

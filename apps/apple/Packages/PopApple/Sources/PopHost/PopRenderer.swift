@@ -11,7 +11,7 @@ import PopWidgets
   static let captureQueue = DispatchQueue(
     label: "click.dotpop.capture-render", qos: .utility, attributes: .concurrent)
   static let nativeRuntime: Result<CaptureRuntime, Error> = Result {
-    guard let evaluator = DocumentOwner.evaluatorPath else { throw PopFailure("Capture renderer is missing") }
+    guard let evaluator = DocumentOwner.enginePath else { throw PopFailure("Capture renderer is missing") }
     return try CaptureRuntime(evaluatorPath: evaluator)
   }
 

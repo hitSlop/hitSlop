@@ -52,7 +52,7 @@ fn document() -> (tempfile::TempDir, PathBuf) {
 }
 fn open(path: &Path) -> (Store, Document) {
     let store = Store::open(path, Mode::Document).unwrap();
-    let doc = store.document().unwrap();
+    let doc = store.open_document().unwrap();
     (store, doc)
 }
 fn sql(path: &Path) -> Connection {
@@ -506,7 +506,7 @@ fn a_text_edit_from_before_a_trimming_checkpoint_saves_and_reopens() {
     let initial = r#"{"title":"abc"}"#;
     let (_dir, path) = document_with(schema, initial);
     let store = Store::open(&path, Mode::Document).unwrap();
-    let mut doc = store.document().unwrap();
+    let mut doc = store.open_document().unwrap();
     doc.apply_json(&json!({"intents":[{"type":"set","path":["title"],"value":"Rabc"}]}).to_string(), Origin::Page)
         .unwrap();
     store.write(&store.checkpoint_job(&mut doc).unwrap()).unwrap();
@@ -559,7 +559,7 @@ fn snapshots_never_lock_or_modify_the_document() {
     // A snapshot reads the initial checkpoint without taking ownership.
     let before = std::fs::read(&path).unwrap();
     let snapshot = Store::open(&path, Mode::Snapshot).unwrap();
-    let mut doc = snapshot.document().unwrap();
+    let mut doc = snapshot.open_document().unwrap();
     assert_eq!(title(&doc), "Saved");
     assert_eq!(std::fs::read(&path).unwrap(), before, "a render writes nothing");
     set_title(&mut doc, "In memory");
@@ -715,7 +715,7 @@ fn a_document_moved_away_and_back_saves_and_reloads() {
     set_title(&mut doc, "Discarded");
     std::fs::rename(&path, &moved).unwrap();
     std::fs::rename(&moved, &path).unwrap();
-    let mut doc = store.document().unwrap();
+    let mut doc = store.open_document().unwrap();
     assert_eq!(title(&doc), "Kept");
     // A hard link added and removed again leaves the writer saving.
     std::fs::hard_link(&path, &moved).unwrap();
@@ -833,8 +833,7 @@ fn a_shared_document_keeps_its_history_and_blobs_and_a_clean_copy_is_unshared() 
     store.write(&store.checkpoint_job(&mut doc).unwrap()).unwrap();
     assert_eq!(store.reclaim_attachments().unwrap(), 0, "a shared document reclaims no blob");
     store.close().unwrap();
-    // Opening alone has not initialized the cached shared flag through document().
-    // Close-time housekeeping must consult the actual share row under its new lease.
+    // Close-time housekeeping must preserve shared blobs even without document reads.
     let unopened = Store::open(&path, Mode::Document).unwrap();
     let without_document = unopened.put_attachment(b"shared writer without document load").unwrap().id;
     unopened.close_reclaiming().unwrap();
@@ -1007,22 +1006,22 @@ fn a_theme_change_never_waits_for_a_save_in_progress() {
     use std::time::{Duration, Instant};
     let (_dir, path) = document();
     let (store, mut doc) = open(&path);
-    let store = Arc::new(store);
     set_title(&mut doc, "Slow");
     let job = store.job(&mut doc).unwrap().unwrap();
     // The save waits on another connection's lock, inside its transaction.
     let other = hold(&path);
-    let writer = {
-        let store = store.clone();
-        std::thread::spawn(move || store.write(&job))
-    };
+    let writer = std::thread::spawn(move || {
+        let result = store.write(&job);
+        (store, result)
+    });
     std::thread::sleep(Duration::from_millis(200));
     let began = Instant::now();
     assert!(set_accent(&mut doc, "#808080"));
     assert!(began.elapsed() < Duration::from_secs(1), "the theme change waited for the save");
     assert!(!writer.is_finished(), "the save was still in progress");
     other.execute_batch("COMMIT").unwrap();
-    writer.join().unwrap().unwrap();
+    let (store, result) = writer.join().unwrap();
+    result.unwrap();
     assert_eq!(save(&store, &mut doc), Some(false));
     assert_eq!(saved_accent(&path), "#808080");
 }
@@ -1045,7 +1044,7 @@ fn reloading_after_a_discard_drops_unsaved_theme_changes() {
     set_accent(&mut doc, "#404040");
     save(&store, &mut doc);
     set_accent(&mut doc, "#505050");
-    let mut reloaded = store.document().unwrap();
+    let mut reloaded = store.open_document().unwrap();
     assert_eq!(accent(&reloaded), "#404040");
     assert_eq!(save(&store, &mut reloaded), None, "nothing is left to save");
 }

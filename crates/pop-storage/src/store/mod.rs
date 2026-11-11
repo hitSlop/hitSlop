@@ -10,17 +10,17 @@
 //! document never trims and never reclaims an attachment: another replica's edits can depend
 //! on any of its history and still reference any blob.
 //!
-//! A host keeps two serial queues: edits and `Store::job` on one, every other
-//! `Store` call on the other, so a slow write never blocks edits.
+//! The persistence queue owns the store. The edit queue exports jobs from its own
+//! `SaveState`, so a slow SQLite operation never blocks edits.
 
 mod attachments;
 mod copy;
 mod save;
 use crate::error::sqlite;
 pub use crate::error::{Error, Result, caused, failed, from_error, invalid, rejected};
+use crate::file;
 use crate::file::{Artwork, Kind, OpenedApp, rows};
 use crate::registry::Lease;
-use crate::{file, lock};
 pub use attachments::Attachment;
 use attachments::delete_unreferenced;
 use pop_core::{Document, HistoryVersion};
@@ -28,9 +28,9 @@ use rusqlite::{Connection, Transaction, TransactionBehavior};
 use save::{Metadata, Rows, bounds, checked_bounds, checkpoint_row, within};
 pub use save::{Pressure, SaveJob};
 use sha2::{Digest, Sha256};
+use std::cell::{Cell, RefCell};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 /// Core acceptance failures are definite refusals, including damaged or incomplete
 /// history. Keep their codes distinct from SQLite/I/O failures with unknown outcomes.
@@ -44,10 +44,12 @@ struct Backing {
     conn: Option<Connection>,
     lease: Option<Lease>,
 }
-struct Account {
+/// Save policy state, copied to the edit queue after each persistence operation.
+#[derive(Clone, Debug)]
+pub struct SaveState {
     meta: Metadata,
-    /// The version the durable state covers.
-    saved: HistoryVersion,
+    /// The version the durable state covers, once `open_document` establishes the base.
+    saved: Option<HistoryVersion>,
     /// A failed transaction can have committed. Replace history on the next save
     /// instead of assuming the last acknowledged version is still the durable base.
     checkpoint_required: bool,
@@ -59,15 +61,9 @@ struct Account {
     /// (another replica can still reference it).
     shared: bool,
 }
-impl Account {
+impl SaveState {
     fn new() -> Self {
-        Self {
-            meta: Metadata::default(),
-            saved: HistoryVersion::default(),
-            checkpoint_required: false,
-            changed: false,
-            shared: false,
-        }
+        Self { meta: Metadata::default(), saved: None, checkpoint_required: false, changed: false, shared: false }
     }
 }
 /// Where a shared document syncs: the relay's endpoint. The relay names the document by
@@ -85,13 +81,11 @@ pub struct Store {
     path: PathBuf,
     /// The file's device and inode when opened; a rename or replacement is `Moved`.
     inode: (u64, u64),
+    owned: Cell<bool>,
     /// The app the document was built with, checked once when it opened.
-    app: OpenedApp,
-    backing: Mutex<Backing>,
-    /// Whether this store holds the writer lock. Read without `backing`, which a save holds
-    /// for its whole transaction, so checking ownership never waits for a save.
-    owned: AtomicBool,
-    account: Mutex<Account>,
+    app: Arc<OpenedApp>,
+    backing: RefCell<Backing>,
+    account: RefCell<SaveState>,
 }
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Mode {
@@ -146,8 +140,9 @@ impl Store {
 
     /// Opens the document file at `path`. `Document` mode takes the writer lock and checks
     /// the file, including SQLite's quick check; a template is never opened as a document
-    /// (`file::create_document` makes one from it). `Snapshot` mode reads a document's
-    /// saved state, or a template's initial values, once.
+    /// (`file::create_document` makes one from it). `Snapshot` mode also accepts templates
+    /// and takes no writer lock. Neither mode decodes saved state: call `document` to read
+    /// it or `open_document` to begin editing from its saved base.
     pub fn open(path: &Path, mode: Mode) -> Result<Self> {
         let (lease, conn, app) = match mode {
             Mode::Document => {
@@ -178,13 +173,14 @@ impl Store {
                 .map(|(dev, ino, _)| (dev, ino))
                 .map_err(|error| crate::error::caused("Cannot find the document", error))?,
         };
+        let account = SaveState { shared: rows::read_share(&conn)?.is_some(), ..SaveState::new() };
         Ok(Self {
             path: path.to_owned(),
             inode,
-            app,
-            owned: AtomicBool::new(lease.is_some()),
-            backing: Mutex::new(Backing { conn: Some(conn), lease }),
-            account: Mutex::new(Account::new()),
+            owned: Cell::new(lease.is_some()),
+            app: Arc::new(app),
+            backing: RefCell::new(Backing { conn: Some(conn), lease }),
+            account: RefCell::new(account),
         })
     }
 
@@ -203,8 +199,7 @@ impl Store {
     /// Fails once the file was moved or replaced (or, for the writer, gained a hard link),
     /// or, with `writable`, once the store no longer owns it.
     pub fn check(&self, writable: bool) -> Result<()> {
-        // A stat, never the backing mutex a save holds: a theme change never waits for one.
-        let owned = self.owned.load(Ordering::Acquire);
+        let owned = self.owned.get();
         match crate::registry::identity(&self.path) {
             Ok((dev, ino, links)) if (dev, ino) == self.inode && (links == 1 || !owned) => {}
             _ => return Err(Error::Moved),
@@ -216,24 +211,45 @@ impl Store {
     }
 
     /// The saved data and theme, imported from one read transaction: a template's initial
-    /// state, or a document's checkpoint and updates. Reloading after discard drops unsaved
-    /// data and theme together.
+    /// state, or a document's checkpoint and updates. This read never changes the save base
+    /// or clears a write fence.
     pub fn document(&self) -> Result<Document> {
         self.check(false)?;
-        let (doc, meta, shared) = self.connected(&mut lock(&self.backing).conn, |conn| {
+        self.read(|conn| {
+            let read = Transaction::new_unchecked(conn, TransactionBehavior::Deferred).map_err(sqlite("read"))?;
+            load(&read, self.app.app.spec()).map(|(document, _)| document)
+        })
+    }
+
+    /// Loads the saved document and establishes its save base from the same read.
+    /// Used when editing starts and when discard replaces unsaved data and theme.
+    /// Unlike `document`, this explicitly clears any write fence.
+    pub fn open_document(&self) -> Result<Document> {
+        self.check(false)?;
+        let (doc, meta, shared) = self.read(|conn| {
             let read = Transaction::new_unchecked(conn, TransactionBehavior::Deferred).map_err(sqlite("read"))?;
             let (doc, meta) = load(&read, self.app.app.spec())?;
             Ok((doc, meta, rows::read_share(&read)?.is_some()))
         })?;
-        let mut account = lock(&self.account);
-        *account = Account {
-            meta,
-            saved: doc.history_version(),
-            checkpoint_required: false,
-            changed: account.changed,
-            shared,
-        };
+        let changed = self.account.borrow().changed;
+        *self.account.borrow_mut() =
+            SaveState { meta, saved: Some(doc.history_version()), checkpoint_required: false, changed, shared };
         Ok(doc)
+    }
+
+    /// Immutable app metadata shared with the host, independent of the SQLite connection.
+    pub fn opened_app(&self) -> Arc<OpenedApp> {
+        self.app.clone()
+    }
+
+    /// The current save base and policy, without touching SQLite.
+    pub fn save_state(&self) -> SaveState {
+        self.account.borrow().clone()
+    }
+
+    /// Opens resource readers against the identity accepted at open.
+    pub fn resource_source(&self) -> ResourceSource {
+        ResourceSource { path: self.path.clone(), inode: self.inode, single_link: self.owned.get() }
     }
 
     /// Where this document syncs, when it is shared.
@@ -248,27 +264,27 @@ impl Store {
         if !(1..=pop_contracts::wire::SHARE_ENDPOINT_BYTES).contains(&share.endpoint.len()) {
             return Err(rejected(pop_contracts::wire::Code::InvalidRequest, "Invalid endpoint"));
         }
-        self.connected(&mut lock(&self.backing).conn, |conn| {
+        self.connected(&mut self.backing.borrow_mut().conn, |conn| {
             let tx = file::begin_write(conn, "share")?;
             rows::put_share(&tx, &share.endpoint)?;
             tx.commit()
         })?;
-        lock(&self.account).shared = true;
+        self.account.borrow_mut().shared = true;
         Ok(())
     }
     pub fn is_shared(&self) -> bool {
-        lock(&self.account).shared
+        self.account.borrow().shared
     }
     /// Ends this file's replication membership without changing document identity.
     /// Callers first preserve the authority's final accepted snapshot.
     pub fn clear_share(&self) -> Result<()> {
         self.check(true)?;
-        self.connected(&mut lock(&self.backing).conn, |connection| {
+        self.connected(&mut self.backing.borrow_mut().conn, |connection| {
             let tx = file::begin_write(connection, "end document replication")?;
             tx.execute("DELETE FROM share", []).map_err(sqlite("end document replication"))?;
             tx.commit()
         })?;
-        let mut account = lock(&self.account);
+        let mut account = self.account.borrow_mut();
         account.shared = false;
         account.changed = true;
         Ok(())
@@ -278,11 +294,7 @@ impl Store {
     /// commit cannot prove durability until a replacement checkpoint succeeds.
     /// This reads bookkeeping only; the owner still holds its writer lease.
     pub fn confirms_saved(&self, version: &HistoryVersion) -> bool {
-        if !self.owned.load(Ordering::Acquire) {
-            return false;
-        }
-        let account = lock(&self.account);
-        !account.checkpoint_required && account.saved == *version
+        self.backing.borrow().lease.is_some() && self.account.borrow().confirms_saved(version)
     }
 
     /// Writes a job in one transaction. An ambiguous error fences future appends
@@ -290,12 +302,12 @@ impl Store {
     /// Sizes are re-read after either outcome.
     pub fn write(&self, job: &SaveJob) -> Result<()> {
         self.check(true)?;
-        let mut backing = lock(&self.backing);
+        let mut backing = self.backing.borrow_mut();
         let meta = match self.connected(&mut backing.conn, |conn| self.transaction(conn, job)) {
             Ok(meta) => meta,
             Err(e) => {
                 let meta = backing.conn.as_ref().and_then(|conn| bounds(conn).ok());
-                let mut account = lock(&self.account);
+                let mut account = self.account.borrow_mut();
                 // Busy/locked/closed/refused transactions definitely wrote nothing.
                 // Failed/full/moved outcomes may have crossed the commit boundary.
                 account.checkpoint_required |= matches!(e, Error::Failed { .. } | Error::Full | Error::Moved);
@@ -305,9 +317,9 @@ impl Store {
                 return Err(e);
             }
         };
-        let mut account = lock(&self.account);
+        let mut account = self.account.borrow_mut();
         account.meta = meta;
-        account.saved = job.version.clone();
+        account.saved = Some(job.version.clone());
         account.checkpoint_required = false;
         account.changed = true;
         Ok(())
@@ -319,7 +331,7 @@ impl Store {
     fn connected<T>(&self, conn: &mut Option<Connection>, work: impl Fn(&Connection) -> Result<T>) -> Result<T> {
         match work(conn.as_ref().ok_or(Error::Closed)?) {
             Err(Error::Moved) if self.check(false).is_ok() => {
-                let fresh = if self.owned.load(Ordering::Acquire) {
+                let fresh = if self.owned.get() {
                     let writer = file::writer(&self.path, false)?;
                     file::configure_writer(&writer)?;
                     writer
@@ -361,14 +373,14 @@ impl Store {
     /// Releases the database, withdraws discovery, then releases the writer lock. A failed
     /// close keeps ownership.
     pub fn close(&self) -> Result<()> {
-        let mut backing = lock(&self.backing);
+        let mut backing = self.backing.borrow_mut();
         if let Some(open) = backing.conn.take()
             && let Err((open, e)) = open.close()
         {
             backing.conn = Some(open);
             return Err(crate::error::caused(format!("close; retaining document ownership: {e}"), e));
         }
-        self.owned.store(false, Ordering::Release);
+        self.owned.set(false);
         if let Some(lease) = backing.lease.take() {
             lease.withdraw();
         }
@@ -379,10 +391,10 @@ impl Store {
     /// A failed close keeps every attachment available to the still-live undo session.
     /// Snapshot closes never write, and housekeeping cannot turn a successful close into failure.
     pub fn close_reclaiming(&self) -> Result<()> {
-        let was_writer = self.owned.load(Ordering::Acquire);
+        let was_writer = self.backing.borrow().lease.is_some();
         let identity = self.app.document_uuid.clone();
         let shared = self.is_shared();
-        let changed = lock(&self.account).changed;
+        let changed = self.account.borrow().changed;
         self.close()?;
         if !was_writer || !changed || shared {
             return Ok(());
@@ -394,7 +406,7 @@ impl Store {
             {
                 // A fresh owner has no live undo session. Read the latest accepted state
                 // under its own lease; an intervening writer may have changed references.
-                lock(&reopened.account).changed = true;
+                reopened.account.borrow_mut().changed = true;
                 let _ = reopened.reclaim_attachments();
             }
             let _ = reopened.close();
@@ -409,16 +421,35 @@ impl Store {
     }
     /// Runs a read on the store's connection: the writer's, or a snapshot's reader.
     fn read<T>(&self, f: impl Fn(&Connection) -> Result<T>) -> Result<T> {
-        self.connected(&mut lock(&self.backing).conn, f)
+        self.connected(&mut self.backing.borrow_mut().conn, f)
     }
 
     /// Names the live owner for clients: a writer publishes its socket in the registry.
     pub fn publish_discovery(&self, json: &str) -> Result<()> {
-        lock(&self.backing).lease.as_ref().ok_or(Error::Closed)?.publish(json)
+        self.backing.borrow().lease.as_ref().ok_or(Error::Closed)?.publish(json)
     }
     pub fn withdraw_discovery(&self) {
-        if let Some(lease) = &lock(&self.backing).lease {
+        if let Some(lease) = &self.backing.borrow().lease {
             lease.withdraw();
         }
+    }
+}
+
+/// Immutable file identity for page resource reads on independent connections.
+#[derive(Clone, Debug)]
+pub struct ResourceSource {
+    path: PathBuf,
+    inode: (u64, u64),
+    single_link: bool,
+}
+impl ResourceSource {
+    /// Opens a resource reader only while the path names the originally accepted file.
+    pub fn reader(&self) -> Result<file::ResourceReader> {
+        let conn = file::reader(&self.path)?;
+        match crate::registry::identity(&self.path) {
+            Ok((dev, ino, links)) if (dev, ino) == self.inode && (links == 1 || !self.single_link) => {}
+            _ => return Err(Error::Moved),
+        }
+        Ok(file::ResourceReader::new(conn))
     }
 }

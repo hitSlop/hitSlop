@@ -25,7 +25,8 @@ for (const bundle of [app, join(app, "Contents/PlugIns/pop-Widgets.appex")]) {
   });
   assert.deepEqual(JSON.parse(packages).includes ?? [], [], "Widget intent metadata must not reference an unbundled static package");
 }
-const evaluator = join(app, "Contents/Helpers/pop-evaluator");
+assert.deepEqual(await readdir(join(app, "Contents/Helpers")), ["pop-engine"], "The Mac app must ship only the document engine helper");
+const evaluator = join(app, "Contents/Helpers/pop-engine");
 await run(["/usr/bin/codesign", "--verify", "--strict", evaluator]);
 await verifyAppCommands(app);
 await verifyAppCorpus(app, { allowUnreleased: unsigned });
@@ -47,7 +48,8 @@ try {
   const appCore = (await installed(["--build-id"], join(app, "Contents/MacOS/dotpop"))).trim();
   assert.ok(appCore.length > 0, "App did not identify its document core");
   assert.equal(await installed(["--build-id"], documentEngine).then(s => s.trim()), appCore, "App and document engine embed different cores");
-  assert.deepEqual([...new Bun.Glob("**/pop-engine").scanSync({ cwd: app })], [], "The Mac app must not bundle the npm engine");
+  assert.deepEqual([...new Bun.Glob("**/pop-engine").scanSync({ cwd: app })], ["Contents/Helpers/pop-engine"], "The Mac app must bundle one document engine");
+  assert.equal(await installed(["--build-id"], evaluator).then(s => s.trim()), appCore, "Bundled engine and app embed different cores");
   // A release is built from one tree, so the CLI's authoring core is the app's core.
   // Finder shows a .pop through the app's type declaration and its Quick Look extensions,
   // which read the file with the same core.

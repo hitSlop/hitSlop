@@ -1,6 +1,4 @@
-#![cfg(feature = "capture")]
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD;
+use data_encoding::BASE64;
 use pop_contracts::evaluator::JobKind;
 use pop_runner::Evaluator;
 use serde_json::{Value, json};
@@ -11,14 +9,15 @@ fn render(evaluator: &Evaluator, bundle: &str, mode: JobKind) -> Result<String, 
         .and_then(|batch| evaluator.raster(1, batch, Default::default(), mode));
     Ok(match result {
         Ok(images) => {
-            json!({"ok":true,"images":images.into_iter().map(|image| STANDARD.encode(image)).collect::<Vec<_>>()})
+            json!({"ok":true,"images":images.into_iter().map(|image| BASE64.encode(&image)).collect::<Vec<_>>()})
         }
         Err(error) => json!({"ok":false,"error":error.to_string()}),
     }
     .to_string())
 }
 fn run(batch: Value) -> Value {
-    let evaluator = Evaluator::process(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
+    let evaluator =
+        Evaluator::process(env!("CARGO_BIN_EXE_pop-engine").into(), vec!["--evaluate-command".into()]).unwrap();
     let bundle = format!("globalThis.__popWidget = () => {};", serde_json::to_string(&batch.to_string()).unwrap());
     serde_json::from_str(&render(&evaluator, &bundle, JobKind::Widget).unwrap()).unwrap()
 }
@@ -33,7 +32,7 @@ fn restricted_widget_batch_renders_color_emoji_at_two_times_scale() {
     assert_eq!(result["ok"], true, "{result}");
     let images = result["images"].as_array().unwrap();
     assert_eq!(images.len(), 3);
-    let bytes = STANDARD.decode(images[0].as_str().unwrap()).unwrap();
+    let bytes = BASE64.decode(images[0].as_str().unwrap().as_bytes()).unwrap();
     let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes)).read_info().unwrap();
     let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
     let info = decoder.next_frame(&mut pixels).unwrap();
@@ -53,7 +52,7 @@ fn widget_refuses_incomplete_oversized_and_damaged_font_inputs() {
                 input["frames"].as_array_mut().unwrap().pop();
             }
             "dimensions" => input["frames"][0]["width"] = json!(100000),
-            _ => input["fonts"] = json!([{"family":"Broken", "bytes":STANDARD.encode(b"not a font"),"italic":false}]),
+            _ => input["fonts"] = json!([{"family":"Broken", "bytes":BASE64.encode(b"not a font"),"italic":false}]),
         }
         let output = run(input);
         assert_eq!(output["ok"], false, "{kind}: {output}");
@@ -70,7 +69,7 @@ fn packaged_font_bytes_register_under_the_authored_family_alias() {
     }
     let fallback = run(input.clone());
     input["fonts"] = json!([{"family":"Authored Name","italic":false,"weight":400,
-        "bytes":STANDARD.encode(include_bytes!("../../../tests/apps/assets/kalam.woff2"))}]);
+        "bytes":BASE64.encode(include_bytes!("../../../tests/apps/assets/kalam.woff2"))}]);
     let custom = run(input);
     assert_eq!(custom["ok"], true, "{custom}");
     assert_eq!(fallback["ok"], true, "{fallback}");
@@ -83,14 +82,15 @@ fn capture_reads_future_batch_frame_and_font_hints_openly() {
     input["hint"] = json!("future");
     input["frames"][0]["hint"] = json!({"future":true});
     input["fonts"] = json!([{"family":"Authored Name","italic":false,"weight":400,
-        "bytes":STANDARD.encode(include_bytes!("../../../tests/apps/assets/kalam.woff2")),"hint":true}]);
+        "bytes":BASE64.encode(include_bytes!("../../../tests/apps/assets/kalam.woff2")),"hint":true}]);
     let result = run(input);
     assert_eq!(result["ok"], true, "{result}");
 }
 
 #[test]
 fn saved_view_capture_measures_exports_crops_previews_and_bounds_rasters() {
-    let evaluator = Evaluator::process(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
+    let evaluator =
+        Evaluator::process(env!("CARGO_BIN_EXE_pop-engine").into(), vec!["--evaluate-command".into()]).unwrap();
     for (kind, height, content_width, expected) in [
         ("icon", 512, 512, Some((512, 512))),
         ("export", 1000, 200, Some((400, 2000))),
@@ -106,7 +106,7 @@ fn saved_view_capture_measures_exports_crops_previews_and_bounds_rasters() {
         let reply: Value = serde_json::from_str(&render(&evaluator, &bundle, JobKind::Capture).unwrap()).unwrap();
         if let Some(dimensions) = expected {
             assert_eq!(reply["ok"], true, "{kind}: {reply}");
-            let bytes = STANDARD.decode(reply["images"][0].as_str().unwrap()).unwrap();
+            let bytes = BASE64.decode(reply["images"][0].as_str().unwrap().as_bytes()).unwrap();
             let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes)).read_info().unwrap();
             let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
             let info = decoder.next_frame(&mut pixels).unwrap();
@@ -122,14 +122,15 @@ fn saved_view_capture_measures_exports_crops_previews_and_bounds_rasters() {
 
 #[test]
 fn capture_extends_canvas_without_reflowing_viewport_relative_overflow() {
-    let evaluator = Evaluator::process(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
+    let evaluator =
+        Evaluator::process(env!("CARGO_BIN_EXE_pop-engine").into(), vec!["--evaluate-command".into()]).unwrap();
     let batch = json!({"fonts":[],"frames":[{"kind":"export","width":200,"height":100,
         "html":"<html><body><div></div></body></html>",
         "css":"html,body{margin:0;width:100%;height:100px}body{position:relative}div{position:absolute;left:100%;width:20px;height:100px;background:#123456}"}]});
     let bundle = format!("globalThis.__popCapture = () => {};", serde_json::to_string(&batch.to_string()).unwrap());
     let reply: Value = serde_json::from_str(&render(&evaluator, &bundle, JobKind::Capture).unwrap()).unwrap();
     assert_eq!(reply["ok"], true, "{reply}");
-    let bytes = STANDARD.decode(reply["images"][0].as_str().unwrap()).unwrap();
+    let bytes = BASE64.decode(reply["images"][0].as_str().unwrap().as_bytes()).unwrap();
     let mut decoder = png::Decoder::new(std::io::Cursor::new(bytes)).read_info().unwrap();
     let mut pixels = vec![0; decoder.output_buffer_size().unwrap()];
     let info = decoder.next_frame(&mut pixels).unwrap();
@@ -139,7 +140,8 @@ fn capture_extends_canvas_without_reflowing_viewport_relative_overflow() {
 
 #[test]
 fn vector_pdf_keeps_font_text_and_uniformly_bounds_long_pages() {
-    let evaluator = Evaluator::process(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
+    let evaluator =
+        Evaluator::process(env!("CARGO_BIN_EXE_pop-engine").into(), vec!["--evaluate-command".into()]).unwrap();
     for (height, expected) in [(200, [0.0, 0.0, 200.0, 200.0]), (20_000, [0.0, 0.0, 144.0, 14_400.0])] {
         let batch = json!({"fonts":[],"frames":[{"kind":"export","width":200,"height":100,
             "html":"<html><body><div>Selectable text 🌿<a href='#end'>Jump</a></div><div id='end'>Last line</div></body></html>",
@@ -147,7 +149,7 @@ fn vector_pdf_keeps_font_text_and_uniformly_bounds_long_pages() {
         let bundle = format!("globalThis.__popCapture = () => {};", serde_json::to_string(&batch.to_string()).unwrap());
         let reply: Value = serde_json::from_str(&render(&evaluator, &bundle, JobKind::Pdf).unwrap()).unwrap();
         assert_eq!(reply["ok"], true, "{reply}");
-        let bytes = STANDARD.decode(reply["images"][0].as_str().unwrap()).unwrap();
+        let bytes = BASE64.decode(reply["images"][0].as_str().unwrap().as_bytes()).unwrap();
         assert!(bytes.starts_with(b"%PDF-"));
         let pdf = String::from_utf8_lossy(&bytes);
         let media_box = pdf
@@ -175,7 +177,8 @@ fn vector_pdf_keeps_font_text_and_uniformly_bounds_long_pages() {
 
 #[test]
 fn damaged_saved_image_refuses_capture_instead_of_publishing_a_blank() {
-    let evaluator = Evaluator::process(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
+    let evaluator =
+        Evaluator::process(env!("CARGO_BIN_EXE_pop-engine").into(), vec!["--evaluate-command".into()]).unwrap();
     let request = std::collections::BTreeMap::from([("saved-image".into(), b"damaged image".to_vec())]);
     let batch = json!({"fonts":[],"frames":[{"kind":"export","width":200,"height":100,
         "html":"<html><body><img src='pop-attachment:saved-image' width='100' height='100'></body></html>",
@@ -192,7 +195,8 @@ fn damaged_saved_image_refuses_capture_instead_of_publishing_a_blank() {
 
 #[test]
 fn repeated_attachment_tokens_share_saved_bytes_and_render_each_occurrence() {
-    let evaluator = Evaluator::process(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
+    let evaluator =
+        Evaluator::process(env!("CARGO_BIN_EXE_pop-engine").into(), vec!["--evaluate-command".into()]).unwrap();
     let mut png = Vec::new();
     let mut encoder = png::Encoder::new(&mut png, 1, 1);
     encoder.set_color(png::ColorType::Rgba);
@@ -218,7 +222,8 @@ fn repeated_attachment_tokens_share_saved_bytes_and_render_each_occurrence() {
 
 #[test]
 fn markup_runs_without_image_bytes_and_raster_refuses_javascript() {
-    let evaluator = Evaluator::process(env!("CARGO_BIN_EXE_pop-evaluator").into(), vec![]).unwrap();
+    let evaluator =
+        Evaluator::process(env!("CARGO_BIN_EXE_pop-engine").into(), vec!["--evaluate-command".into()]).unwrap();
     let bundle = "globalThis.__popCapture = json => { const r=JSON.parse(json); if(r.attachments.photo!== 'image/png' || 'resources' in r) throw Error('image bytes leaked'); return JSON.stringify({frames:[{kind:'preview',width:64,height:64,html:'<html>Saved</html>',css:''}],fonts:[]}); };";
     let markup = evaluator.markup(1, bundle, r#"{"attachments":{"photo":"image/png"}}"#, false).unwrap();
     assert_eq!(markup.frames.len(), 1);

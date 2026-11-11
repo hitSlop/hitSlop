@@ -72,7 +72,7 @@ export async function loadReleaseNotes(root = repository) {
   });
   const notes = parseReleaseNotes(source, project.version);
   const title = `# pop ${project.version}`;
-  const baseline = project.version === "2.0.0"
+  const baseline = project.version === "3.0.0"
     ? "\nThis is the first release of the pop document format. Documents written by this release remain supported by future pop versions.\n"
     : "";
   return {

@@ -157,6 +157,36 @@ fn slow_persistence_does_not_block_edits_and_flush_waits_for_its_target() {
     close(&saved);
 }
 #[test]
+fn sync_attach_answers_while_a_save_waits_to_commit() {
+    let (_dir, path) = fixture();
+    let (owner, _) = open(&path, Mode::Document);
+    call(&owner, Request::Share { share: pop_storage::store::Share { endpoint: "https://relay.example".into() } })
+        .unwrap();
+    let reader = rusqlite::Connection::open(&path).unwrap();
+    reader.execute_batch("BEGIN; SELECT * FROM history;").unwrap();
+    call(&owner, set("Saving behind a reader")).unwrap();
+    let flush = submit(&owner, Request::Flush, None);
+    let journal = path.with_extension("pop-journal");
+    let deadline = Instant::now() + Duration::from_secs(1);
+    while !journal.exists() && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    assert!(journal.exists(), "the save must reach its transaction before sync attaches");
+    let (sink, events) = sync_sink();
+    let connection = owner.sync_connection(sink);
+    let hello = events.recv_timeout(Duration::from_millis(250));
+    reader.execute_batch("ROLLBACK").unwrap();
+    drop(reader);
+    flush.recv_timeout(Duration::from_secs(30)).unwrap().unwrap();
+    connection.detach();
+    close(&owner);
+    assert!(
+        matches!(hello, Ok(pop_runtime::owner::SyncEvent::Send { .. })),
+        "sync attach must answer while persistence is busy: {hello:?}"
+    );
+}
+
+#[test]
 fn failed_close_keeps_state_and_writer_lease_for_retry() {
     let (dir, path) = fixture();
     let (owner, _) = open(&path, Mode::Document);
@@ -844,13 +874,15 @@ fn sync_base_queued_during_owner_shutdown_is_settled() {
         }),
     )
     .unwrap();
+    let release = release;
     blocked.recv_timeout(Duration::from_secs(5)).unwrap();
     let (sink, _) = sync_sink();
     let connection = owner.sync_connection(sink);
-    drop(owner);
+    let dropping = std::thread::spawn(move || drop(owner));
     let (sent, received) = mpsc::channel();
     connection.base(move |result| sent.send(result).unwrap());
     release.send(()).unwrap();
+    dropping.join().unwrap();
     assert!(matches!(received.recv_timeout(Duration::from_secs(5)).unwrap(), Ok(None)));
 }
 

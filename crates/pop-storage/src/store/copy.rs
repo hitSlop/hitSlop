@@ -30,7 +30,7 @@ impl Store {
     pub fn set_artwork(&self, artwork: &[(Artwork, &[u8])]) -> Result<()> {
         self.check(true)?;
         let optimized = optimized_artwork(artwork)?;
-        self.connected(&mut lock(&self.backing).conn, |conn| {
+        self.connected(&mut self.backing.borrow_mut().conn, |conn| {
             let tx = file::begin_write(conn, "write artwork")?;
             for (name, png) in &optimized {
                 rows::put_artwork(&tx, *name, png)?;

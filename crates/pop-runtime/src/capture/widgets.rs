@@ -12,7 +12,7 @@ fn source_version(document: &pop_core::Document, renderer: &fingerprint::Fingerp
     // installed renderer/fonts and canvases so app updates refresh unchanged state.
     // Artwork writes and compaction still do not change the saved semantic version.
     let mut hash = Sha256::new();
-    // The version hashes the evaluator binary, but core-side capture preparation
+    // The version hashes the engine binary, but core-side capture preparation
     // (image inventory, per-output budget) is outside that digest; changes there bump this tag.
     hash.update(b"pop-widget-capture-v3:takumi\0");
     hash.update(renderer.digest);

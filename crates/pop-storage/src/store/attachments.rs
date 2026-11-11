@@ -7,8 +7,8 @@ impl Store {
     pub fn put_attachment(&self, bytes: &[u8]) -> Result<Attachment> {
         self.check(true)?;
         let attachment = Attachment::from_bytes(bytes)?;
-        self.connected(&mut lock(&self.backing).conn, |conn| self.store_attachment(conn, &attachment.id, bytes))?;
-        lock(&self.account).changed = true;
+        self.connected(&mut self.backing.borrow_mut().conn, |conn| self.store_attachment(conn, &attachment.id, bytes))?;
+        self.account.borrow_mut().changed = true;
         Ok(attachment)
     }
 
@@ -57,10 +57,10 @@ impl Store {
     pub fn reclaim_attachments(&self) -> Result<usize> {
         self.check(true)?;
         // Another replica can still reference a shared document's attachment.
-        if !lock(&self.account).changed || self.is_shared() {
+        if !self.account.borrow().changed || self.is_shared() {
             return Ok(0);
         }
-        self.connected(&mut lock(&self.backing).conn, |conn| {
+        self.connected(&mut self.backing.borrow_mut().conn, |conn| {
             let tx = file::begin_write(conn, "reclaim attachments")?;
             let deleted = delete_unreferenced(&tx, None, self.app.app.spec())?;
             tx.commit()?;

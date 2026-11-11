@@ -10,7 +10,7 @@ export const repository = resolve(import.meta.dir, "../..");
 /** Test runs keep their own writer-lock registry, so they never fill a person's
  * `~/.pop/live`. Debug hosts and the file engine honor it; release builds never do. */
 export function useTestRegistry() {
-  process.env.POP_EVALUATOR ||= join(repository, "target", process.env.POP_CARGO_PROFILE || "release", "pop-evaluator");
+  process.env.POP_HOST_ENGINE ||= join(repository, "target", process.env.POP_CARGO_PROFILE || "release", "pop-engine");
   if (!process.env.POP_TEST_REGISTRY) {
     const registry = mkdtempSync(join(tmpdir(), "pop-test-registry-"));
     process.env.POP_TEST_REGISTRY = registry;

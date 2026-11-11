@@ -27,6 +27,6 @@ pub fn evaluator(executable: std::path::PathBuf) -> std::result::Result<pop_runn
     }
     #[cfg(not(target_os = "ios"))]
     {
-        pop_runner::Evaluator::process(executable, vec![])
+        pop_runner::Evaluator::process(executable, vec!["--evaluate-command".into()])
     }
 }

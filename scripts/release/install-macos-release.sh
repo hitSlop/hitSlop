@@ -50,7 +50,7 @@ echo "Building development-signed pop Release for ${build_arch}…"
 
 app="$stage_dir/derived/Build/Products/Release/dotpop.app"
 
-for required in "$app" "$app/Contents/Helpers/pop-evaluator"; do
+for required in "$app" "$app/Contents/Helpers/pop-engine"; do
   if [ ! -e "$required" ]; then
     echo "Release output is missing: $required" >&2
     exit 70

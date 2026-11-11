@@ -179,7 +179,7 @@ fn every_saved_document_reads_edits_and_reopens_as_its_release_recorded() {
                 .unwrap_or_else(|| panic!("{label}: missing CLI scenario"));
             {
                 let store = Store::open(&root, Mode::Document).unwrap();
-                let mut doc = store.document().unwrap();
+                let mut doc = store.open_document().unwrap();
                 doc.apply_json(&json!({"intents": scenario["ops"]}).to_string(), Origin::Agent)
                     .unwrap_or_else(|e| panic!("{label}: the recorded edit was refused: {e}"));
                 assert_eq!(

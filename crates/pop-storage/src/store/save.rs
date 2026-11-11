@@ -110,27 +110,34 @@ fn trimmed(doc: &Document, accept: impl Fn(&[u8]) -> bool) -> Result<Option<Vec<
     Ok(accept(&bytes).then_some(bytes))
 }
 
-impl Store {
+impl SaveState {
+    /// Whether the acknowledged base covers exactly this history, without a write fence.
+    pub fn confirms_saved(&self, version: &HistoryVersion) -> bool {
+        !self.checkpoint_required && self.saved.as_ref() == Some(version)
+    }
+    /// Whether replication requires retaining all history and attachments.
+    pub fn is_shared(&self) -> bool {
+        self.shared
+    }
+
     /// Saved history pressure; attachments and immutable app assets have separate limits.
     pub fn pressure(&self) -> Pressure {
-        let meta = lock(&self.account).meta;
+        let meta = self.meta;
         Pressure::from_usage(meta.stored() as u64, meta.rows as u64)
     }
 
     /// The next write, or none when already durable. Exports only updates since the
     /// last save, or a checkpoint once the log is long or full.
     pub fn job(&self, doc: &mut Document) -> Result<Option<SaveJob>> {
-        let (meta, saved, shared, uncertain) = {
-            let account = lock(&self.account);
-            (account.meta, account.saved.clone(), account.shared, account.checkpoint_required)
-        };
+        let saved = self.saved.as_ref().ok_or_else(|| failed("Open the document save base before exporting a save"))?;
+        let (meta, shared, uncertain) = (self.meta, self.shared, self.checkpoint_required);
         let version = doc.history_version();
-        if version == saved && !uncertain {
+        if version == *saved && !uncertain {
             return Ok(None);
         }
         // A close checkpoint can reach disk while the original owner remains live
         // after a lost acknowledgment. Its history cannot append to the rebuilt base.
-        let replace = uncertain || !version.includes(&saved);
+        let replace = uncertain || !version.includes(saved);
         // Prefer a checkpoint when the log is due for one.
         let due = meta.rows >= CHECKPOINT_ROWS || meta.update_bytes >= CHECKPOINT_BYTES;
         let order: &[bool] = if replace {
@@ -141,7 +148,7 @@ impl Store {
             &[false, true]
         };
         for &as_checkpoint in order {
-            let bytes = if as_checkpoint { checkpoint(doc, shared)? } else { append(doc, &saved, meta)? };
+            let bytes = if as_checkpoint { checkpoint(doc, shared)? } else { append(doc, saved, meta)? };
             if let Some(bytes) = bytes {
                 let rows = if as_checkpoint { Rows::Checkpoint(bytes) } else { Rows::Append(bytes) };
                 return Ok(Some(SaveJob { rows, version }));
@@ -153,7 +160,7 @@ impl Store {
     /// An explicit checkpoint, even when clean. Unshared documents retain only current
     /// state; shared documents must retain all history other replicas can reference.
     pub fn checkpoint_job(&self, doc: &mut Document) -> Result<SaveJob> {
-        let shared = lock(&self.account).shared;
+        let shared = self.shared;
         let bytes =
             if shared { checkpoint(doc, true)? } else { trimmed(doc, |bytes| within(0, checkpoint_row(bytes.len())))? }
                 .ok_or(Error::Full)?;
@@ -163,11 +170,8 @@ impl Store {
     /// The checkpoint to write as the owner closes, after its last save: a session that
     /// edited a document larger than `TRIM_BYTES` trims its history, rebuilding an
     /// independent one. None when nothing would shrink. The still-live document keeps its session undo until close succeeds.
-    pub fn close_job(&self, doc: &mut Document) -> Result<Option<SaveJob>> {
-        let (meta, changed, shared) = {
-            let account = lock(&self.account);
-            (account.meta, account.changed, account.shared)
-        };
+    pub fn close_job(&self, doc: &mut Document, app: &pop_core::AppSpec) -> Result<Option<SaveJob>> {
+        let (meta, changed, shared) = (self.meta, self.changed, self.shared);
         let stored = meta.stored();
         if !changed || shared || stored <= TRIM_BYTES {
             return Ok(None);
@@ -178,9 +182,27 @@ impl Store {
         if bytes.len() as i64 >= stored || !within(0, checkpoint_row(bytes.len())) {
             return Ok(None);
         }
-        let version =
-            Document::open(self.app.app.spec(), &bytes, &[]).map_err(crate::error::from_error)?.history_version();
+        let version = Document::open(app, &bytes, &[]).map_err(crate::error::from_error)?.history_version();
         Ok(Some(SaveJob { rows: Rows::Checkpoint(bytes), version }))
+    }
+}
+
+impl Store {
+    /// Saved history pressure, without a SQLite read.
+    pub fn pressure(&self) -> Pressure {
+        self.account.borrow().pressure()
+    }
+    /// Exports the next save using the last acknowledged base.
+    pub fn job(&self, doc: &mut Document) -> Result<Option<SaveJob>> {
+        self.account.borrow().job(doc)
+    }
+    /// Exports an explicit checkpoint.
+    pub fn checkpoint_job(&self, doc: &mut Document) -> Result<SaveJob> {
+        self.account.borrow().checkpoint_job(doc)
+    }
+    /// Exports best-effort close compaction.
+    pub fn close_job(&self, doc: &mut Document) -> Result<Option<SaveJob>> {
+        self.account.borrow().close_job(doc, self.app.app.spec())
     }
 }
 
@@ -198,7 +220,7 @@ mod tests {
         let path = directory.path().join("document.pop");
         file::create_document(&template, &path).unwrap();
         let store = Store::open(&path, Mode::Document).unwrap();
-        let mut live = store.document().unwrap();
+        let mut live = store.open_document().unwrap();
         let set = |document: &mut Document, title: &str| {
             let batch =
                 serde_json::from_value(serde_json::json!({"intents":[{"type":"set","path":["title"],"value":title}]}))
@@ -228,14 +250,14 @@ mod tests {
         let attempt = store.job(&mut live).unwrap().unwrap();
         assert!(!attempt.is_checkpoint(), "ordinary live deltas still append");
         {
-            let backing = lock(&store.backing);
+            let backing = store.backing.borrow_mut();
             backing.conn.as_ref().unwrap().execute_batch(
                 "CREATE TEMP TRIGGER refuse_history BEFORE INSERT ON history BEGIN SELECT RAISE(ABORT, 'save refused'); END;",
             ).unwrap();
         }
         assert!(store.write(&attempt).is_err());
         {
-            let backing = lock(&store.backing);
+            let backing = store.backing.borrow_mut();
             backing.conn.as_ref().unwrap().execute_batch("DROP TRIGGER refuse_history;").unwrap();
         }
         let retry = store.job(&mut live).unwrap().unwrap();

@@ -21,7 +21,7 @@ test("corpus discovery permits a missing optional directory but surfaces filesys
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
-async function fixture(root: string, version = "2.0.0", id = 1) {
+async function fixture(root: string, version = "3.0.0", id = 1) {
   const directory = join(root, `original-${version}`);
   for (const dir of ["documents", "expected", "scenarios", "pages", "acceptance"]) await mkdir(join(directory, dir), { recursive: true });
   for (const name of ["conformance", "conformance-compacted"]) {
@@ -64,16 +64,16 @@ test("published archives are verified, replayed from cache and cannot silently d
     } };
     const first = await resolveCorpora(options);
     const replay = await releases();
-    expect(replay.map(entry => entry.name)).toEqual(["2.0.0"]);
+    expect(replay.map(entry => entry.name)).toEqual(["3.0.0"]);
     await verifyCorpus(replay[0]!.root, replay[0]!.release);
-    const saved = join(first.root, "2.0.0/documents/conformance.pop");
+    const saved = join(first.root, "3.0.0/documents/conformance.pop");
     expect((await stat(saved)).mode & 0o222).toBe(0);
     if (process.getuid?.() !== 0) await expect(writeFile(saved, "accidental write")).rejects.toThrow();
     const editable = join(root, "editable.pop");
     await copyCorpusDocument(saved, editable);
     await writeFile(editable, "edited copy");
     expect(await readFile(saved, "utf8")).toBe("minimal archive fixture");
-    const manifest = join(first.root, "2.0.0/release.json");
+    const manifest = join(first.root, "3.0.0/release.json");
     const modified = (await stat(manifest)).mtimeMs;
     // Existing writable caches are protected when next resolved, without recapture.
     await chmod(saved, 0o644);
@@ -103,10 +103,10 @@ test("published archives are verified, replayed from cache and cannot silently d
 test("drafts do not break PR replay; published history must be immutable and transitively complete", async () => {
   const root = await mkdtemp(join(tmpdir(), "pop-history-"));
   try {
-    const { entry } = await fixture(root, "2.1.0");
+    const { entry } = await fixture(root, "3.1.0");
     expect(await publishedHistory({ required: {}, list: async () => [{ ...entry.release, draft: true }], download: async () => { throw new Error("draft downloaded"); } })).toEqual([]);
     expect(() => verifyHistory([{ ...entry, release: { ...entry.release, immutable: false } }])).toThrow("immutable");
-    expect(() => verifyHistory([{ ...entry, record: { ...entry.record, qualified: { "2.0.0": "b".repeat(64) } } }])).toThrow("history missing or changed");
+    expect(() => verifyHistory([{ ...entry, record: { ...entry.record, qualified: { "3.0.0": "b".repeat(64) } } }])).toThrow("history missing or changed");
     expect(() => verifyHistory([{ ...entry, release: { ...entry.release, assets: [] } }])).toThrow("asset");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
@@ -127,13 +127,13 @@ test("a required first release cannot disappear on a cold machine", async () => 
   const root = await mkdtemp(join(tmpdir(), "pop-required-history-"));
   try {
     const { entry } = await fixture(root);
-    const options = { required: { "2.0.0": entry.record.corpus.sha256 },
+    const options = { required: { "3.0.0": entry.record.corpus.sha256 },
       download: async () => Buffer.from(JSON.stringify(entry.record)) };
     expect(await publishedHistory({ required: {}, list: async () => [] })).toEqual([]);
     expect(await publishedHistory({ ...options, list: async () => [entry.release] })).toHaveLength(1);
     await expect(publishedHistory({ ...options, list: async () => [] })).rejects.toThrow("history missing or changed");
     await expect(publishedHistory({ ...options, list: async () => [{ ...entry.release, draft: true }] })).rejects.toThrow("history missing or changed");
-    await expect(publishedHistory({ ...options, required: { "2.0.0": "b".repeat(64) }, list: async () => [entry.release] })).rejects.toThrow("history missing or changed");
+    await expect(publishedHistory({ ...options, required: { "3.0.0": "b".repeat(64) }, list: async () => [entry.release] })).rejects.toThrow("history missing or changed");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
 
@@ -142,7 +142,7 @@ test.each(["identity", "partial root"])("replay %s includes the candidate and au
   const previous = process.env.POP_COMPAT_ROOT;
   try {
     const old = await fixture(root);
-    const candidate = await fixture(root, "2.1.0", 4);
+    const candidate = await fixture(root, "3.1.0", 4);
     const options = { required: {}, cache: join(root, "cache"), output: join(root, "replays"), list: async () => [old.entry.release],
       download: async (id: number) => id === 1 ? Buffer.from(JSON.stringify(old.entry.record)) : old.bytes };
     const published = await resolveCorpora(options);
@@ -161,12 +161,12 @@ test.each(["identity", "partial root"])("replay %s includes the candidate and au
     const partial = join(root, "partial");
     await mkdir(partial);
     await cp(join(a.root, ".inventory.json"), join(partial, ".inventory.json"));
-    await symlink(await realpath(join(a.root, "2.1.0")), join(partial, "2.1.0"));
+    await symlink(await realpath(join(a.root, "3.1.0")), join(partial, "3.1.0"));
     await expect(verifyResolvedCorpora(partial, options)).rejects.toThrow("missing");
 
     // A self-consistent replacement manifest is still not the released evidence.
-    await cp(join(published.root, "2.0.0"), join(partial, "2.0.0"), { recursive: true, dereference: true });
-    const historicalManifest = join(partial, "2.0.0/release.json");
+    await cp(join(published.root, "3.0.0"), join(partial, "3.0.0"), { recursive: true, dereference: true });
+    const historicalManifest = join(partial, "3.0.0/release.json");
     const altered = JSON.parse(await readFile(historicalManifest, "utf8"));
     altered.clock++;
     await chmod(historicalManifest, 0o600);
@@ -174,7 +174,7 @@ test.each(["identity", "partial root"])("replay %s includes the candidate and au
     await expect(verifyResolvedCorpora(partial, options)).rejects.toThrow("manifest");
 
     // A stale receipt also cannot hide a release published since preparation.
-    candidate.entry.record.qualified = { "2.0.0": old.entry.record.corpus.sha256 };
+    candidate.entry.record.qualified = { "3.0.0": old.entry.record.corpus.sha256 };
     await expect(verifyResolvedCorpora(published.root, { ...options, list: async () => [old.entry.release, candidate.entry.release],
       download: async id => Buffer.from(JSON.stringify(id === 1 ? old.entry.record : candidate.entry.record)) })).rejects.toThrow("inventory");
   } finally {
@@ -188,21 +188,21 @@ test("candidate snapshots are isolated and cache corruption cannot replace the c
   const previous = process.env.POP_COMPAT_ROOT;
   try {
     const old = await fixture(root);
-    const candidate = await fixture(root, "2.1.0", 4);
+    const candidate = await fixture(root, "3.1.0", 4);
     const options = { required: {}, cache: join(root, "cache"), output: join(root, "replays"), list: async () => [old.entry.release],
       download: async (id: number) => id === 1 ? Buffer.from(JSON.stringify(old.entry.record)) : old.bytes };
     const published = await resolveCorpora(options);
     const prepared = await resolveCorpora({ ...options, candidate: candidate.directory });
     expect(prepared.root).not.toBe(published.root);
     expect(await realpath(join(options.output, "current"))).toBe(await realpath(published.root));
-    expect(await readFile(join(prepared.root, "2.1.0/release.json"), "utf8")).toBe(await readFile(join(candidate.directory, "release.json"), "utf8"));
-    await expect(stat(join(published.root, "2.1.0"))).rejects.toThrow();
+    expect(await readFile(join(prepared.root, "3.1.0/release.json"), "utf8")).toBe(await readFile(join(candidate.directory, "release.json"), "utf8"));
+    await expect(stat(join(published.root, "3.1.0"))).rejects.toThrow();
 
     await writeFile(join(candidate.directory, "documents/conformance.pop"), "incomplete capture");
     await expect(resolveCorpora({ ...options, candidate: candidate.directory })).rejects.toThrow();
     expect(await realpath(join(options.output, "current"))).toBe(await realpath(published.root));
 
-    const damaged = join(published.root, "2.0.0/documents/conformance.pop");
+    const damaged = join(published.root, "3.0.0/documents/conformance.pop");
     await chmod(damaged, 0o600);
     await writeFile(damaged, "damaged cache");
     await expect(resolveCorpora(options)).rejects.toThrow("Corrupt cached corpus tree");
@@ -263,7 +263,7 @@ test("historical writers use the exact retained tarball and reject changed cache
     await writeFile(binary, "#!/bin/sh\necho original-core\n");
     const tarball = join(root, "writer.tgz");
     await run(["tar", "-czf", tarball, "-C", root, "package"]);
-    const writer: Release["writer"] = { version: "2.0.0", platform: "darwin-arm64", sha256: await fileDigest(binary), buildId: "original-core" };
+    const writer: Release["writer"] = { version: "3.0.0", platform: "darwin-arm64", sha256: await fileDigest(binary), buildId: "original-core" };
     await verifyPackedWriter(tarball, writer);
     await expect(verifyPackedWriter(tarball, { ...writer, sha256: "0".repeat(64) })).rejects.toThrow("differs from the captured writer");
     const options = { cache: join(root, "cache"), local: join(root, "missing"), package: async () => tarball };
@@ -278,7 +278,7 @@ test("capture refuses an existing explicit destination before building or replac
   const root = await mkdtemp(join(tmpdir(), "pop-capture-destination-"));
   try {
     await writeFile(join(root, "keep"), "existing output");
-    const result = await exec([process.execPath, "scripts/compat/capture.ts", "2.0.0", "--writer", "unused-engine", "--out", root], { cwd: repository, timeout: 10_000, env: { ...process.env, POP_ENGINE: undefined } });
+    const result = await exec([process.execPath, "scripts/compat/capture.ts", "3.0.0", "--writer", "unused-engine", "--out", root], { cwd: repository, timeout: 10_000, env: { ...process.env, POP_ENGINE: undefined } });
     expect(result.code).not.toBe(0);
     expect(result.stderr).toContain("Capture destination already exists");
     expect(result.stdout).not.toContain("Capture: scripts/build");

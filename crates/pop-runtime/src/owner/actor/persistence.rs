@@ -1,7 +1,14 @@
 //! Serial storage effects, driven by the native persistence thread.
 use super::*;
 
+pub(in crate::owner) enum Control {
+    Share(mpsc::Sender<Result<Option<store::Share>>>),
+    Publish(String, mpsc::Sender<Result<()>>),
+    Withdraw(mpsc::Sender<Result<()>>),
+}
+
 pub(super) enum Work {
+    Control(Control),
     Save {
         generation: u64,
         target: u64,
@@ -49,35 +56,70 @@ pub(super) enum StorageAction {
     Backup(PathBuf),
     StageSeed(PathBuf),
     Artwork(Artwork),
-    SetArtwork { source_version: String, preview: Option<Vec<u8>>, icon: Option<Vec<u8>> },
+    SetArtwork { preview: Option<Vec<u8>>, icon: Option<Vec<u8>> },
     Attachments,
     ReadAttachment(String),
     PutAttachment(Vec<u8>),
     Share(store::Share),
     Unshare,
 }
-pub(super) fn persistence(store: Arc<store::Store>, work: mpsc::Receiver<Work>, sender: mpsc::Sender<Message>) {
+pub(in crate::owner) struct Persisted {
+    pub generation: u64,
+    pub state: store::SaveState,
+    pub outcome: Outcome,
+}
+pub(in crate::owner) enum Outcome {
+    Saved { target: u64, result: Result<()> },
+    Restored { result: Result<Box<Document>>, callback: Completion },
+    Stored { result: Result<Reply>, callback: Completion, closing: bool, refresh_status: bool },
+}
+pub(super) fn persistence(store: store::Store, work: mpsc::Receiver<Work>, sender: mpsc::Sender<Message>) {
     for work in work {
+        if let Work::Control(control) = work {
+            match control {
+                Control::Share(reply) => {
+                    let _ = reply.send(contained(|| Ok(store.share()?)));
+                }
+                Control::Publish(json, reply) => {
+                    let _ = reply.send(contained(|| Ok(store.publish_discovery(&json)?)));
+                }
+                Control::Withdraw(reply) => {
+                    store.withdraw_discovery();
+                    let _ = reply.send(Ok(()));
+                }
+            }
+            continue;
+        }
         let done = perform(&store, work);
-        if let Err(mpsc::SendError(Message::Stored { callback, .. } | Message::Restored { callback, .. })) =
-            sender.send(done)
+        if let Err(mpsc::SendError(Message::Persisted(Persisted {
+            outcome: Outcome::Stored { callback, .. } | Outcome::Restored { callback, .. },
+            ..
+        }))) = sender.send(done)
         {
-            complete(callback, Err(closed()))
+            complete(callback, Err(closed()));
         }
     }
 }
 /// One serial storage effect, driven by a native thread.
 pub(super) fn perform(store: &store::Store, work: Work) -> Message {
-    match work {
-        Work::Save { generation, target, job } => {
-            Message::Saved { generation, target, result: contained(|| store.write(&job).map_err(Failure::from)) }
+    let generation = match &work {
+        Work::Save { generation, .. }
+        | Work::Restore { generation, .. }
+        | Work::Store { generation, .. }
+        | Work::Close { generation, .. }
+        | Work::Handoff { generation, .. } => *generation,
+        Work::Control(_) => unreachable!("controls are handled before persistence effects"),
+    };
+    let outcome = match work {
+        Work::Control(_) => unreachable!("controls are handled before persistence effects"),
+        Work::Save { target, job, .. } => {
+            Outcome::Saved { target, result: contained(|| store.write(&job).map_err(Failure::from)) }
         }
-        Work::Restore { generation, callback } => Message::Restored {
-            generation,
+        Work::Restore { callback, .. } => Outcome::Restored {
             callback,
-            result: contained(|| store.document().map(Box::new).map_err(Failure::from)),
+            result: contained(|| store.open_document().map(Box::new).map_err(Failure::from)),
         },
-        Work::Store { generation, action, callback } => {
+        Work::Store { action, callback, .. } => {
             let refresh_status = matches!(action, StorageAction::Share(_) | StorageAction::Unshare);
             let result = contained(|| {
                 Ok(match action {
@@ -97,10 +139,7 @@ pub(super) fn perform(store: &store::Store, work: Work) -> Message {
                         store.stage_seed(&path)?;
                         Reply::Unit
                     }
-                    StorageAction::SetArtwork { source_version, preview, icon } => {
-                        if store.document()?.reading()?.version != source_version {
-                            return Err(Failure::new(FailureKind::Replaced, "Artwork source changed"));
-                        }
+                    StorageAction::SetArtwork { preview, icon } => {
                         store.set_artwork(&named_artwork(&preview, &icon))?;
                         Reply::Unit
                     }
@@ -118,9 +157,9 @@ pub(super) fn perform(store: &store::Store, work: Work) -> Message {
                     }
                 })
             });
-            Message::Stored { generation, result, callback, closing: false, refresh_status }
+            Outcome::Stored { result, callback, closing: false, refresh_status }
         }
-        Work::Close { generation, job, preview, icon, callback } => {
+        Work::Close { job, preview, icon, callback, .. } => {
             let result = contained(|| {
                 // Housekeeping cannot fail a close whose final save succeeded.
                 if let Some(job) = job {
@@ -135,15 +174,16 @@ pub(super) fn perform(store: &store::Store, work: Work) -> Message {
                 store.close_reclaiming()?;
                 Ok(Reply::Unit)
             });
-            Message::Stored { generation, result, callback, closing: true, refresh_status: false }
+            Outcome::Stored { result, callback, closing: true, refresh_status: false }
         }
-        Work::Handoff { generation, dest, state, preview, icon, value, theme, callback } => {
+        Work::Handoff { dest, state, preview, icon, value, theme, callback, .. } => {
             let result = contained(|| {
                 store.handoff_copy(&dest, &state, &named_artwork(&preview, &icon), &value, &theme)?;
                 store.close()?;
                 Ok(Reply::Unit)
             });
-            Message::Stored { generation, result, callback, closing: true, refresh_status: false }
+            Outcome::Stored { result, callback, closing: true, refresh_status: false }
         }
-    }
+    };
+    Message::Persisted(Persisted { generation, state: store.save_state(), outcome })
 }

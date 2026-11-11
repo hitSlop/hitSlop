@@ -124,8 +124,7 @@ impl Actor {
         }
         let mut args: Value = crate::parse(&args_json)?;
         let command = self
-            .store
-            .app()
+            .app
             .app
             .commands()
             .iter()
@@ -158,7 +157,7 @@ impl Actor {
     }
     fn evaluate_command(&mut self, mut invocation: Invocation) {
         let prepare = || -> Result<(Arc<String>, String)> {
-            let app = self.store.app();
+            let app = self.app.as_ref();
             let bundle = app.commands.clone().ok_or_else(|| rejected("This app has no command program"))?;
             #[derive(serde::Serialize)]
             struct Input<'a> {
@@ -195,7 +194,7 @@ impl Actor {
         };
         self.evaluating = true;
         if let Err(mpsc::SendError(Work { mut invocation, .. })) =
-            evaluate.send(Work { runtime_abi: self.store.app().runtime_abi, invocation, bundle, input })
+            evaluate.send(Work { runtime_abi: self.app.as_ref().runtime_abi, invocation, bundle, input })
         {
             self.evaluating = false;
             complete(invocation.take_callback(), Err(closed()));
@@ -215,7 +214,7 @@ impl Actor {
                 return Err(rejected("Command expired before its intents were admitted"));
             }
             let output = result?;
-            let intents = current_intents(self.store.app().runtime_abi, output.intents)?;
+            let intents = current_intents(self.app.as_ref().runtime_abi, output.intents)?;
             let batch = pop_contracts::wire::Batch { intents, if_version: Some(invocation.version.clone()) };
             let accepted = self.edited(|core| core.apply_command(batch, invocation.origin, &invocation.name))?;
             self.accepted(accepted.sequence, accepted.publication, accepted.theme_changed);
@@ -249,7 +248,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn fixture() -> (tempfile::TempDir, Arc<store::Store>) {
+    fn fixture() -> (tempfile::TempDir, store::Store) {
         pop_storage::registry::use_folder(&std::env::temp_dir().join("pop-test-registry")).unwrap();
         let dir = tempfile::tempdir().unwrap();
         let assets = dir.path().join("assets");
@@ -281,7 +280,7 @@ mod tests {
         pop_storage::file::pack(&input.to_string(), dir.path(), &template, None).unwrap();
         let document = dir.path().join("Document.pop");
         pop_storage::file::create_document(&template, &document).unwrap();
-        let store = Arc::new(store::Store::open(&document, store::Mode::Document).unwrap());
+        let store = store::Store::open(&document, store::Mode::Document).unwrap();
         (dir, store)
     }
 
@@ -290,7 +289,7 @@ mod tests {
         let (_dir, store) = fixture();
         store.set_share(&store::Share { endpoint: "https://relay.example".into() }).unwrap();
         let (persist, storage) = mpsc::channel();
-        let mut actor = Actor::new(store.clone(), store::Mode::Document, Arc::new(|_| {}), persist).unwrap();
+        let mut actor = Actor::new(&store, store::Mode::Document, Arc::new(|_| {}), persist).unwrap();
         actor.view = Some("old-page".into());
         let (reconnect, notices) = mpsc::channel();
         actor.sync(SyncMessage::Attach {
@@ -340,6 +339,9 @@ mod tests {
         );
         let work = storage.recv_timeout(Duration::from_secs(2)).unwrap();
         actor.step(super::super::persistence::perform(&store, work));
+        if let Some((callback, result)) = actor.finished.take() {
+            complete(callback, result);
+        }
         assert!(closed.recv_timeout(Duration::from_secs(2)).unwrap().is_ok());
     }
 
@@ -347,7 +349,7 @@ mod tests {
     fn an_evaluator_panic_completes_and_the_worker_runs_the_next_command() {
         let (_dir, store) = fixture();
         let (persist, _storage) = mpsc::channel();
-        let mut actor = Actor::new(store, store::Mode::Document, Arc::new(|_| {}), persist).unwrap();
+        let mut actor = Actor::new(&store, store::Mode::Document, Arc::new(|_| {}), persist).unwrap();
         let (evaluate, work) = mpsc::channel();
         let (sender, messages) = mpsc::channel();
         actor.evaluate = Some(evaluate);

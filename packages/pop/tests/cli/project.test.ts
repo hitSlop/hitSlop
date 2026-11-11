@@ -12,7 +12,7 @@ test("cwd cannot redirect document commands; only an explicit project prefix del
   try {
     const installed = join(root, "node_modules/@hitslop/pop");
     await mkdir(join(installed, "src/cli"), { recursive: true });
-    await writeFile(join(installed, "package.json"), JSON.stringify({ name: "@hitslop/pop", version: "2.0.0", exports: { "./package.json": "./package.json" } }));
+    await writeFile(join(installed, "package.json"), JSON.stringify({ name: "@hitslop/pop", version: "3.0.0", exports: { "./package.json": "./package.json" } }));
     await writeFile(join(installed, "src/cli/cli.ts"), 'console.log("project CLI: " + process.argv.slice(2).join(" "));');
     const cli = resolve("packages/pop/src/cli/cli.ts");
     const ordinary = await exec([process.execPath, cli, "--version"], { cwd: root });

@@ -133,7 +133,7 @@ fn documents_each_release_writes_read_the_same_here_and_take_edits() {
 
                 // And it edits it: a generated batch, saved, trimmed on close, reopened.
                 let store = Store::open(&document, Mode::Document).unwrap();
-                let mut doc = store.document().unwrap();
+                let mut doc = store.open_document().unwrap();
                 let mut edited = None;
                 for _ in 0..16 {
                     let op = intent(&mut rng, &mut serial, &descriptor, &released);

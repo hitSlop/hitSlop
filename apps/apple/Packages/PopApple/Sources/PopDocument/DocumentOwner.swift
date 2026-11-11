@@ -51,7 +51,7 @@ public final class DocumentOwner: Sendable {
     let events = Events()
     let owner = try storeCall {
       try PopFile.opening {
-        try NativeOwner.open(path: url.path, mode: mode, evaluatorPath: Self.evaluatorPath, listener: events)
+        try NativeOwner.open(path: url.path, mode: mode, evaluatorPath: Self.enginePath, listener: events)
       }
     }
     native = owner
@@ -63,16 +63,16 @@ public final class DocumentOwner: Sendable {
 
   /// The app and its renderer ship this sibling helper. Missing helpers refuse commands;
   /// they never cause authored code to execute in the page or native process.
-  public static var evaluatorPath: String? {
+  public static var enginePath: String? {
     #if os(iOS)
       return nil
     #else
       #if DEBUG
-        if let path = ProcessInfo.processInfo.environment["POP_EVALUATOR"] { return path }
+        if let path = ProcessInfo.processInfo.environment["POP_HOST_ENGINE"] { return path }
       #endif
       let candidates = [
-        Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/pop-evaluator"),
-        Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("pop-evaluator"),
+        Bundle.main.bundleURL.appendingPathComponent("Contents/Helpers/pop-engine"),
+        Bundle.main.executableURL?.deletingLastPathComponent().appendingPathComponent("pop-engine"),
       ].compactMap { $0 }
       return candidates.first { FileManager.default.isExecutableFile(atPath: $0.path) }?.path
     #endif

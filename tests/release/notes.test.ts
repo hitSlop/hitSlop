@@ -76,8 +76,8 @@ test("release publication uses the reviewed source and the project's Sparkle pin
     expect(await readFile(join(output, "release-notes.md"), "utf8")).toBe(github);
     expect(github).not.toContain("first supported release");
     // The first release states the compatibility promise.
-    await writeFile(join(root, "apps/apple/project.yml"), project.replace("7.2.0", "2.0.0"));
-    await writeFile(join(root, "docs/releases/2.0.0.md"), source.replace("7.2.0", "2.0.0"));
+    await writeFile(join(root, "apps/apple/project.yml"), project.replace("7.2.0", "3.0.0"));
+    await writeFile(join(root, "docs/releases/3.0.0.md"), source.replace("7.2.0", "3.0.0"));
     expect((await loadReleaseNotes(root)).github).toContain("Documents written by this release remain supported by future pop versions.");
   } finally { await rm(root, { recursive: true, force: true }); }
 });
