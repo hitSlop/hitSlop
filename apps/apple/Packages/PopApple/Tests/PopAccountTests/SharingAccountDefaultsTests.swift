@@ -38,7 +38,7 @@ private struct Refused: Error {}
 }
 
 /// A retained identity that Firebase lost is refused, also after relaunch, rather than replaced
-/// by a different anonymous UID; only an explicit sign-out or reset clears it.
+/// by a different account; only an explicit sign-out or reset clears it.
 @Test func aLostRetainedIdentityIsRefusedUntilAnExplicitReset() throws {
   let (defaults, cleanup) = try scratchDefaults()
   defer { cleanup() }

@@ -6,12 +6,18 @@ use pop_sharing_protocol::document::{AccessState, DocumentRole};
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum LibraryError {
+    #[error("Sign in to join")]
+    SignInRequired,
     #[error("{message}")]
     Failed { message: String },
 }
 impl From<core::Error> for LibraryError {
     fn from(error: core::Error) -> Self {
-        Self::Failed { message: error.message }
+        if error.issue == core::Issue::SignInRequired {
+            Self::SignInRequired
+        } else {
+            Self::Failed { message: error.message }
+        }
     }
 }
 #[uniffi::remote(Enum)]

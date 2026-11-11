@@ -71,13 +71,13 @@ public struct LiveCollaborationSection: View {
           Text("Starting live link…").font(.caption)
         }
       } else if wantsLink && (!account.signedIn || signingIn) {
-        caption("Sign in with Apple to start a live link. People you invite don't need an account.")
+        caption("Sign in with Apple to start a live link. People you invite sign in to join.")
         signInButton
       } else if live {
         caption(
           joined
-            ? "You joined this live document. Anyone with the link can edit."
-            : "Anyone with the link can edit.")
+            ? "You joined this live document. Anyone with the link who signs in can edit."
+            : "Anyone with the link who signs in can edit.")
         if let link = model.link {
           HStack {
             Button(copied ? "Copied" : "Copy Link") { copy(link) }
@@ -98,7 +98,7 @@ public struct LiveCollaborationSection: View {
         caption(
           model.status?.phase == .ended
             ? "The link is off. Your document still syncs across your devices."
-            : "Edit together in real time. Anyone with the link can edit.")
+            : "Edit together in real time. Anyone with the link who signs in can edit.")
       }
 
       if live, let kind = model.status?.pauseKind {
@@ -127,7 +127,7 @@ public struct LiveCollaborationSection: View {
       }
       if confirmingStop {
         caption(
-          "Revoke this link? Guests keep their downloaded copies. Your document continues syncing across your devices.")
+          "Revoke this link? People keep their downloaded copies. Your document continues syncing across your devices.")
         HStack {
           Button("Cancel") { confirmingStop = false }
           Button("Revoke Link", role: .destructive) {
@@ -292,6 +292,8 @@ public struct SharingJoinView: View {
             defer { busy = false }
             do {
               try await join(link.trimmingCharacters(in: .whitespacesAndNewlines))
+              dismiss()
+            } catch is CancellationError {
               dismiss()
             } catch { self.error = sharingMessage(error) }
           }

@@ -86,7 +86,6 @@ public struct LibrarySyncAttention {
   }
   public var closeAccountDocuments: (@MainActor ([String]) async throws -> Void)?
   public var concealAccountDocuments: (@MainActor ([String], Bool) -> Void)?
-  public var allowsCloudCreation = true
   public var tokenProvider: (@MainActor () async throws -> String)?
   private var accountActive = true
   private var native: NativeLibrary?
@@ -191,11 +190,8 @@ public struct LibrarySyncAttention {
     isReady = true
     await refresh()
   }
-  public func connectAccount(_ account: String, anonymous: Bool) async throws {
+  public func connectAccount(_ account: String) async throws {
     try await setAccount(account, external: true)
-    guard accountIdentity == account, isReady else { return }
-    allowsCloudCreation = !account.isEmpty && !anonymous
-    // Token acquisition can activate the account; the token listener starts sync.
   }
   public func reportAccountError(_ error: Error, account: String) {
     guard account == accountIdentity || account == pendingAccount else { return }
@@ -312,7 +308,6 @@ public struct LibrarySyncAttention {
     return entry
   }
   @discardableResult public func enableSync(id: String) async throws -> LibraryEntry {
-    guard allowsCloudCreation else { throw PopFailure("Sign in with Apple to create a cloud document.") }
     let token = try await requiredToken()
     guard let native else { throw PopFailure("The library is unavailable.") }
     let entry = try await PopPreparation.run { try native.enableSync(id: id, token: token) }
@@ -321,7 +316,7 @@ public struct LibrarySyncAttention {
     return entry
   }
   public func enableSync(source: URL, title: String) async throws {
-    guard allowsCloudCreation else { throw PopFailure("Sign in with Apple to create a cloud document.") }
+    guard !accountIdentity.isEmpty else { throw PopFailure("Sign in with Apple to create a cloud document.") }
     guard let native else { throw PopFailure("Sign in to sync across devices.") }
     let current = generation
     let entry = try await PopPreparation.run { try native.adopt(source: source.path, title: title) }

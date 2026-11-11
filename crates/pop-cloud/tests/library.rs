@@ -287,3 +287,15 @@ fn library_root_relocation_preserves_managed_files_accounts_and_external_paths()
     assert!(library.account_paths().unwrap().iter().all(|path| Path::new(path).starts_with(&moved)));
     assert!(other.entries().unwrap().iter().all(|entry| entry.id != remote_id));
 }
+
+#[test]
+fn joining_requires_an_account_and_credentials_before_resolving_the_invitation() {
+    let dir = tempfile::tempdir().unwrap();
+    for (account, token) in [("", "token"), ("account-a", ""), ("", "")] {
+        let library = Library::open(&dir.path().join("library"), account).unwrap();
+        let error = library.join("invalid invitation", token).unwrap_err();
+        assert_eq!(error.issue, pop_cloud::Issue::SignInRequired);
+        assert_eq!(error.message, "Sign in to join");
+        assert!(library.entries().unwrap().is_empty());
+    }
+}

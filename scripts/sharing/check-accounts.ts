@@ -249,7 +249,7 @@ try {
   assert.equal((await call(base+"/sharing",b)).status,403,"a valid nonmember is denied access");
   assert.equal((await call(base+"/seed",secondSession)).status,200,"same account on another device shares private bytes");
   assert.equal((await json<AccessState>(base+"/sharing",secondSession)).role,"owner");
-  const forgedIdentity = {"X-Pop-Verified-Identity":JSON.stringify({uid:"creator-a",named:true,expires:Math.floor(Date.now()/1000)+3600})};
+  const forgedIdentity = {"X-Pop-Verified-Identity":JSON.stringify({uid:"creator-a",expires:Math.floor(Date.now()/1000)+3600})};
   const forged = await call(base+"/seed", b, "GET", undefined, forgedIdentity);
   assert.equal(forged.status,403);
   assert.deepEqual(await forged.json(),{code:"denied",message:"Access revoked"});
@@ -263,10 +263,12 @@ try {
     assert.equal(typeof info.compact,"boolean","Every reply states whether compaction is due");
     assert.ok(!("capability" in info) && !JSON.stringify(info).includes(enabled.capability!),"Document metadata never carries the invitation");
   }
-  assert.equal((await call(base+"/members",uid("anonymous", "anonymous"),"POST",{capability:enabled.capability})).status,401);
-  const guest = uid("guest");
-  await json(base+"/members",guest,"POST",{capability:enabled.capability});
-  assert.equal((await call(base+"/seed",guest)).status,200,"Signed-in identities may join");
+  const anonymousJoin = await call(base+"/members",uid("anonymous", "anonymous"),"POST",{capability:enabled.capability});
+  assert.equal(anonymousJoin.status,401);
+  assert.deepEqual(await anonymousJoin.json(),{code:"sign_in_required",message:"Sign in to join"});
+  const invitedIdentity = uid("invited-member");
+  await json(base+"/members",invitedIdentity,"POST",{capability:enabled.capability});
+  assert.equal((await call(base+"/seed",invitedIdentity)).status,200,"Signed-in identities may join");
   assert.equal((await call(base+"/seed",enabled.capability!)).status,401,"Invitation secrets cannot authorize document reads");
   const member=await json<AccessState>(base+"/members",b,"POST",{capability:enabled.capability});assert.equal(member.role,"editor");
   assert.equal((await call(base+"/seed",b)).status,200);
@@ -289,32 +291,32 @@ try {
   assert.equal((await call(base+"/sync",undefined,"GET",undefined,{
     Upgrade:"websocket", "Sec-WebSocket-Protocol":`pop.sync.v2, cap.${enabled.capability}`,
   })).status,426,"Credentials in a socket subprotocol are never read");
-  const ownerConnection=await connect(a),guestConnection=await connect(guest);
-  const ownerSocket=ownerConnection.socket,guestSocket=guestConnection.socket;let ownerClosed=false;
+  const ownerConnection=await connect(a),memberConnection=await connect(invitedIdentity);
+  const ownerSocket=ownerConnection.socket,memberSocket=memberConnection.socket;let ownerClosed=false;
   ownerSocket.addEventListener("close",()=>ownerClosed=true);
-  const guestEnded=new Promise<void>(resolve=>guestSocket.addEventListener("close",()=>resolve()));
+  const memberEnded=new Promise<void>(resolve=>memberSocket.addEventListener("close",()=>resolve()));
   const documents = await worker.getDurableObjectNamespace("DOCUMENTS");
   const documentStub = documents.get(documents.idFromName(documentName(document)));
   const revoked=await json<AccessState>(base+"/sharing",a,"DELETE");assert(!revoked.sharing);assert(revoked.generation>enabled.generation);
-  assert.equal((await call(base+"/seed",enabled.capability!)).status,401);assert.equal((await call(base+"/seed",guest)).status,403);assert.equal((await call(base+"/seed",b)).status,403);
+  assert.equal((await call(base+"/seed",enabled.capability!)).status,401);assert.equal((await call(base+"/seed",invitedIdentity)).status,403);assert.equal((await call(base+"/seed",b)).status,403);
   for (const [suffix,method] of [["","GET"],["/sharing","GET"],["/metadata","GET"],["/seed","GET"],["/blobs","GET"],["/blob/"+"b".repeat(64),"GET"],["/blob/"+"b".repeat(64),"PUT"],["/compact","POST"],["/sync","GET"]]) {
     const reply=await call(base+suffix,b,method);
     assert.equal(reply.status,403,"Revoked membership on "+suffix);
     assert.deepEqual(await reply.json(),{code:"denied",message:"Access revoked"});
   }
   assert.equal((await call(base+"/seed",a)).status,200);assert(!ownerClosed,"revocation does not close private owner connection");
-  assert.equal((await guestConnection.next()).code,3,"revocation delivers the real access-ended frame");
-  try { guestSocket.send(push(2,0,1,new Uint8Array([8]))); } catch { /* Peer is already closing. */ }
-  guestSocket.close(); // Acknowledge the server close, as the native/browser client does.
-  await Promise.race([guestEnded,new Promise((_,reject)=>setTimeout(()=>reject(new Error("Guest close handshake did not complete")),5000))]);
+  assert.equal((await memberConnection.next()).code,3,"revocation delivers the real access-ended frame");
+  try { memberSocket.send(push(2,0,1,new Uint8Array([8]))); } catch { /* Peer is already closing. */ }
+  memberSocket.close(); // Acknowledge the server close, as the native client does.
+  await Promise.race([memberEnded,new Promise((_,reject)=>setTimeout(()=>reject(new Error("Member close handshake did not complete")),5000))]);
   ownerSocket.send(push(1,0,1));
   const ownerAck=await ownerConnection.next();assert.equal(ownerAck.tag,6);assert.equal(ownerAck.status,0,"owner still writes after invitation revocation");
   assert.equal((await ownerConnection.next()).tag,3,"owner still receives live accepted updates");
-  const heads=await (await documentStub.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"SELECT heads AS value FROM document_state"})})).json() as {value:string}[];
-  assert.deepEqual(JSON.parse(heads[0]!.value),[["0000000000000001",1]],"a revoked guest push never enters the accepted frontier");
+  const heads=await (await documentStub.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"SELECT peer,end FROM heads ORDER BY peer"})})).json() as {peer:string;end:number}[];
+  assert.deepEqual(heads.map(h=>[h.peer,h.end]),[["0000000000000001",1]],"a revoked member push never enters the accepted frontier");
   ownerSocket.close();
   const reopened=await json<AccessState>(base+"/sharing",a,"POST");assert.notEqual(reopened.capability,enabled.capability);
-  const staying=uid("staying-guest");
+  const staying=uid("staying-member");
   await json(base+"/members",b,"POST",{capability:reopened.capability});
   await json(base+"/members",staying,"POST",{capability:reopened.capability});
   const attachment=new Uint8Array([3,1,4,1,5,9]);
@@ -610,7 +612,7 @@ try {
   const metadata=await (await call(base+"/metadata",secondSession)).json();
   assert.deepEqual(metadata,{title:"Repairable private document",templateId:"fixture"});
   const departed = await library(b);
-  assert.deepEqual((await departed.next()).entries,[],"Leave removes the guest library entry after restart");
+  assert.deepEqual((await departed.next()).entries,[],"Leave removes the member library entry after restart");
   departed.socket.close();
   assert.equal((await call(base+"/seed",secondSession)).status,200,"restart retains private document bytes");
   assert.equal((await call(base,secondSession,"DELETE")).status,200);
@@ -661,5 +663,5 @@ try {
     assert.equal(outage.status,503,"Identity-provider outages are retryable on "+path);
     assert.equal((await outage.json() as {code:string}).code,"unavailable");
   }
-  console.log("Passed: persistent UUID/private identity, signed-in links, generation-bound members, member-bound attachment reads, fail-closed and reset-safe joins, revoke-first leaves and registry cleanup, the member limit under racing joins, owner-preserving revocation/leave, restart-safe registry repair, deletion tombstones.");
+  console.log("Passed: persistent UUID/private identity, named sign-in links and anonymous edge refusal, generation-bound members, member-bound attachment reads, fail-closed and reset-safe joins, revoke-first leaves and registry cleanup, the member limit under racing joins, owner-preserving revocation/leave, restart-safe registry repair, deletion tombstones.");
 } finally { await worker.dispose(); await rm(root,{recursive:true,force:true}); }

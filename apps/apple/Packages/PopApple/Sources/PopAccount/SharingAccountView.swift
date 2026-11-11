@@ -107,8 +107,8 @@ enum AccountDeletionOutcome: Equatable {
 }
 
 /// This device's account flags. Firebase keeps an identity in the Keychain; the retained flag
-/// outlives its loss, so a missing identity is refused rather than replaced by a different
-/// anonymous UID. Keys are scoped to the document application ID.
+/// outlives its loss, so replacing a missing identity requires explicit sign-out.
+/// Keys are scoped to the document application ID.
 struct SharingAccountDefaults {
   var defaults: UserDefaults = .standard
   private static let prefix = "click.dotpop.sharing.application\(fileApplicationId())."
@@ -162,7 +162,7 @@ struct SharingAccountDefaults {
 /// revokes Apple's access.
 private typealias AppleAuthorization = (credential: AuthCredential, appleUser: String, code: String?)
 
-/// Retained anonymous identities accept invitations; Apple links the same UID for cloud creation.
+/// Shared documents require a named Apple account.
 /// Auth runs on the one default Firebase app, which the host configures at launch (`PopFirebase.configure()`).
 @MainActor public final class SharingAccount: ObservableObject {
   public static let shared = SharingAccount()
@@ -171,10 +171,9 @@ private typealias AppleAuthorization = (credential: AuthCredential, appleUser: S
   @Published public private(set) var hasIdentity = false
   public var identityID: String? { auth?.currentUser?.uid }
   private var observedUID: String?
-  private var identityTask: Task<User, Error>?
   fileprivate var retainedIdentityMissing = false
   private let stored = SharingAccountDefaults()
-  /// Creates a guest identity only when none is retained; credential failures preserve the current UID.
+  /// Acquires credentials only for an existing named account.
   public func token() async throws -> String {
     configure()
     guard !deleting else { throw PopFailure("Account deletion is in progress.") }
@@ -227,6 +226,7 @@ private typealias AppleAuthorization = (credential: AuthCredential, appleUser: S
       }
     }
     updateIdentity()
+    guard signedIn else { return }
     Task {
       do { _ = try await token() } catch {
         message =
@@ -236,20 +236,10 @@ private typealias AppleAuthorization = (credential: AuthCredential, appleUser: S
       }
     }
   }
-  /// A retained credential failure is never replaced with a different anonymous UID.
   private func identity() async throws -> User {
     guard let auth else { throw PopFailure("Sign-in is unavailable in this app.") }
-    if let user = auth.currentUser { return user }
-    guard !retainedIdentityMissing, !stored.identityRetained else {
-      throw PopFailure(
-        "This device's cloud identity could not be restored. Your local documents are retained. Sign out explicitly to reset the identity."
-      )
-    }
-    if let identityTask { return try await identityTask.value }
-    let task = Task { try await auth.signInAnonymously().user }
-    identityTask = task
-    defer { identityTask = nil }
-    return try await task.value
+    guard let user = auth.currentUser, !user.isAnonymous else { throw PopFailure("Sign in to join") }
+    return user
   }
   private func updateIdentity() {
     hasIdentity = auth?.currentUser != nil
@@ -319,9 +309,7 @@ private typealias AppleAuthorization = (credential: AuthCredential, appleUser: S
   public func complete(_ result: Result<ASAuthorization, Error>? = nil) async -> Bool {
     guard !busy else { return false }
     busy = true
-    #if os(macOS)
-      message = ""
-    #endif
+    message = ""
     defer {
       busy = false
       nonce = nil
@@ -332,17 +320,11 @@ private typealias AppleAuthorization = (credential: AuthCredential, appleUser: S
       guard !retainedIdentityMissing else {
         throw PopFailure("Sign out explicitly before replacing an identity that could not be restored.")
       }
-      _ = try await identityTask?.value
       let apple = try await appleCredential(result)
       guard auth.currentUser != nil || !stored.identityRetained else {
         throw PopFailure("Sign out explicitly before replacing an identity that could not be restored.")
       }
-      if let user = auth.currentUser, user.isAnonymous {
-        // Linking preserves the UID that owns this device's accepted invitations.
-        _ = try await user.link(with: apple.credential)
-      } else {
-        _ = try await auth.signIn(with: apple.credential)
-      }
+      _ = try await auth.signIn(with: apple.credential)
       updateIdentity()
       NotificationCenter.default.post(name: .popSharingAccountChanged, object: nil)
       guard let user = auth.currentUser else { throw PopFailure("Sign in required") }
@@ -353,15 +335,50 @@ private typealias AppleAuthorization = (credential: AuthCredential, appleUser: S
       return true
     } catch AppleWebCallback.Failure.cancelled {
       return false
+    } catch ASAuthorizationError.canceled {
+      return false
     } catch {
-      if (error as NSError).code == AuthErrorCode.credentialAlreadyInUse.rawValue {
-        message =
-          "This Apple account is already linked elsewhere. Your guest identity and local documents are retained. Sign out explicitly before switching accounts."
-        return false
-      }
       // Auth errors can carry provider response data. Keep the UI/logs generic.
       message = "Could not finish signing in. Try again."
       return false
+    }
+  }
+  /// Keeps the caller's invitation pending while the existing Apple flow runs.
+  public func signInToJoin() async throws {
+    configure()
+    if signedIn { return }
+    guard !busy else { throw PopFailure("Sign-in is already in progress.") }
+    let accepted: Bool
+    #if os(macOS)
+      let alert = NSAlert()
+      alert.messageText = "Sign in to open this shared pop"
+      alert.addButton(withTitle: "Sign in with Apple")
+      alert.addButton(withTitle: "Cancel")
+      accepted = alert.runModal() == .alertFirstButtonReturn
+    #else
+      guard
+        var presenter = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+          .flatMap(\.windows).first(where: \.isKeyWindow)?.rootViewController
+      else { throw PopFailure("Sign-in is unavailable in this app.") }
+      while let presented = presenter.presentedViewController { presenter = presented }
+      accepted = await withCheckedContinuation { continuation in
+        let alert = UIAlertController(
+          title: "Sign in to open this shared pop", message: nil, preferredStyle: .alert)
+        alert.addAction(
+          UIAlertAction(title: "Sign in with Apple", style: .default) { _ in
+            continuation.resume(returning: true)
+          })
+        alert.addAction(
+          UIAlertAction(title: "Cancel", style: .cancel) { _ in
+            continuation.resume(returning: false)
+          })
+        presenter.present(alert, animated: true)
+      }
+    #endif
+    guard accepted else { throw CancellationError() }
+    guard await complete() else {
+      if message.isEmpty { throw CancellationError() }
+      throw PopFailure(message)
     }
   }
   private var deleting = false
@@ -440,9 +457,6 @@ private typealias AppleAuthorization = (credential: AuthCredential, appleUser: S
     Task {
       defer { busy = false }
       do {
-        // Finish an in-flight first identity before resetting it, so its late
-        // completion cannot sign this device back in after an explicit sign-out.
-        _ = try? await identityTask?.value
         // Flush and fence Rust transport before changing identity. Failure keeps ownership.
         try await PopLibrary.shared.setAccount("")
         try auth?.signOut()
@@ -476,11 +490,11 @@ public struct SharingAccountView: View {
           }.frame(height: 44)
         #endif
         if account.hasIdentity || account.retainedIdentityMissing {
-          Button(account.retainedIdentityMissing ? "Reset Missing Cloud Identity" : "Sign Out of Guest Identity") {
+          Button(account.retainedIdentityMissing ? "Reset Missing Cloud Identity" : "Sign Out") {
             account.signOut()
           }
         }
-        Text("Sign in to start live links. Shared links use a guest identity on this device.")
+        Text("Sign in with Apple to share or open shared pops.")
           .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
       }
       if !account.message.isEmpty {

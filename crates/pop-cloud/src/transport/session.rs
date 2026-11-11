@@ -459,6 +459,7 @@ async fn connected_attempt(
     let mut push_budget = PushBudget::new(0);
     let mut delayed_push: Option<(u64, Vec<u8>)> = None;
     let mut sent_push: Option<u64> = None;
+    let mut hello_sent = false;
     let mut identity = operations.identity.clone();
     let result = async {
         loop {
@@ -565,7 +566,12 @@ async fn connected_attempt(
                             SyncEvent::Send { bytes } => {
                                 let frame = Frame::decode(&bytes).map_err(fail)?;
                                 let push = if let Frame::Push { id, .. } = &frame { Some(*id) } else { None };
-                                if matches!(frame, Frame::Hello { .. }) { delayed_push = None; sent_push = None; }
+                                if matches!(frame, Frame::Hello { .. }) {
+                                    if hello_sent { return Ok(false); }
+                                    hello_sent = true;
+                                    delayed_push = None;
+                                    sent_push = None;
+                                }
                                 trace_frame(&frame, false);
                                 let message = envelope::encode(frame).map_err(fail)?;
                                 if let Some(id) = push {
@@ -678,6 +684,129 @@ mod tests {
     use super::*;
     use pop_storage::store::Share;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn gap_reconnects_before_sending_another_hello() {
+        use pop_contracts::relay::frame::{Ack, Permission};
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        let (_directory, owner) = crate::client::tests::fixture();
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let key = RoomKey {
+            room: owner.app().document_uuid.clone().unwrap(),
+            identity: "fixture-identity".into(),
+            origin: format!("http://{}", listener.local_addr().unwrap()),
+        };
+        request(&owner, |owner: &Owner, options, callback| {
+            owner.set_share(Share { endpoint: key.origin.clone() }, options, callback)
+        })
+        .unwrap();
+        let stop = Arc::new(AtomicBool::new(false));
+        let stopped = stop.clone();
+        let info = serde_json::to_vec(&pop_sharing_protocol::http::RoomInfo {
+            document: key.room.clone(),
+            phase: pop_sharing_protocol::http::RoomPhase::Live,
+            seed_hash: None,
+            seed_size: None,
+            app: None,
+            compact: false,
+        })
+        .unwrap();
+        let editing_owner = owner.clone();
+        let server = std::thread::spawn(move || {
+            let (stream, _) = listener.accept().unwrap();
+            stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            let mut socket = tungstenite::accept(stream).unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let http = std::thread::spawn(move || {
+                while !stopped.load(Ordering::Acquire) {
+                    let Ok((mut stream, _)) = listener.accept() else {
+                        std::thread::sleep(Duration::from_millis(2));
+                        continue;
+                    };
+                    stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                    let mut header = Vec::new();
+                    while !header.ends_with(b"\r\n\r\n") {
+                        let mut byte = [0];
+                        stream.read_exact(&mut byte).unwrap();
+                        header.push(byte[0]);
+                    }
+                    let header = String::from_utf8(header).unwrap();
+                    let size = header
+                        .lines()
+                        .find_map(|line| line.to_ascii_lowercase().strip_prefix("content-length: ").map(str::to_owned))
+                        .unwrap_or_else(|| "0".into())
+                        .parse::<usize>()
+                        .unwrap();
+                    stream.read_exact(&mut vec![0; size]).unwrap();
+                    let body =
+                        if header.starts_with("GET ") && !header.contains("/blobs ") { info.as_slice() } else { b"[]" };
+                    write!(stream, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len())
+                        .unwrap();
+                    stream.write_all(body).unwrap();
+                }
+            });
+            let read_frame = |socket: &mut tungstenite::WebSocket<std::net::TcpStream>| loop {
+                match socket.read().unwrap() {
+                    Message::Binary(bytes) => break envelope::decode(&bytes).unwrap(),
+                    Message::Text(_) | Message::Pong(_) => {}
+                    other => panic!("expected relay frame, got {other:?}"),
+                }
+            };
+            let Frame::Hello { version, .. } = read_frame(&mut socket) else {
+                panic!("connection starts with Hello");
+            };
+            request(&editing_owner, |owner: &Owner, options, callback| {
+                owner.apply(
+                    serde_json::from_value(
+                        serde_json::json!({"intents":[{"type":"increment","path":["hits"],"by":1}]}),
+                    )
+                    .unwrap(),
+                    pop_core::Origin::Page,
+                    options,
+                    callback,
+                )
+            })
+            .unwrap();
+            socket
+                .send(Message::Binary(
+                    envelope::encode(Frame::Welcome { permission: Permission::Write, version }).unwrap().into(),
+                ))
+                .unwrap();
+            let Frame::Push { id, .. } = read_frame(&mut socket) else {
+                panic!("Welcome must produce a push");
+            };
+            socket
+                .send(Message::Binary(envelope::encode(Frame::Ack { id, status: Ack::Gap }).unwrap().into()))
+                .unwrap();
+            let next = loop {
+                let next = socket.read();
+                if matches!(next, Ok(Message::Text(_) | Message::Pong(_))) {
+                    continue;
+                }
+                break next;
+            };
+            (next, http)
+        });
+        let status = Status {
+            value: Mutex::new((SyncPhase::Offline, String::new(), None)),
+            notice: Arc::default(),
+            cancellation: CancellationToken::new(),
+        };
+        let result = connected_fixture(
+            &owner,
+            &key,
+            &status,
+            &mut false,
+            &crate::client::tests::test_journal(&owner, &key, true),
+        );
+        stop.store(true, Ordering::Release);
+        let (next, http) = server.join().unwrap();
+        http.join().unwrap();
+        request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap();
+        assert!(matches!(result, Ok(false)), "a gap starts a new connection: {result:?}");
+        assert!(matches!(next, Ok(Message::Close(_))), "the old socket must close without a second Hello: {next:?}");
+    }
 
     #[test]
     fn cancellation_returns_while_a_started_effect_finishes_without_late_notices() {

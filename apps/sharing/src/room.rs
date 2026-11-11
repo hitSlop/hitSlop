@@ -15,7 +15,6 @@ use worker::*;
 // A SQLite snapshot must contain the complete fixed-size database header.
 pub(crate) const SQLITE_HEADER_BYTES: usize = 100;
 pub(crate) const CHUNK: usize = 1_800_000;
-pub(crate) const BACKFILL: usize = 1 << 20;
 
 pub(crate) fn now() -> u64 {
     js_sys::Date::now() as u64
@@ -113,9 +112,6 @@ pub(crate) async fn serve(req: Request, env: Env) -> Result<Response> {
         Err(error) => return identity_response(error),
     };
     let identity = VerifiedIdentity::from(claims);
-    if !identity.named {
-        return Refusal::new(401, "sign_in_required", "Sign in with Apple to use cloud documents").response();
-    }
     identity.forward(req.headers_mut()?)?;
     req.headers_mut()?.delete("Authorization")?;
     match (matched.route.scope, matched.document) {
@@ -144,6 +140,8 @@ extern "C" {
 #[derive(Deserialize, Serialize, Clone, Default)]
 pub(crate) struct SocketState {
     pub(crate) joined: bool,
+    pub(crate) hello: bool,
+    pub(crate) socket_id: String,
     pub(crate) owner: bool,
     pub(crate) generation: u64,
     pub(crate) uid: String,
@@ -159,7 +157,8 @@ pub(crate) struct NumberRow {
 #[derive(Deserialize)]
 pub(crate) struct RecordRow {
     pub(crate) seq: i64,
-    pub(crate) spans: String,
+    #[serde(with = "serde_bytes")]
+    pub(crate) spans: Vec<u8>,
     pub(crate) size: usize,
 }
 #[derive(Deserialize)]
@@ -179,9 +178,32 @@ pub struct CloudDocument {
 
 impl CloudDocument {
     pub(crate) fn heads(&self) -> Result<Version> {
-        let text = self.stored()?.heads.ok_or_else(|| fail("Missing heads"))?;
-        version(&serde_json::from_str::<Vec<(String, u32)>>(&text)?)
+        Self::read_heads(&self.sql)
     }
+    pub(crate) fn read_heads(sql: &SqlStorage) -> Result<Version> {
+        #[derive(Deserialize)]
+        struct Head {
+            peer: String,
+            end: u32,
+        }
+        sql.exec("SELECT peer,end FROM heads", None)?
+            .next::<Head>()
+            .map(|row| {
+                let row = row?;
+                Ok((u64::from_str_radix(&row.peer, 16).map_err(|_| fail("Stored peer"))?, row.end))
+            })
+            .collect()
+    }
+    pub(crate) fn save_heads(sql: &SqlStorage, heads: &Version) -> Result<()> {
+        for (peer, end) in heads {
+            sql.exec(
+                "INSERT OR REPLACE INTO heads VALUES(?,?)",
+                vec![format!("{peer:016x}").into(), (*end as i64).into()],
+            )?;
+        }
+        Ok(())
+    }
+
     pub(crate) fn transaction(&self, f: impl FnMut() -> Result<()> + 'static) -> Result<()> {
         let mut f = f;
         let callback = Closure::wrap(Box::new(move || {
@@ -208,7 +230,7 @@ impl CloudDocument {
 pub(crate) fn initialize(sql: &SqlStorage) {
     crate::document_state::initialize(sql);
     sql.exec("CREATE TABLE IF NOT EXISTS pending_registry(uid TEXT PRIMARY KEY,generation INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS members(uid TEXT PRIMARY KEY,generation INTEGER NOT NULL)",None).expect("document access tables");
-    sql.exec("CREATE TABLE IF NOT EXISTS garbage(key TEXT PRIMARY KEY); CREATE TABLE IF NOT EXISTS resource_blobs(id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS records(seq INTEGER PRIMARY KEY AUTOINCREMENT,spans TEXT NOT NULL,size INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS chunks(seq INTEGER NOT NULL,part INTEGER NOT NULL,bytes BLOB NOT NULL,PRIMARY KEY(seq,part))",None).expect("create sharing tables");
+    sql.exec("CREATE TABLE IF NOT EXISTS heads(peer TEXT PRIMARY KEY,end INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS catchups(socket_id TEXT PRIMARY KEY,version TEXT NOT NULL,cursor INTEGER NOT NULL,base_version TEXT); CREATE TABLE IF NOT EXISTS garbage(key TEXT PRIMARY KEY); CREATE TABLE IF NOT EXISTS resource_blobs(id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS records(seq INTEGER PRIMARY KEY AUTOINCREMENT,spans BLOB NOT NULL,size INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS chunks(seq INTEGER NOT NULL,part INTEGER NOT NULL,bytes BLOB NOT NULL,PRIMARY KEY(seq,part))",None).expect("create sharing tables");
 }
 
 pub(crate) fn decode_hex(text: &str) -> Result<Vec<u8>> {
@@ -284,6 +306,7 @@ impl DurableObject for CloudDocument {
         }
     }
     async fn alarm(&self) -> Result<Response> {
+        self.catch_up_sockets().await?;
         if self.phase()? == Some(RoomPhase::Ended) {
             let document = self.document_state()?.map(|s| s.document).ok_or_else(|| fail("Missing document"))?;
             self.stop_room(&document, Metric::DocumentDeleted).await?;
@@ -309,6 +332,7 @@ impl DurableObject for CloudDocument {
     }
     async fn websocket_message(&self, ws: WebSocket, message: WebSocketIncomingMessage) -> Result<()> {
         if let Err(error) = self.message(&ws, message).await {
+            self.clear_catchup(&ws)?;
             match error {
                 SocketFailure::Refused(code, message) => {
                     let _ = self.send(&ws, Frame::Error { code: code.into(), message });
@@ -323,10 +347,12 @@ impl DurableObject for CloudDocument {
         Ok(())
     }
     async fn websocket_close(&self, ws: WebSocket, code: usize, _: String, _: bool) -> Result<()> {
+        self.clear_catchup(&ws)?;
         let _ = ws.close(Some(if code == 1005 { 1000 } else { code as u16 }), None::<String>);
         Ok(())
     }
     async fn websocket_error(&self, ws: WebSocket, _: worker::Error) -> Result<()> {
+        self.clear_catchup(&ws)?;
         let _ = ws.close(Some(1011), None::<String>);
         Ok(())
     }
@@ -339,9 +365,7 @@ pub(crate) fn random_hex(size: usize) -> Result<String> {
 }
 pub(crate) fn identity_response(error: crate::auth::IdentityError) -> Result<Response> {
     let refusal = match error {
-        crate::auth::IdentityError::Denied => {
-            Refusal::new(401, "sign_in_required", "Sign in required or identity service unavailable")
-        }
+        crate::auth::IdentityError::Denied => Refusal::new(401, "sign_in_required", "Sign in to join"),
         crate::auth::IdentityError::Unavailable => {
             Refusal::new(503, "unavailable", "The sharing service refused this request")
         }

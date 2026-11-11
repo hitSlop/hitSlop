@@ -5,6 +5,7 @@ pub enum Issue {
     RequiresUpdate,
     AppMismatch,
     AccountChanged,
+    SignInRequired,
     Failed,
 }
 #[derive(Debug, thiserror::Error)]

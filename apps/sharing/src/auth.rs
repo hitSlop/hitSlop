@@ -47,6 +47,7 @@ pub(crate) fn verify(token: &str, project: &str, key: &DecodingKey, now: u64) ->
     policy.leeway = IDENTITY_LEEWAY_SECONDS;
     let claims = decode::<Claims>(token, key, &policy).map_err(|_| "Invalid identity")?.claims;
     if claims.sub.is_empty()
+        || claims.firebase.sign_in_provider == "anonymous"
         || claims.sub.chars().count() > IDENTITY_FIELD_BYTES
         || claims.exp.saturating_add(IDENTITY_LEEWAY_SECONDS) <= now
         || claims.iat > now.saturating_add(IDENTITY_LEEWAY_SECONDS)
@@ -61,12 +62,11 @@ pub(crate) fn verify(token: &str, project: &str, key: &DecodingKey, now: u64) ->
 #[derive(Clone, Serialize, Deserialize)]
 pub(crate) struct VerifiedIdentity {
     pub uid: String,
-    pub named: bool,
     pub expires: u64,
 }
 impl From<Claims> for VerifiedIdentity {
     fn from(claims: Claims) -> Self {
-        Self { uid: claims.sub, named: claims.firebase.sign_in_provider != "anonymous", expires: claims.exp }
+        Self { uid: claims.sub, expires: claims.exp }
     }
 }
 #[cfg(target_arch = "wasm32")]
@@ -242,20 +242,18 @@ mod tests {
         assert!(verify(&forged.join("."), "hitslopapp", &keys().1, NOW).is_err());
     }
     #[test]
-    fn verified_identity_carries_account_kind_and_expiry() {
+    fn verified_identity_requires_named_sign_in_and_carries_expiry() {
         for provider in ["apple.com", "google.com", "password"] {
             let mut changed = claims();
             changed["firebase"]["sign_in_provider"] = json!(provider);
             let identity =
                 VerifiedIdentity::from(verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).unwrap());
-            assert!(identity.named);
+            assert_eq!(identity.uid, "test-user");
             assert_eq!(identity.expires, NOW + 3600);
         }
         let mut changed = claims();
         changed["firebase"]["sign_in_provider"] = json!("anonymous");
-        assert!(
-            !VerifiedIdentity::from(verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).unwrap()).named
-        );
+        assert!(verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).is_err());
         let mut changed = claims();
         changed.as_object_mut().unwrap().remove("firebase");
         assert!(verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).is_err());

@@ -169,39 +169,14 @@ import Testing
     #expect(library.lastError == nil)
   }
 
-  @Test @MainActor func guestCloudCreationRefusesBeforeAdoptingAnExternalFile() async throws {
-    let folder = try Fixtures.folder()
-    defer { try? FileManager.default.removeItem(at: folder) }
-    let source = try Fixtures.document(stage: Fixtures.stage())
-    defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
-    let before = try Data(contentsOf: source)
-    let library = PopLibrary(root: folder)
-    try await library.setAccount("guest-account")
-    library.allowsCloudCreation = false
-    library.tokenProvider = { throw PopFailure("A guest must not need a request to refuse creation") }
-    await #expect(throws: (any Error).self) {
-      try await library.enableSync(source: source, title: "Guest external file")
-    }
-    await library.refresh()
-    #expect(library.entries.isEmpty)
-    #expect(try Data(contentsOf: source) == before)
-    let owner = try DocumentOwner(url: source)
-    _ = try await owner.apply(batch: #"{"intents":[{"type":"increment","path":["hits"],"by":1}]}"#)
-    try await owner.close()
-  }
-
   @Test @MainActor func accountActivationDoesNotRequireCredentialsOrStartSync() async throws {
     let folder = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: folder) }
     let library = PopLibrary(root: folder)
     library.tokenProvider = { throw PopFailure("Account activation must not acquire credentials") }
-    try await library.connectAccount("account-a", anonymous: false)
+    try await library.connectAccount("account-a")
     #expect(library.isReady && library.accountIdentity == "account-a")
-    #expect(library.allowsCloudCreation)
     #expect(library.lastError == nil, "Activation must finish independently of token acquisition")
-    try await library.connectAccount("account-a", anonymous: true)
-    #expect(!library.allowsCloudCreation)
-    #expect(library.lastError == nil)
   }
 
   @Test @MainActor func lateTokenCallbacksCannotReopenTheOldAccount() async throws {

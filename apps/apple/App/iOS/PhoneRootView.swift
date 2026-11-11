@@ -240,6 +240,8 @@ struct PhoneRootView: View {
         do {
           try await model.join(link)
           showSettings = false
+        } catch is CancellationError {
+          // Cancelling sign-in drops this invitation.
         } catch { model.message = sharingMessage(error) }
       }
     } catch { model.message = sharingMessage(error) }

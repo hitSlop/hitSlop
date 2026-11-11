@@ -121,6 +121,32 @@ pub fn folds_record(seq: i64, spans: &[Span], frontier: &Version) -> bool {
     seq == 0 || spans.iter().all(|s| s.end <= frontier.get(&s.peer).copied().unwrap_or(0))
 }
 
+/// Fixed-width stored spans avoid JSON and hex expansion of record metadata.
+pub fn encode_spans(spans: &[Span]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(spans.len() * 16);
+    for span in spans {
+        bytes.extend_from_slice(&span.peer.to_be_bytes());
+        bytes.extend_from_slice(&span.start.to_be_bytes());
+        bytes.extend_from_slice(&span.end.to_be_bytes());
+    }
+    bytes
+}
+
+/// Read the Worker's binary span column, refusing incomplete stored metadata.
+pub fn decode_spans(bytes: &[u8]) -> Result<Vec<Span>, &'static str> {
+    if !bytes.len().is_multiple_of(16) {
+        return Err("Invalid stored spans");
+    }
+    Ok(bytes
+        .chunks_exact(16)
+        .map(|bytes| Span {
+            peer: u64::from_be_bytes(bytes[..8].try_into().expect("eight peer bytes")),
+            start: u32::from_be_bytes(bytes[8..12].try_into().expect("four start bytes")),
+            end: u32::from_be_bytes(bytes[12..].try_into().expect("four end bytes")),
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

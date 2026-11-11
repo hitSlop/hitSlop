@@ -31,3 +31,10 @@ pub const IDENTITY_FIELD_BYTES: usize = 128;
 pub const IDENTITY_LEEWAY_SECONDS: u64 = 60;
 /// Cache lifetime when Google's certificate response omits max-age.
 pub const CERTIFICATE_CACHE_SECONDS: u64 = 3600;
+
+/// Catch-up wire bytes per alarm across all sockets; one indivisible record may exceed it.
+pub const CATCHUP_BYTES: usize = 1 << 20;
+/// Bounds cursor scans even when every record is already known or empty.
+pub const CATCHUP_ROWS: usize = 512;
+/// Yield between catch-up slices because Workers expose no socket backpressure signal.
+pub const CATCHUP_DELAY_MS: u64 = 25;

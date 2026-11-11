@@ -238,6 +238,7 @@ private final class SharingStatusListener: SharingListener, @unchecked Sendable 
   }
 
   public static func join(_ link: String) async throws -> URL {
+    try await SharingAccount.shared.signInToJoin()
     _ = try await SharingAccount.shared.token()
     let entry = try await PopLibrary.shared.join(link: link)
     return URL(fileURLWithPath: entry.path)

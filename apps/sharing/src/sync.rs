@@ -2,13 +2,11 @@
 use crate::limits::{ROOM_CONNECTIONS, ROOM_IP_CONNECTIONS};
 use crate::metrics::{Metric, record};
 use crate::refusal::Refusal;
-use crate::room::{
-    BACKFILL, BlobRow, CHUNK, NumberRow, RecordRow, SocketResult, SocketState, now, refused, wire_version,
-};
+use crate::room::{BlobRow, CHUNK, NumberRow, RecordRow, SocketResult, SocketState, now, refused, wire_version};
 use crate::room::{CloudDocument, fail};
 use pop_contracts::{
     hex,
-    relay::frame::{Ack, ErrorCode, Frame, PROTOCOL, Permission, Record, Span, Version},
+    relay::frame::{Ack, ErrorCode, Frame, PROTOCOL, Permission, Record, Version},
 };
 use pop_sharing_protocol::http::RoomPhase;
 use worker::*;
@@ -31,50 +29,125 @@ impl CloudDocument {
     }
     pub(crate) fn end_connections(&self, code: ErrorCode, message: &str, close: u16) {
         for ws in self.state.get_websockets() {
+            let _ = self.clear_catchup(&ws);
             let _ = ws.serialize_attachment(SocketState::default());
             let _ = self.send(&ws, Frame::Error { code: code.into(), message: message.into() });
             let _ = ws.close(Some(close), Some(message));
         }
     }
-    pub(crate) fn hello(
-        &self,
-        ws: &WebSocket,
-        protocol: u8,
-        app: &pop_contracts::AppDigest,
-        vv: Version,
-    ) -> Result<()> {
-        if protocol != PROTOCOL || self.document_state()?.and_then(|s| s.app).as_deref() != Some(&hex(app.as_bytes())) {
-            return Err(fail("Different app or protocol"));
+    pub(crate) fn clear_catchup(&self, ws: &WebSocket) -> Result<()> {
+        if let Some(state) = ws.deserialize_attachment::<SocketState>()? {
+            self.sql.exec("DELETE FROM catchups WHERE socket_id=?", vec![state.socket_id.into()])?;
         }
+        Ok(())
+    }
+    pub(crate) async fn hello(&self, ws: &WebSocket, vv: Version) -> Result<()> {
+        let mut socket = ws.deserialize_attachment::<SocketState>()?.ok_or_else(|| fail("Missing socket"))?;
+        socket.hello = true;
+        ws.serialize_attachment(&socket)?;
+        self.sql.exec(
+            "INSERT INTO catchups VALUES(?,?,-1,?)",
+            vec![
+                socket.socket_id.into(),
+                serde_json::to_string(&wire_version(&vv))?.into(),
+                self.stored()?.base_version.map(Into::into).unwrap_or(SqlStorageValue::Null),
+            ],
+        )?;
         self.send(ws, Frame::Welcome { permission: Permission::Write, version: self.heads()? })?;
-        let mut batch = vec![];
-        let mut size = 0;
-        for row in self.sql.exec("SELECT seq,spans,size FROM records ORDER BY seq", None)?.next::<RecordRow>() {
+        self.schedule_cleanup(crate::limits::CATCHUP_DELAY_MS).await
+    }
+    pub(crate) async fn catch_up_sockets(&self) -> Result<()> {
+        let mut bytes = 0;
+        let mut rows = 0;
+        for socket in self.state.get_websockets() {
+            if bytes >= crate::limits::CATCHUP_BYTES || rows >= crate::limits::CATCHUP_ROWS {
+                break;
+            }
+            if self.catch_up_slice(&socket, &mut bytes, &mut rows).is_err() {
+                self.clear_catchup(&socket)?;
+                let _ = socket.close(Some(1011), None::<String>);
+            }
+        }
+        if self.sql.exec("SELECT count(*) AS n FROM catchups", None)?.one::<NumberRow>()?.n > 0 {
+            self.schedule_cleanup(crate::limits::CATCHUP_DELAY_MS).await?;
+        }
+        Ok(())
+    }
+    fn catch_up_slice(&self, ws: &WebSocket, sent: &mut usize, scanned: &mut usize) -> Result<()> {
+        #[derive(serde::Deserialize)]
+        struct Catchup {
+            version: String,
+            cursor: i64,
+            base_version: Option<String>,
+        }
+        let mut socket = ws.deserialize_attachment::<SocketState>()?.ok_or_else(|| fail("Missing socket"))?;
+        let Some(mut pending) = self
+            .sql
+            .exec(
+                "SELECT version,cursor,base_version FROM catchups WHERE socket_id=?",
+                vec![socket.socket_id.clone().into()],
+            )?
+            .to_array::<Catchup>()?
+            .pop()
+        else {
+            return Ok(());
+        };
+        if self.phase()? != Some(RoomPhase::Live) || self.role_for_uid(&socket.uid)?.is_none() {
+            self.clear_catchup(ws)?;
+            return ws.close(Some(1008), Some("Access revoked"));
+        }
+        let base = self.stored()?.base_version;
+        // A concurrent fold replaces seq=0 and may delete rows ahead of the cursor.
+        // Restart at the new base so no accepted history can be skipped.
+        if pending.base_version != base {
+            pending.cursor = -1;
+        }
+        let version = crate::room::version(&serde_json::from_str::<Vec<(String, u32)>>(&pending.version)?)?;
+        let mut exhausted = true;
+        for row in self
+            .sql
+            .exec(
+                "SELECT seq,spans,size FROM records WHERE seq>? ORDER BY seq LIMIT ?",
+                vec![pending.cursor.into(), ((crate::limits::CATCHUP_ROWS - *scanned) as i64).into()],
+            )?
+            .next::<RecordRow>()
+        {
             let row = row?;
-            let spans: Vec<(String, u32, u32)> = serde_json::from_str(&row.spans)?;
-            let spans: Vec<Span> = spans
-                .into_iter()
-                .map(|(p, start, end)| {
-                    Ok(Span { peer: u64::from_str_radix(&p, 16).map_err(|_| fail("Stored peer"))?, start, end })
-                })
-                .collect::<Result<_>>()?;
-            if !spans.iter().any(|s| s.end > vv.get(&s.peer).copied().unwrap_or(0)) {
-                continue;
+            let spans = crate::policy::decode_spans(&row.spans).map_err(fail)?;
+            let needed = spans.iter().any(|s| s.end > version.get(&s.peer).copied().unwrap_or(0));
+            // Conservatively include framing and span varints before loading payload chunks.
+            let wire_bytes = row.size.saturating_add(spans.len().saturating_mul(18)).saturating_add(16);
+            if needed && *sent > 0 && sent.saturating_add(wire_bytes) > crate::limits::CATCHUP_BYTES {
+                exhausted = false;
+                break;
             }
-            if size + row.size > BACKFILL && !batch.is_empty() {
-                self.send(ws, Frame::Records(std::mem::take(&mut batch)))?;
-                size = 0;
+            *scanned += 1;
+            if needed {
+                self.send(ws, Frame::Records(vec![Record { spans, bytes: self.bytes(row.seq, row.size)? }]))?;
+                *sent = sent.saturating_add(wire_bytes);
             }
-            size += row.size;
-            batch.push(Record { spans, bytes: self.bytes(row.seq, row.size)? });
+            pending.cursor = row.seq;
+            if *sent >= crate::limits::CATCHUP_BYTES || *scanned >= crate::limits::CATCHUP_ROWS {
+                exhausted = false;
+                break;
+            }
         }
-        if !batch.is_empty() {
-            self.send(ws, Frame::Records(batch))?;
+        if exhausted {
+            self.send(ws, Frame::CaughtUp)?;
+            socket.joined = true;
+            ws.serialize_attachment(socket)?;
+            self.clear_catchup(ws)
+        } else {
+            self.sql.exec(
+                "UPDATE catchups SET cursor=?,base_version=? WHERE socket_id=?",
+                vec![
+                    pending.cursor.into(),
+                    base.map(Into::into).unwrap_or(SqlStorageValue::Null),
+                    socket.socket_id.into(),
+                ],
+            )?;
+            Ok(())
         }
-        self.send(ws, Frame::CaughtUp)?;
-        let mut s = ws.deserialize_attachment::<SocketState>()?.ok_or_else(|| fail("Missing socket"))?;
-        s.joined = true;
-        ws.serialize_attachment(s)
     }
     pub(crate) async fn push(&self, ws: &WebSocket, id: u64, records: Vec<Record>, wire_bytes: usize) -> Result<()> {
         let mut budget = ws.deserialize_attachment::<SocketState>()?.ok_or_else(|| fail("Missing socket"))?;
@@ -89,7 +162,7 @@ impl CloudDocument {
             ws.close(Some(1013), Some("Push budget exceeded"))?;
             return Ok(());
         }
-        if !ws.deserialize_attachment::<SocketState>()?.is_some_and(|s| s.joined) {
+        if !ws.deserialize_attachment::<SocketState>()?.is_some_and(|s| s.hello) {
             return Err(fail("Hello required"));
         }
         let Some((heads, added)) = crate::policy::admit_push(self.heads()?, records) else {
@@ -106,14 +179,14 @@ impl CloudDocument {
         }
         let sql = self.sql.clone();
         let save = added.clone();
-        let heads_json = serde_json::to_string(&wire_version(&heads))?;
+        let changed_heads = added.iter().flat_map(|r| r.spans.iter()).map(|s| (s.peer, heads[&s.peer])).collect();
         self.transaction(move || {
             for record in &save {
-                let spans: Vec<_> = record.spans.iter().map(|s| (format!("{:016x}", s.peer), s.start, s.end)).collect();
+                let spans = crate::policy::encode_spans(&record.spans);
                 let seq = sql
                     .exec(
                         "INSERT INTO records(spans,size) VALUES(?,?) RETURNING seq AS n",
-                        vec![serde_json::to_string(&spans)?.into(), (record.bytes.len() as i64).into()],
+                        vec![spans.into(), (record.bytes.len() as i64).into()],
                     )?
                     .one::<NumberRow>()?
                     .n;
@@ -124,7 +197,11 @@ impl CloudDocument {
                     )?;
                 }
             }
-            sql.exec("UPDATE document_state SET heads=?", vec![heads_json.clone().into()])?;
+            Self::save_heads(&sql, &changed_heads)?;
+            sql.exec(
+                "UPDATE document_state SET update_bytes=update_bytes+?,update_rows=update_rows+?",
+                vec![(save.iter().map(|r| r.bytes.len()).sum::<usize>() as i64).into(), (save.len() as i64).into()],
+            )?;
             Ok(())
         })?;
         self.state.storage().sync().await?;
@@ -172,6 +249,9 @@ impl CloudDocument {
         let frame = pop_contracts::relay::envelope::decode(&bytes).map_err(|e| refused(ErrorCode::Malformed, &e))?;
         match frame {
             Frame::Hello { protocol, app_digest, version } => {
+                if access.hello {
+                    return Err(refused(ErrorCode::Protocol, "One Hello per connection"));
+                }
                 if protocol != PROTOCOL {
                     return Err(refused(ErrorCode::Protocol, "Different app or protocol"));
                 }
@@ -179,11 +259,11 @@ impl CloudDocument {
                 if expected_app != hex(app_digest.as_bytes()) {
                     return Err(refused(ErrorCode::Protocol, "Different app or protocol"));
                 }
-                self.hello(ws, protocol, &app_digest, version)?;
+                self.hello(ws, version).await?;
                 Ok(())
             }
             Frame::Push { id, records } => {
-                if !ws.deserialize_attachment::<SocketState>()?.is_some_and(|s| s.joined) {
+                if !ws.deserialize_attachment::<SocketState>()?.is_some_and(|s| s.hello) {
                     return Err(refused(ErrorCode::Malformed, "Hello required"));
                 }
                 self.push(ws, id, records, bytes.len()).await?;
@@ -217,6 +297,8 @@ impl CloudDocument {
         self.state.accept_web_socket(&pair.server);
         pair.server.serialize_attachment(SocketState {
             joined: false,
+            hello: false,
+            socket_id: crate::room::random_hex(16)?,
             owner,
             generation,
             uid: uid.into(),

@@ -24,7 +24,7 @@ impl CloudDocument {
         let creating = existing.is_none();
         if creating {
             crate::policy::transition(None, RoomPhase::Uploading).map_err(|_| fail("Invalid phase transition"))?;
-            self.sql.exec("INSERT INTO document_state(id,owner_uid,document,phase,access_generation,library_revision,library_pending,library_retry_ms,heads,title,template_id,cleanup_pending) VALUES(1,?,?,'uploading',1,1,0,10000,'[]','Untitled','',0)",vec![input.owner_uid.clone().into(),input.document.clone().into()])?;
+            self.sql.exec("INSERT INTO document_state(id,owner_uid,document,phase,access_generation,library_revision,library_pending,library_retry_ms,update_bytes,update_rows,title,template_id,cleanup_pending) VALUES(1,?,?,'uploading',1,1,0,10000,0,0,'Untitled','',0)",vec![input.owner_uid.clone().into(),input.document.clone().into()])?;
             record(&self.env, Metric::DocumentCreated);
         }
         let state = self.stored()?;
@@ -82,7 +82,7 @@ impl CloudDocument {
                     bucket.delete(item.key()).await?;
                 }
             }
-            self.sql.exec("DELETE FROM resource_blobs; DELETE FROM records; DELETE FROM chunks; UPDATE document_state SET seed_hash=NULL,seed_size=NULL,root=NULL,heads=NULL,base_version=NULL,app=NULL",None)?;
+            self.sql.exec("DELETE FROM resource_blobs; DELETE FROM records; DELETE FROM chunks; DELETE FROM heads; DELETE FROM catchups; UPDATE document_state SET seed_hash=NULL,seed_size=NULL,root=NULL,update_bytes=NULL,update_rows=NULL,base_version=NULL,app=NULL",None)?;
             self.state.storage().sync().await?;
             if let Some(uid) = self.document_state()?.map(|s| s.owner_uid)
                 && !self.release_registration(&uid, None).await?

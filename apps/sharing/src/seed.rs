@@ -97,9 +97,10 @@ impl CloudDocument {
             s.seed_hash = Some(digest);
             s.seed_size = Some(size as u32);
             s.app = Some(app);
-            s.root = Some(version.clone());
-            s.heads = Some(version);
+            s.root = Some(version);
         })?;
+        self.sql.exec("DELETE FROM heads", None)?;
+        Self::save_heads(&self.sql, &heads)?;
         Response::ok("ready")
     }
     pub(crate) async fn read_seed(&self, uid: &str, room: &str) -> Result<Response> {

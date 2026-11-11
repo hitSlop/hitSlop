@@ -198,6 +198,7 @@ impl CloudDocument {
         self.queue_release(uid, generation).await?;
         for ws in self.state.get_websockets() {
             if ws.deserialize_attachment::<SocketState>()?.is_some_and(|state| state.uid == uid) {
+                self.clear_catchup(&ws)?;
                 let _ = ws.close(Some(1008), Some("Membership removed"));
             }
         }
@@ -250,6 +251,7 @@ impl CloudDocument {
                             message: "Invitation revoked".into(),
                         },
                     );
+                    self.clear_catchup(&ws)?;
                     let _ = ws.close(Some(1008), Some("Invitation revoked"));
                 }
             }

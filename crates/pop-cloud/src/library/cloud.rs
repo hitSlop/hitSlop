@@ -105,6 +105,9 @@ impl Library {
         Ok(access)
     }
     pub fn join(&self, link: &str, token: &str) -> Result<Entry> {
+        if self.account.is_empty() || token.is_empty() {
+            return Err(Error { issue: Issue::SignInRequired, message: "Sign in to join".into() });
+        }
         let _change = self.changing();
         let generation = self.operation()?;
         let access = crate::cloud::join_member(link, token).map_err(failed)?;

@@ -406,7 +406,7 @@ fn http_request_authorized(
     })
 }
 
-/// Control routes use an explicit bearer; locating a room requires no guest capability.
+/// Control routes use an explicit bearer; locating a room uses its signed-in identity.
 pub(crate) fn room_control(
     origin: &str,
     room: &str,
