@@ -103,11 +103,11 @@ fn platform() -> Result<(), Error> {
         rules,
         SeccompAction::Errno(EPERM as u32),
         SeccompAction::Allow,
-        std::env::consts::ARCH.try_into().map_err(|e: seccompiler::BackendError| e.to_string())?,
+        std::env::consts::ARCH.try_into().map_err(|e: seccompiler::BackendError| Error::Sandbox(e.to_string()))?,
     )
     .map_err(|e| Error::Sandbox(e.to_string()))?
     .try_into()
-    .map_err(|e: seccompiler::BackendError| e.to_string())?;
+    .map_err(|e: seccompiler::BackendError| Error::Sandbox(e.to_string()))?;
     // apply_filter sets PR_SET_NO_NEW_PRIVS before installing the filter. Either
     // failure refuses evaluation; the child never runs authored code unconfined.
     seccompiler::apply_filter(&filter).map_err(|e| Error::Sandbox(format!("Cannot sandbox command: {e}")))
