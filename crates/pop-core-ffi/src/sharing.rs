@@ -36,6 +36,7 @@ pub enum PauseKind {
     Busy,
 }
 #[uniffi::remote(Record)]
+#[uniffi(name = "SharingStatus")]
 pub struct ClientStatus {
     pub pause_kind: Option<PauseKind>,
     pub phase: SyncPhase,
@@ -74,15 +75,6 @@ pub fn sharing_document(link: String) -> Result<String, SharingError> {
     pop_cloud::invitation_document(&link).map_err(failure)
 }
 #[uniffi::export]
-pub fn sharing_local_document(path: String) -> Result<Option<String>, SharingError> {
-    pop_cloud::local_document(Path::new(&path)).map_err(failure)
-}
-#[uniffi::export]
 pub fn sharing_delete_account(token: String) -> Result<(), SharingError> {
     pop_cloud::delete_account(&token).map_err(failure)
-}
-
-#[uniffi::export]
-pub fn sharing_owner_document(owner: Arc<crate::owner::NativeOwner>) -> Option<String> {
-    owner.0.app().document_uuid.clone()
 }

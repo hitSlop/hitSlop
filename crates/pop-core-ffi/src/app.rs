@@ -9,6 +9,7 @@ use pop_core::app;
 use pop_storage::file::{Kind, Summary};
 
 #[uniffi::remote(Enum)]
+#[uniffi(name = "PopCategory")]
 pub enum Category {
     Popular,
     Productivity,
@@ -71,8 +72,11 @@ pub struct StandardFrame {
     pub shape: Silhouette,
 }
 #[uniffi::remote(Record)]
+#[uniffi(name = "ThemeToken")]
 pub struct ThemeInput {
+    #[uniffi(name = "name")]
     pub token: String,
+    #[uniffi(name = "value")]
     pub color: String,
 }
 #[uniffi::remote(Record)]
@@ -87,6 +91,7 @@ pub struct WidgetOptions {
     pub refresh_minutes: Option<u32>,
 }
 #[uniffi::remote(Record)]
+#[uniffi(name = "FileSummary")]
 pub struct Summary {
     pub kind: Kind,
     pub package_format: u64,
@@ -142,19 +147,6 @@ impl From<&app::AppDefinition> for AppDefinition {
         }
     }
 }
-#[uniffi::export]
-pub fn categories() -> Vec<Category> {
-    Category::ALL.to_vec()
-}
-#[uniffi::export]
-pub fn category_name(category: Category) -> String {
-    category.name()
-}
-#[uniffi::export]
-pub fn parse_category(name: String) -> Option<Category> {
-    Category::parse(name).ok()
-}
-
 use pop_contracts::wire::HostLimits;
 #[uniffi::remote(Record)]
 pub struct HostLimits {

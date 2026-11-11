@@ -84,6 +84,21 @@ fn a_sharing_seed_is_the_saved_document_with_only_what_it_references() {
 }
 
 #[test]
+fn an_owner_that_fails_to_open_releases_the_writer_lease() {
+    let (_dir, path) = fixture();
+    let (owner, _) = open(&path, Mode::Document);
+    call(&owner, set("Saved edit")).unwrap();
+    close(&owner);
+    rusqlite::Connection::open(&path)
+        .unwrap()
+        .execute("UPDATE history SET bytes=x'00' WHERE seq=(SELECT min(seq) FROM history)", [])
+        .unwrap();
+    let failure = Owner::open(&path, Mode::Document, Arc::new(|_| {})).err().expect("damaged history is refused");
+    assert_eq!(failure.reason, Some(pop_contracts::wire::Code::InvalidBytes));
+    assert!(pop_storage::registry::Lease::acquire(&path).is_ok(), "a failed open retains no writer lease");
+}
+
+#[test]
 fn ordered_publications_flush_and_reopen_include_theme() {
     let (_dir, path) = fixture();
     let (owner, events) = open(&path, Mode::Document);

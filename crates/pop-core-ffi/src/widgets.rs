@@ -1,5 +1,5 @@
 use pop_contracts::capture::CaptureOutput;
-use pop_contracts::widgets::{WidgetFamily, WidgetLimits, WidgetViewport};
+use pop_contracts::widgets::{WidgetFamily, WidgetLimits};
 use pop_contracts::wire::engine::ExportFormat;
 use pop_runtime::capture::CaptureValue;
 
@@ -104,17 +104,6 @@ pub enum WidgetFamily {
     Medium,
     Large,
 }
-#[uniffi::remote(Record)]
-pub struct WidgetViewport {
-    pub family: WidgetFamily,
-    pub width: u32,
-    pub height: u32,
-}
-#[uniffi::export]
-pub fn widget_viewports() -> Vec<WidgetViewport> {
-    pop_contracts::widgets::widget_viewports()
-}
-
 #[derive(uniffi::Record)]
 pub struct RenderedWidgetImage {
     pub family: WidgetFamily,

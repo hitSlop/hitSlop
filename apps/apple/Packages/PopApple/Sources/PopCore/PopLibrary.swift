@@ -5,7 +5,7 @@ import SwiftUI
 import Synchronization
 
 public func libraryMessage(_ error: Error) -> String {
-  if case LibraryError.Failed(_, let message) = error { return message }
+  if case LibraryError.Failed(let message) = error { return message }
   return error.localizedDescription
 }
 private final class LibrarySnapshotListener: LibraryListener, @unchecked Sendable {

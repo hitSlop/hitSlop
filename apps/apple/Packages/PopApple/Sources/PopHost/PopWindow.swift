@@ -419,7 +419,7 @@ public final class PopDocumentWindowController: NSWindowController, NSWindowDele
     let edited = session.edited
     let preview = edited ? nil : await session.artwork(.preview)
     let managed = PopLibrary.shared.entry(at: url)
-    let needsArtwork = edited || preview == nil || managed.map { $0.artworkVersion != $0.version } == true
+    let needsArtwork = edited || preview == nil || managed.map { $0.artworkVersion.isEmpty } == true
     let needsWidget =
       session.file.views.widget != nil
       && PopWidgetPublisher.shared.needsCapture(url: url, edited: edited)

@@ -1,8 +1,8 @@
 //! Native transport adapter. All routing, framing and document commands live in Rust;
 //! the native page only drains pending edits before Rust acquires a saved source.
 use super::*;
+use pop_contracts::wire::Code;
 use pop_contracts::wire::engine::ExportFormat;
-use pop_contracts::wire::{Code, OutcomeCode};
 use pop_runtime::command as core;
 use pop_runtime::owner::Failure;
 
@@ -12,15 +12,7 @@ pub enum ExportFormat {
     Pdf,
 }
 #[uniffi::remote(Enum)]
-pub enum OutcomeCode {
-    Rejected,
-    OwnerReplaced,
-    Closing,
-    SaveFailed,
-    OwnerInvalidated,
-    UnknownOutcome,
-}
-#[uniffi::remote(Enum)]
+#[uniffi(name = "WireCoreErrorCode")]
 pub enum Code {
     TypeMismatch,
     OutOfRange,
@@ -42,23 +34,6 @@ pub enum Code {
     IsTemplate,
     Refused,
 }
-#[uniffi::export]
-pub fn parse_core_code(name: String) -> Option<Code> {
-    Code::from_name(&name)
-}
-#[uniffi::export]
-pub fn core_code_name(code: Code) -> String {
-    code.as_str().into()
-}
-#[uniffi::export]
-pub fn parse_outcome_code(name: String) -> Option<OutcomeCode> {
-    OutcomeCode::from_name(&name)
-}
-#[uniffi::export]
-pub fn outcome_code_name(code: OutcomeCode) -> String {
-    code.name()
-}
-
 #[derive(uniffi::Object)]
 pub struct NativePageSettlement(Arc<core::PageSettlement>);
 #[uniffi::export]
@@ -74,10 +49,6 @@ impl NativePageSettlement {
 pub trait NativePageBarrier: Send + Sync {
     fn settle(&self, completion: Arc<NativePageSettlement>);
     fn resume(&self);
-}
-#[uniffi::export(callback_interface)]
-pub trait NativeCommandCompletion: Send + Sync {
-    fn complete(&self, reply_json: String);
 }
 /// A page request's answer: the reply for the page, and the owner's failure when it refused.
 #[uniffi::export(callback_interface)]
@@ -116,12 +87,6 @@ impl NativeSocketServer {
 #[uniffi::export]
 pub fn failure_reply(failure: Failure) -> String {
     core::failure(failure, false, false)
-}
-/// A request written in command `protocol`, as the engine runs it, without its restricted
-/// evaluator: a closed document's export is refused.
-#[uniffi::export]
-pub fn command_request(json: String, protocol: u64, completion: Box<dyn NativeCommandCompletion>) {
-    std::thread::spawn(move || completion.complete(core::request(&json, protocol)));
 }
 #[uniffi::export]
 impl NativeOwner {

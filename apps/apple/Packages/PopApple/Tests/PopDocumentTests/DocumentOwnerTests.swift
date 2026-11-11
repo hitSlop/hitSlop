@@ -6,8 +6,8 @@ import Testing
 
 @testable import PopDocument
 
-// Native gap: the Rust store tests own SQLite semantics; these prove the owner drives
-// them through the binding without WebKit or authored code.
+// Native integration: file failures map to host errors, and the public SDK shares its
+// owner with CLI edits and persisted attachments.
 @Suite(.serialized) struct DocumentOwnerTests {
   /// The checklist document with `app` as its app. By default the app throws: native editing
   /// must never evaluate authored JavaScript.
@@ -20,7 +20,6 @@ import Testing
   func hits(_ owner: DocumentOwner) async throws -> Int? {
     (try await value(owner)["value"] as? [String: Any])?["hits"] as? Int
   }
-  let increment = #"{"intents":[{"type":"increment","path":["hits"],"by":3}]}"#
 
   // Failure: a live reply was validated, and the validator refuses JSON over 48 MiB,
   // while a closed reply went unchecked, so a large document read closed but not live.
@@ -99,57 +98,6 @@ import Testing
       #expect(failure.kind == .locked)
     }
     try await owner.close()
-  }
-
-  @Test func savesAndReopensWithoutWebKitOrAuthoredCode() async throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(url: root)
-    // Native JSON admission reports an ordinary refusal and leaves the owner usable.
-    await #expect(throws: OwnerFailure.self) { _ = try await owner.apply(batch: "{") }
-    #expect(Fixtures.isLocked(root))
-    _ = try await owner.apply(batch: increment)
-    #expect(try await hits(owner) == 3)
-    try await owner.close()
-    let reopened = try DocumentOwner(url: root)
-    #expect(try await hits(reopened) == 3)
-    try await reopened.close()
-  }
-
-  // An owner that fails to open releases the file: its store and the asset reader opened
-  // with it close before the error reaches the caller.
-  @Test func anOwnerThatFailsToOpenReleasesTheLock() async throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(url: root)
-    _ = try await owner.apply(batch: increment)
-    try await owner.close()
-    try Fixtures.sql(root, "UPDATE history SET bytes = x'00' WHERE seq = (SELECT min(seq) FROM history)")
-    #expect(throws: (any Error).self) { _ = try DocumentOwner(url: root) }
-    #expect(!Fixtures.isLocked(root))
-  }
-
-  @Test func failedCloseRetainsLiveStateAndOwnershipUntilRetry() async throws {
-    let root = try fixture()
-    let moved = root.deletingLastPathComponent().appendingPathComponent(UUID().uuidString + ".pop")
-    defer {
-      try? FileManager.default.removeItem(at: root)
-      try? FileManager.default.removeItem(at: moved)
-    }
-    let owner = try DocumentOwner(url: root)
-    _ = try await owner.apply(batch: increment)
-    // Real I/O boundary: the file temporarily moves away.
-    try FileManager.default.moveItem(at: root, to: moved)
-    await #expect(throws: (any Error).self) { try await owner.close() }
-    #expect(try await hits(owner) == 3)
-    #expect(Fixtures.isLocked(moved))
-    try FileManager.default.moveItem(at: moved, to: root)
-    _ = try await owner.apply(batch: increment)
-    try await owner.close()
-    #expect(!Fixtures.isLocked(root))
-    let reopened = try DocumentOwner(url: root)
-    #expect(try await hits(reopened) == 6)
-    try await reopened.close()
   }
 
   // Gap: direct binding tests cannot prove the production page/ctx bridge or live forwarding.
@@ -273,98 +221,6 @@ import Testing
     #expect((read.state as? [String: Any])?["bytes"] as? String == Data("native attachment".utf8).base64EncodedString())
   }
 
-  /// A theme panel change; the sequence it was accepted at.
-  @discardableResult
-  func theme(_ owner: DocumentOwner, _ change: PopThemeChange) async throws -> Int {
-    try await withCheckedThrowingContinuation { done in owner.enqueueTheme(change) { done.resume(with: $0) } }
-  }
-  func accent(_ owner: DocumentOwner) async throws -> String? {
-    try await owner.loadTheme().state.effective[
-      "accent"]
-  }
-  /// The saved accent, read without the owner (snapshot mode takes no lock).
-  func savedAccent(_ root: URL) async throws -> String? {
-    let snapshot = try DocumentOwner(url: root, mode: .snapshot)
-    defer { Task { try? await snapshot.close() } }
-    return try await accent(snapshot)
-  }
-
-  @Test func themeImportReplacesOverridesForItsTemplateOnly() async throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(url: root)
-    try await theme(owner, .set(["accent": "#111111"]))
-    let file = try await owner.exportTheme()
-    #expect(file.contains(#""template":"runtime-conformance""#))
-    #expect(file.hasSuffix("\n"))
-    try await theme(owner, .resetAll)
-    let other = file.replacingOccurrences(of: "runtime-conformance", with: "habit-heatmap")
-    await #expect(throws: (any Error).self) { try await self.theme(owner, .importFile(other)) }
-    await #expect(throws: (any Error).self) { try await self.theme(owner, .importFile("not a theme")) }
-    #expect(try await accent(owner) == "#335577")
-    try await theme(owner, .importFile(file))
-    #expect(try await accent(owner) == "#111111")
-    try await owner.close()
-    #expect(try await savedAccent(root) == "#111111")
-  }
-
-  @Test func aThemeDragIsOneDocumentUndoStep() async throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(url: root)
-    try await theme(owner, .set(["accent": "#111111"]))
-    try await theme(owner, .set(["accent": "#222222"]))
-    _ = try await owner.apply(batch: increment)
-    _ = try await owner.undo()
-    #expect(try await hits(owner) == 0)
-    #expect(try await accent(owner) == "#222222")
-    _ = try await owner.undo()
-    #expect(try await accent(owner) == "#335577")
-    _ = try await owner.undo(redo: true)
-    #expect(try await accent(owner) == "#222222")
-    try await owner.close()
-    #expect(try await savedAccent(root) == "#222222")
-  }
-
-  // Spike S-D. Failure: work queued by a replaced page applied to state it never saw.
-  // Oracle: `owner_replaced` and an unchanged document.
-  @Test func requestsFromAReplacedViewAreRefused() async throws {
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let owner = try DocumentOwner(url: root)
-    owner.attach(view: "first")
-    owner.attach(view: "second")
-    #expect(await page(owner, #"{"method":"open"}"#, view: "second") == nil)
-    #expect(await page(owner, #"{"method":"open"}"#, view: "first")?.kind == .replaced)
-    await #expect {
-      _ = try await owner.apply(batch: self.increment, view: "first")
-    } throws: {
-      ($0 as? OwnerFailure)?.kind == .replaced
-    }
-    _ = try await owner.apply(batch: increment, view: "second")
-    try await owner.discardPending()
-    owner.attach(view: "third")
-    await #expect {
-      _ = try await owner.apply(batch: self.increment, view: "second")
-    } throws: {
-      ($0 as? OwnerFailure)?.kind == .replaced
-    }
-    #expect(await page(owner, #"{"method":"attachments.put","bytes":"AQ=="}"#, view: "second")?.kind == .replaced)
-    #expect(try await hits(owner) == 0)
-    try await owner.close()
-  }
-  /// A page request from `view`; the owner's failure, if it refused.
-  func page(_ owner: DocumentOwner, _ json: String, view: String) async -> OwnerFailure? {
-    await withCheckedContinuation { done in
-      owner.page(json: json, view: view) { result in
-        if case .reply(_, let failure, _) = result {
-          done.resume(returning: failure)
-        } else {
-          done.resume(returning: nil)
-        }
-      }
-    }
-  }
 }
 
 extension DocumentOwnerTests {

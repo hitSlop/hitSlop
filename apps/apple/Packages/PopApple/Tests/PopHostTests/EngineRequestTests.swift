@@ -17,43 +17,6 @@ extension HostTests {
     return try #require(JSONSerialization.jsonObject(with: Data(result.1.utf8)) as? [String: Any])
   }
 
-  @Test(arguments: [false, true]) @MainActor func engineRequestsReadAndEditLiveAndClosedDocuments(live: Bool)
-    async throws
-  {
-    _ = NSApplication.shared
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let controller = live ? try await PopDocumentWindowController.open(url: root) : nil
-    try await controller?.session.waitUntilReady()
-    do {
-      let edit = try await request([
-        "method": "batch", "documentPath": root.path,
-        "batch": [
-          "intents": try JSONSerialization.jsonObject(
-            with: Data((#"[{"type":"set","path":["title"],"value":"Batch edit"}]"#).utf8))
-        ],
-      ])
-      #expect(edit["ok"] as? Bool == true)
-      #expect(edit["ids"] as? [String] == [])
-      #expect(Set(edit.keys) == ["ok", "method", "ids"], "an edit replies with its inserted IDs only")
-      let get = try await request(["method": "get", "documentPath": root.path])
-      let snapshot = try #require(get["state"] as? [String: Any])
-      #expect((snapshot["value"] as? [String: Any])?["title"] as? String == "Batch edit")
-      #expect(snapshot["version"] is String)
-      let schema = try JSONSerialization.jsonObject(with: Data(PopFile(url: root).descriptor.utf8)) as! [String: Any]
-      #expect(
-        NSDictionary(dictionary: try #require(snapshot["schema"] as? [String: Any])) == NSDictionary(dictionary: schema)
-      )
-      // A malformed batch is refused before anything is sent: not applied.
-      let malformed = try await request(["method": "batch", "documentPath": root.path, "ops": "{}"])
-      #expect(malformed["ok"] as? Bool == false && malformed["code"] as? String == "rejected")
-      try await controller?.session.close()
-    } catch {
-      try? await controller?.session.close()
-      throw error
-    }
-  }
-
   @Test @MainActor func rejectedEditsPreserveSavedStateAndComposingDraft() async throws {
     let root = try contractFixture()
     defer { try? FileManager.default.removeItem(at: root) }
@@ -180,36 +143,6 @@ extension HostTests {
     #expect(reply["code"] as? String == "rejected", "\(reply)")
     #expect(reply["reason"] as? String == "requires_update")
     #expect(!FileManager.default.fileExists(atPath: output.path))
-  }
-
-  // Failure: an engine of another build sent the live app a request it could not read,
-  // and the refusal did not say which side to update. Oracle: the code and saved value.
-  @Test @MainActor func aRequestInAnUnservedProtocolIsRefusedByTheLiveOwner() async throws {
-    _ = NSApplication.shared
-    let root = try fixture()
-    defer { try? FileManager.default.removeItem(at: root) }
-    let controller = try await PopDocumentWindowController.open(url: root)
-    try await controller.session.waitUntilReady()
-    let documentRoot = controller.session.file.url
-    let before = try await savedValue(root)
-    let discovery = try #require(try liveDiscovery(path: documentRoot.path))
-    let advertised = try Fixtures.object(discovery)
-    let path = try #require(advertised["socket"] as? String)
-    let documentPath = try #require(advertised["documentPath"] as? String)
-    let newer = try JSONSerialization.data(withJSONObject: [
-      "protocol": EngineProtocol.version + 1, "method": "batch", "documentPath": documentPath,
-      "batch": [
-        "intents": try JSONSerialization.jsonObject(
-          with: Data((#"[{"type":"set","path":["title"],"value":"must not apply"}]"#).utf8))
-      ],
-    ])
-    let response = try await Task.detached { try SocketClient.call(path: path, request: newer) }.value
-    let refusal = try #require(try JSONSerialization.jsonObject(with: response) as? [String: Any])
-    #expect(refusal["ok"] as? Bool == false)
-    #expect(refusal["reason"] as? String == "requires_update")
-    #expect((refusal["error"] as? String)?.contains("update pop") == true)
-    #expect(try await savedValue(root) == before)
-    try await controller.session.close()
   }
 
 }

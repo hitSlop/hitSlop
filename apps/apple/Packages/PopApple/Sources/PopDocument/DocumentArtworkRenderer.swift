@@ -17,6 +17,8 @@ import UniformTypeIdentifiers
     return try CaptureRuntime(evaluatorPath: path)
   }
 
+  public static func captureRuntime() throws -> CaptureRuntime { try runtime.get() }
+
   public static func libraryIndex(entries: [LibraryEntry]) async throws -> [WidgetLibraryEntry] {
     try await PopPreparation.run(on: queue) {
       // Only documents that declare a widget view can render one; an unreadable (busy) file stays listed.
@@ -63,7 +65,7 @@ import UniformTypeIdentifiers
   @discardableResult public static func refresh(session: DocumentSession) async throws -> Bool {
     guard session.isReady else { return false }
     let entry = PopLibrary.shared.entry(at: session.file.url)
-    let stale = entry.map { $0.artworkVersion != $0.version } ?? false
+    let stale = entry.map { $0.artworkVersion.isEmpty } ?? false
     let missing = await session.artwork(.preview) == nil
     guard session.edited || stale || missing else { return false }
     let renderer = try runtime.get()

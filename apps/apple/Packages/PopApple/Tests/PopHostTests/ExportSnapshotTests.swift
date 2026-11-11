@@ -25,11 +25,11 @@ extension HostTests {
       #expect(try await command("batch", url: root, setTitle("Widget saved")).ok)
       let images = try await PopRenderer.widgetImages(session: session)
       #expect(images.count == 3)
-      for viewport in widgetViewports() {
-        let image = try #require(images.first { $0.family == WidgetImageFamily(viewport.family) })
+      for (family, width, height) in [(WidgetImageFamily.small, 164, 164), (.medium, 344, 164), (.large, 344, 344)] {
+        let image = try #require(images.first { $0.family == family })
         let bitmap = try #require(NSBitmapImageRep(data: image.png))
-        #expect(bitmap.pixelsWide == Int(viewport.width) * 2)
-        #expect(bitmap.pixelsHigh == Int(viewport.height) * 2)
+        #expect(bitmap.pixelsWide == width * 2)
+        #expect(bitmap.pixelsHigh == height * 2)
         let color = try #require(
           bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.deviceRGB))
         #expect(color.redComponent > 0.95 && color.blueComponent < 0.05)
@@ -54,7 +54,7 @@ extension HostTests {
       NSColor.red.setFill()
       $0.fill()
     }
-    let images = widgetViewports().map { WidgetImage(family: WidgetImageFamily($0.family), png: png) }
+    let images = WidgetImageFamily.allCases.map { WidgetImage(family: $0, png: png) }
     let time = Date()
     let first = try cache.publish(url: source, title: "First", images: images, capturedAt: time, refreshMinutes: nil)
     #expect(cache.records().count == 1)

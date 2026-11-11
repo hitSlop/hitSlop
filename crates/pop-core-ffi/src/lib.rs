@@ -1,6 +1,6 @@
 //! The Swift adapter. Core types that reach the host unchanged cross as UniFFI remote
 //! types: each is restated here once, checked against its definition at compile time, and
-//! named for Swift in `uniffi.toml`.
+//! named for Swift at their boundary declarations.
 uniffi::setup_scaffolding!();
 
 use pop_contracts::catalog::TemplateSource;
@@ -58,12 +58,14 @@ impl From<pop_core::theme::ThemeState> for ThemeState {
 
 /// A window corner length: points, or a percentage of the window's width or height.
 #[uniffi::remote(Record)]
+#[uniffi(name = "SilhouetteLength")]
 pub struct Length {
     pub value: f64,
     pub percent: bool,
 }
 /// Absolute path commands in SVG's y-down coordinates.
 #[uniffi::remote(Enum)]
+#[uniffi(name = "SilhouetteSegment")]
 pub enum Segment {
     Move { x: f64, y: f64 },
     Line { x: f64, y: f64 },
@@ -72,6 +74,7 @@ pub enum Segment {
 }
 /// A parsed manifest window shape; see `pop_core::shape`.
 #[uniffi::remote(Enum)]
+#[uniffi(name = "WindowSilhouette")]
 pub enum Silhouette {
     Radii { horizontal: Vec<Length>, vertical: Vec<Length> },
     Path { segments: Vec<Segment>, view_box_width: f64, view_box_height: f64, even_odd: bool },
@@ -80,6 +83,7 @@ pub enum Silhouette {
 /// Who made a change: the person, in the page or the window's own controls (the theme
 /// panel), or an agent through the CLI or socket.
 #[uniffi::remote(Enum)]
+#[uniffi(name = "EditOrigin")]
 pub enum Origin {
     Page,
     Window,
@@ -101,6 +105,7 @@ pub fn core_build_id() -> String {
 }
 
 #[uniffi::remote(Enum)]
+#[uniffi(name = "StoreMode")]
 pub enum Mode {
     /// Owns the document: holds the writer lock and persists writes.
     Document,
@@ -109,6 +114,7 @@ pub enum Mode {
 }
 
 #[uniffi::remote(Enum)]
+#[uniffi(name = "FileKind")]
 pub enum Kind {
     Template,
     Document,
@@ -116,6 +122,7 @@ pub enum Kind {
 /// Complete acceptance, for rendering or editing the embedded app.
 #[derive(uniffi::Record)]
 pub struct OpenedFile {
+    pub document_id: Option<String>,
     pub kind: Kind,
     pub package_format: u64,
     pub runtime_abi: u64,
@@ -126,6 +133,7 @@ pub struct OpenedFile {
 impl From<&file::OpenedApp> for OpenedFile {
     fn from(p: &file::OpenedApp) -> Self {
         Self {
+            document_id: p.document_uuid.clone(),
             kind: p.kind,
             package_format: p.package_format,
             runtime_abi: p.runtime_abi,
@@ -138,6 +146,16 @@ impl From<&file::OpenedApp> for OpenedFile {
 #[uniffi::export]
 pub fn open_file(path: String) -> Result<OpenedFile, CoreError> {
     Ok((&file::open(Path::new(&path), false)?).into())
+}
+/// The application ID identifying pop files.
+#[uniffi::export]
+pub fn file_application_id() -> u32 {
+    pop_contracts::format::APPLICATION_ID
+}
+/// A saved document's identity, without taking ownership.
+#[uniffi::export]
+pub fn file_document_id(path: String) -> Result<Option<String>, crate::sharing::SharingError> {
+    pop_cloud::local_document(Path::new(&path)).map_err(|message| crate::sharing::SharingError::Failed { message })
 }
 /// Cheap display metadata. This is not a validity certificate for the embedded app.
 #[uniffi::export]

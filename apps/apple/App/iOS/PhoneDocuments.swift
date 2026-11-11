@@ -306,7 +306,7 @@ enum PhoneClosing: Equatable {
         var refused: [URL: String] = [:]
         for url in paths {
           titles[url] = PhoneRecent.localTitle(url)
-          if let id = try? sharingLocalDocument(path: url.path) {
+          if let id = try? fileDocumentId(path: url.path) {
             documentIDs[url] = id
           } else {
             unavailable.insert(url)

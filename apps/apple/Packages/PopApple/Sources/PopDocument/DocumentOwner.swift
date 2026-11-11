@@ -19,7 +19,7 @@ public final class DocumentOwner: Sendable {
   public let file: PopFile
   let assets: ResourceReader
   let native: NativeOwner
-  public var documentID: String? { sharingOwnerDocument(owner: native) }
+  public let documentID: String?
   private let events: Events
 
   /// What the owner tells its document, in the owner's order, on the owner's queue.
@@ -56,7 +56,9 @@ public final class DocumentOwner: Sendable {
     }
     native = owner
     self.events = events
-    file = try PopFile(url: url, opened: owner.app())
+    let opened = owner.app()
+    documentID = opened.documentId
+    file = try PopFile(url: url, opened: opened)
     assets = try storeCall { try owner.resourceReader() }
     if mode == .document { try PopLibrary.register(owner: owner) }
   }
@@ -125,50 +127,38 @@ public final class DocumentOwner: Sendable {
       }
     }
   }
-  private final class Completion: OwnerCompletion {
-    let reply: @Sendable (OwnerReply) -> Void
-    init(_ reply: @escaping @Sendable (OwnerReply) -> Void) { self.reply = reply }
-    func complete(reply: OwnerReply) { self.reply(reply) }
-  }
-  /// `submit` admits synchronously, preserving bridge and panel arrival order. The callback
-  /// runs after the Rust worker completes; no Swift task is involved in admission.
-  private func submit(
-    _ request: OwnerRequest, view: String? = nil,
-    reply: @escaping @Sendable (Result<OwnerReply, Error>) -> Void
-  ) {
-    native.submit(
-      request: request, view: view,
-      completion: Completion { result in
-        if case .failed(let failure) = result { reply(.failure(failure)) } else { reply(.success(result)) }
-      })
-  }
-  private func call(_ request: OwnerRequest, view: String? = nil) async throws -> OwnerReply {
+  private func unit(_ start: (any OwnerUnitCompletion) -> Void) async throws {
     try await withCheckedThrowingContinuation { done in
-      submit(request, view: view) { done.resume(with: $0) }
+      start(UnitAnswer { done.resume(with: $0) })
     }
   }
-  private func unit(_ request: OwnerRequest) async throws {
-    guard case .unit = try await call(request) else { throw PopFailure("Invalid owner response") }
-  }
-  /// Typed owner probes for integration tests; production pages use the page boundary.
+  /// Integration probes for saved page edits and native save recovery, including iPhone lifecycle tests.
   func state() async throws -> String {
-    guard case .state(let json) = try await call(.state) else { throw PopFailure("Invalid state response") }
-    return json
+    try await withCheckedThrowingContinuation { done in
+      native.state(completion: StringAnswer { done.resume(with: $0) })
+    }
   }
   struct Applied: Sendable {
     let sequence: Int
     let ids: [String]
   }
   func apply(batch: String, view: String? = nil, origin: EditOrigin = .agent) async throws -> Applied {
-    guard case .applied(let sequence, let ids) = try await call(.apply(batch: batch, origin: origin), view: view)
-    else { throw PopFailure("Invalid apply response") }
-    return Applied(sequence: Int(sequence), ids: ids)
-  }
-  public func undo(redo: Bool = false) async throws -> Int {
-    guard case .applied(let sequence, _) = try await call(.undo(redo: redo)) else {
-      throw PopFailure("Invalid undo response")
+    let value: OwnerApplied = try await withCheckedThrowingContinuation { done in
+      native.apply(batch: batch, origin: origin, view: view, completion: AppliedAnswer { done.resume(with: $0) })
     }
-    return Int(sequence)
+    return Applied(sequence: Int(value.sequence), ids: value.ids)
+  }
+  public func undo() async throws -> Int {
+    let value: OwnerApplied = try await withCheckedThrowingContinuation { done in
+      native.undo(completion: AppliedAnswer { done.resume(with: $0) })
+    }
+    return Int(value.sequence)
+  }
+  public func redo() async throws -> Int {
+    let value: OwnerApplied = try await withCheckedThrowingContinuation { done in
+      native.redo(completion: AppliedAnswer { done.resume(with: $0) })
+    }
+    return Int(value.sequence)
   }
   func attach(view: String) { native.attach(view: view) }
   /// One document request from the page `view`, as JSON. The owner checks and answers it;
@@ -182,9 +172,9 @@ public final class DocumentOwner: Sendable {
     func complete(reply: PageDispatch) { self.reply(reply) }
   }
   public func flush() async throws {
-    try await unit(.flush)
+    try await unit { native.flush(completion: $0) }
   }
-  public func discardPending() async throws { try await unit(.discard) }
+  public func discardPending() async throws { try await unit { native.discard(completion: $0) } }
   func startServer(page: any NativePageBarrier) throws -> NativeSocketServer {
     try storeCall { try NativeSocketServer.start(owner: native, page: page) }
   }
@@ -193,52 +183,53 @@ public final class DocumentOwner: Sendable {
   /// without history, the attachments that state references, and `artwork` (none when
   /// nil) in place of the original's.
   func copy(to destination: URL, artwork: PopRenderedArtwork?) async throws {
-    try await unit(.copy(destination: destination.path, preview: artwork?.preview, icon: artwork?.icon))
+    try await unit {
+      native.copy(destination: destination.path, preview: artwork?.preview, icon: artwork?.icon, completion: $0)
+    }
   }
   /// The saved document at `destination` as stored, without syncing: a capture's source,
   /// rendered once and then deleted.
   func captureSource(to destination: URL) async throws {
-    try await unit(.captureSource(destination: destination.path))
+    try await unit { native.captureSource(destination: destination.path, completion: $0) }
   }
   func exportFile(to destination: URL) async throws {
-    try await unit(.backup(destination: destination.path))
+    try await unit { native.backup(destination: destination.path, completion: $0) }
   }
   func artwork(_ name: PopArtwork.Name) async throws -> Data? {
-    guard case .bytes(let bytes) = try await call(.artwork(name: name)) else {
-      throw PopFailure("Invalid artwork response")
+    try await withCheckedThrowingContinuation { done in
+      native.artwork(name: name, completion: BytesAnswer { done.resume(with: $0) })
     }
-    return bytes
   }
   struct ThemeRead: Sendable {
     let state: ThemeState
     let revision: Int
   }
-  private static func themeRead(_ reply: OwnerReply) throws -> ThemeRead {
-    guard case .theme(let state, let sequence) = reply else { throw PopFailure("Invalid theme response") }
-    return ThemeRead(state: state, revision: Int(sequence))
+  func loadTheme() async throws -> ThemeRead {
+    let value: OwnerTheme = try await withCheckedThrowingContinuation { done in
+      native.theme(completion: ThemeAnswer { done.resume(with: $0) })
+    }
+    return ThemeRead(state: value.state, revision: Int(value.sequence))
   }
-  func loadTheme() async throws -> ThemeRead { try Self.themeRead(try await call(.theme)) }
   /// A theme panel change, as the window's own batch; `reply` has the sequence it was
   /// accepted at.
   func enqueueTheme(_ change: PopThemeChange, reply: @escaping @Sendable (Result<Int, Error>) -> Void) {
-    let native: ThemeChange =
+    let change: ThemeChange =
       switch change {
       case .set(let values): .set(values: values)
       case .resetAll: .resetAll
       case .importFile(let file): .importFile(file: file)
       }
-    submit(.changeTheme(change: native)) { result in
-      reply(
-        result.flatMap { value in
-          guard case .applied(let sequence, _) = value else { return .failure(PopFailure("Invalid theme response")) }
-          return .success(Int(sequence))
-        })
-    }
+    native.changeTheme(
+      change: change,
+      completion: AppliedAnswer { result in
+        reply(result.map { Int($0.sequence) })
+      })
   }
 
   func exportTheme() async throws -> String {
-    guard case .themeFile(let json) = try await call(.exportTheme) else { throw PopFailure("Invalid theme export") }
-    return json
+    try await withCheckedThrowingContinuation { done in
+      native.exportTheme(completion: StringAnswer { done.resume(with: $0) })
+    }
   }
   func installArtwork(_ artwork: CapturedArtwork) async throws {
     if try await PopLibrary.publishArtwork(
@@ -246,19 +237,59 @@ public final class DocumentOwner: Sendable {
     {
       return
     }
-    try await unit(.setArtwork(sourceVersion: artwork.sourceVersion, preview: artwork.preview, icon: artwork.icon))
+    try await unit {
+      native.setArtwork(
+        sourceVersion: artwork.sourceVersion, preview: artwork.preview, icon: artwork.icon, completion: $0)
+    }
   }
   public func close(artwork: PopRenderedArtwork? = nil) async throws {
-    try await unit(.close(preview: artwork?.preview, icon: artwork?.icon))
+    try await unit { native.close(preview: artwork?.preview, icon: artwork?.icon, completion: $0) }
   }
   /// Moves a document that cannot save to a new document at `destination`: the owner
   /// writes, checks and publishes the copy of its live state, never over an existing file,
   /// then releases the writer lock without saving. After a failure it stays open with every
   /// edit and `destination` untouched. The session fences edits first.
   func handOff(to destination: URL, artwork: PopRenderedArtwork?) async throws {
-    try await unit(.handoff(dest: destination.path, preview: artwork?.preview, icon: artwork?.icon))
+    try await unit {
+      native.handoff(dest: destination.path, preview: artwork?.preview, icon: artwork?.icon, completion: $0)
+    }
   }
   public static var coreBuildID: String { coreBuildId() }
+}
+
+private final class UnitAnswer: OwnerUnitCompletion {
+  let reply: @Sendable (Result<Void, Error>) -> Void
+  init(_ reply: @escaping @Sendable (Result<Void, Error>) -> Void) { self.reply = reply }
+  func complete() { reply(.success(())) }
+  func failed(failure: OwnerFailure) { reply(.failure(failure)) }
+}
+
+private final class AppliedAnswer: OwnerAppliedCompletion {
+  let reply: @Sendable (Result<OwnerApplied, Error>) -> Void
+  init(_ reply: @escaping @Sendable (Result<OwnerApplied, Error>) -> Void) { self.reply = reply }
+  func complete(value: OwnerApplied) { reply(.success(value)) }
+  func failed(failure: OwnerFailure) { reply(.failure(failure)) }
+}
+
+private final class ThemeAnswer: OwnerThemeCompletion {
+  let reply: @Sendable (Result<OwnerTheme, Error>) -> Void
+  init(_ reply: @escaping @Sendable (Result<OwnerTheme, Error>) -> Void) { self.reply = reply }
+  func complete(value: OwnerTheme) { reply(.success(value)) }
+  func failed(failure: OwnerFailure) { reply(.failure(failure)) }
+}
+
+private final class BytesAnswer: OwnerBytesCompletion {
+  let reply: @Sendable (Result<Data?, Error>) -> Void
+  init(_ reply: @escaping @Sendable (Result<Data?, Error>) -> Void) { self.reply = reply }
+  func complete(value: Data?) { reply(.success(value)) }
+  func failed(failure: OwnerFailure) { reply(.failure(failure)) }
+}
+
+private final class StringAnswer: OwnerStringCompletion {
+  let reply: @Sendable (Result<String, Error>) -> Void
+  init(_ reply: @escaping @Sendable (Result<String, Error>) -> Void) { self.reply = reply }
+  func complete(value: String) { reply(.success(value)) }
+  func failed(failure: OwnerFailure) { reply(.failure(failure)) }
 }
 
 /// Finder and Quick Look artwork rendered from the saved document.

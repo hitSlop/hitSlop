@@ -576,7 +576,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   /// them; otherwise the owner undoes directly.
   public func undo(redo: Bool = false) async throws {
     guard isReady else {
-      _ = try await owner.undo(redo: redo)
+      if redo { _ = try await owner.redo() } else { _ = try await owner.undo() }
       return
     }
     try await callPage(redo ? .redo : .undo)

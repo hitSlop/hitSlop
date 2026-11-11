@@ -10,13 +10,9 @@ import PopWidgets
 @MainActor public enum PopRenderer {
   static let captureQueue = DispatchQueue(
     label: "click.dotpop.capture-render", qos: .utility, attributes: .concurrent)
-  static let nativeRuntime: Result<CaptureRuntime, Error> = Result {
-    guard let evaluator = DocumentOwner.enginePath else { throw PopFailure("Capture renderer is missing") }
-    return try CaptureRuntime(evaluatorPath: evaluator)
-  }
 
   public static func exportDocument(session: DocumentSession, format: ExportFormat, output: URL) async throws {
-    let runtime = try nativeRuntime.get()
+    let runtime = try DocumentArtworkRenderer.captureRuntime()
     do {
       try await session.withCaptureSnapshot { source in
         try await PopPreparation.run(on: captureQueue) {
@@ -78,7 +74,7 @@ import PopWidgets
 
   /// Every output in one restricted Rust child, from the same saved source.
   static func captureNative(url: URL, outputs: [CaptureOutput]) async throws -> [CaptureResult] {
-    let runtime = try nativeRuntime.get()
+    let runtime = try DocumentArtworkRenderer.captureRuntime()
     let results = try await PopPreparation.run(on: captureQueue) {
       try runtime.renderSaved(path: url.path, outputs: outputs)
     }
@@ -176,7 +172,7 @@ import PopWidgets
   }
   typealias WidgetCapture = DocumentWidgetCapture
   static func widgetSourceVersion(url: URL) async throws -> String {
-    let runtime = try nativeRuntime.get()
+    let runtime = try DocumentArtworkRenderer.captureRuntime()
     return try await PopPreparation.run(on: captureQueue) {
       try runtime.savedWidgetVersion(path: url.path)
     }

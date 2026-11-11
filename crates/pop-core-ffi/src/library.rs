@@ -1,32 +1,18 @@
 //! Typed device-local index and persistent cloud document composition.
 use super::*;
-use core::{Entry, Issue};
+use core::Entry;
 use pop_cloud as core;
 use pop_sharing_protocol::document::{AccessState, DocumentRole};
-
-/// The application ID identifying pop documents.
-#[uniffi::export]
-pub fn application_id() -> u32 {
-    pop_contracts::format::APPLICATION_ID
-}
 
 #[derive(Debug, thiserror::Error, uniffi::Error)]
 pub enum LibraryError {
     #[error("{message}")]
-    Failed { issue: core::Issue, message: String },
+    Failed { message: String },
 }
 impl From<core::Error> for LibraryError {
     fn from(error: core::Error) -> Self {
-        Self::Failed { issue: error.issue, message: error.message }
+        Self::Failed { message: error.message }
     }
-}
-#[uniffi::remote(Enum)]
-pub enum Issue {
-    Busy,
-    RequiresUpdate,
-    AppMismatch,
-    AccountChanged,
-    Failed,
 }
 #[uniffi::remote(Enum)]
 pub enum DocumentRole {
@@ -34,6 +20,7 @@ pub enum DocumentRole {
     Editor,
 }
 #[uniffi::remote(Record)]
+#[uniffi(name = "LibraryEntry")]
 pub struct Entry {
     pub id: String,
     pub title: String,

@@ -2,8 +2,9 @@ import Foundation
 import PopCoreBinding
 
 /// PNG or PDF: the socket's export format, also used by the window and telemetry.
-public typealias ExportFormat = WireExportFormat
-extension WireExportFormat {
+@_exported import enum PopCoreBinding.ExportFormat
+
+extension ExportFormat {
   public var fileExtension: String {
     switch self {
     case .png: "png"

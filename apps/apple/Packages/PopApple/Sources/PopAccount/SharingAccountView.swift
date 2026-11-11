@@ -111,7 +111,7 @@ enum AccountDeletionOutcome: Equatable {
 /// anonymous UID. Keys are scoped to the document application ID.
 struct SharingAccountDefaults {
   var defaults: UserDefaults = .standard
-  private static let prefix = "click.dotpop.sharing.application\(applicationId())."
+  private static let prefix = "click.dotpop.sharing.application\(fileApplicationId())."
   private static let retainedKey = prefix + "signedIn"
   /// This device has held an identity in Auth.
   var identityRetained: Bool {

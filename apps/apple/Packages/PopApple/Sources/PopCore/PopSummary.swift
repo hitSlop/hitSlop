@@ -1,6 +1,8 @@
 import Foundation
 import PopCoreBinding
 
+@_exported import enum PopCoreBinding.PopCategory
+
 /// Catalog metadata; listing a file does not accept its app or interpret its definition.
 public struct PopSummary: Sendable {
   public let url: URL
@@ -19,12 +21,33 @@ public struct PopSummary: Sendable {
   }
 }
 
-public typealias PopCategory = PopCoreBinding.PopCategory
 extension PopCategory: CaseIterable, RawRepresentable {
-  public static var allCases: [PopCategory] { categories() }
-  public var rawValue: String { categoryName(category: self) }
+  public static var allCases: [PopCategory] {
+    [
+      .popular, .productivity, .utilities, .finance, .media, .games, .developerTools,
+      .education, .business, .personal, .health, .creative, .music, .other,
+    ]
+  }
+  public var rawValue: String {
+    switch self {
+    case .popular: "popular"
+    case .productivity: "productivity"
+    case .utilities: "utilities"
+    case .finance: "finance"
+    case .media: "media"
+    case .games: "games"
+    case .developerTools: "developer-tools"
+    case .education: "education"
+    case .business: "business"
+    case .personal: "personal"
+    case .health: "health"
+    case .creative: "creative"
+    case .music: "music"
+    case .other: "other"
+    }
+  }
   public init?(rawValue: String) {
-    guard let value = parseCategory(name: rawValue) else { return nil }
+    guard let value = Self.allCases.first(where: { $0.rawValue == rawValue }) else { return nil }
     self = value
   }
 }
