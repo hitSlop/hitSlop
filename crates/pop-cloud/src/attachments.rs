@@ -15,7 +15,7 @@ fn local_blobs(owner: &Owner) -> std::result::Result<Vec<Resource>, transport::H
 pub(crate) fn remote_blobs(key: &RoomKey) -> std::result::Result<Vec<Resource>, transport::HttpFailure> {
     let list = transport::http_typed(key, "GET", "blobs", Some(key.bearer()), &[], &[])?;
     let items: Vec<Resource> = serde_json::from_slice(&list).map_err(fail)?;
-    resource_types::validate(&items).map_err(fail)?;
+    resource_types::validate_blobs(&items).map_err(fail)?;
     Ok(items)
 }
 /// The one attachment upload: every blob in `local` that `uploaded` (what the relay
@@ -59,6 +59,7 @@ pub(crate) fn download_blobs(
     uploaded: &mut Vec<Resource>,
 ) -> std::result::Result<(), transport::HttpFailure> {
     let remote = remote_blobs(key)?;
+    resource_types::validate(&remote).map_err(fail)?;
     for item in resource_types::missing_attachments(&remote, &local_blobs(owner)?).map_err(fail)? {
         let bytes = transport::http_typed(key, "GET", &format!("blob/{}", item.hash), Some(key.bearer()), &[], &[])?;
         let accepted = pop_storage::store::Attachment::from_bytes(&bytes).map_err(transport::HttpFailure::from)?;

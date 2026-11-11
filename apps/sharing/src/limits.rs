@@ -23,8 +23,6 @@ pub const JOIN_BODY_BYTES: usize = 4096;
 pub const METADATA_BODY_BYTES: usize = 8192;
 /// Bound for one cross-object call; timeout does not establish whether it committed.
 pub const OBJECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-/// Bound for account library preparation across multiple object calls.
-pub const LIBRARY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(8);
 /// Firebase key identifiers and subjects are bounded before they address storage.
 pub const IDENTITY_FIELD_BYTES: usize = 128;
 /// Clock skew tolerated for Firebase token timestamps.

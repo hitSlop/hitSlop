@@ -17,6 +17,7 @@ impl CloudDocument {
         if !pop_contracts::identity::valid_document_id(&input.document) || input.owner_uid.is_empty() {
             return Refusal::new(400, "invalid_request", "Invalid metadata").response();
         }
+        self.schedule_cleanup(1).await?;
         let existing = self.document_state()?;
         if existing.as_ref().is_some_and(|s| s.phase == RoomPhase::Ended) {
             return Refusal::new(410, "sharing_ended", "Sharing ended").response();
@@ -24,45 +25,42 @@ impl CloudDocument {
         let creating = existing.is_none();
         if creating {
             crate::policy::transition(None, RoomPhase::Uploading).map_err(|_| fail("Invalid phase transition"))?;
-            self.sql.exec("INSERT INTO document_state(id,owner_uid,document,phase,access_generation,library_revision,library_pending,library_retry_ms,update_bytes,update_rows,title,template_id,cleanup_pending) VALUES(1,?,?,'uploading',1,1,0,10000,0,0,'Untitled','',0)",vec![input.owner_uid.clone().into(),input.document.clone().into()])?;
+            self.sql.exec("INSERT INTO document_state(id,owner_uid,document,phase,library_revision,update_bytes,update_rows,title,template_id,cleanup_pending) VALUES(1,?,?,'uploading',0,0,0,'Untitled','',0)",vec![input.owner_uid.clone().into(),input.document.clone().into()])?;
             record(&self.env, Metric::DocumentCreated);
         }
         let state = self.stored()?;
         if state.owner_uid != input.owner_uid || state.document != input.document {
             return Refusal::new(403, "denied", "Access revoked").response();
         }
+        self.library_transaction(|_, _| Ok(vec![]))?;
         self.state.storage().sync().await?;
         Response::empty().map(|r| r.with_status(204))
     }
-    pub(crate) fn describe_document(&self, role: pop_sharing_protocol::document::DocumentRole) -> Result<Response> {
-        let state = self.stored()?;
-        let revision = state.library_revision.ok_or_else(|| fail("Missing library revision"))?;
-        Response::from_json(&crate::publication::Description {
-            entry: pop_sharing_protocol::library::AccountEntry {
-                document: state.document,
-                role,
-                title: state.title.ok_or_else(|| fail("Missing title"))?,
-                template_id: state.template_id.ok_or_else(|| fail("Missing template id"))?,
-                sharing: state.capability.is_some(),
-                revision,
-            },
-            generation: if role == pop_sharing_protocol::document::DocumentRole::Owner {
-                None
-            } else {
-                Some(self.generation()?)
-            },
-        })
-    }
     pub(crate) async fn delete_document(&self, room: &str) -> Result<Response> {
-        let response = self.stop_room(room, Metric::DocumentDeleted).await?;
-        self.flush_registry().await?;
-        Ok(response)
+        self.stop_room(room, Metric::DocumentDeleted).await
     }
     pub(crate) async fn stop_room(&self, room: &str, reason: Metric) -> Result<Response> {
         if self.phase()? != Some(RoomPhase::Ended) {
-            self.set_phase(RoomPhase::Ended)?;
-            self.queue_registry_releases()?;
-            self.sql.exec("DELETE FROM members; UPDATE document_state SET capability=NULL,title=NULL,template_id=NULL,library_revision=NULL,library_pending=NULL,library_retry_ms=NULL,cleanup_pending=1", None)?;
+            self.schedule_cleanup(5_000).await?;
+            if self.phase()? == Some(RoomPhase::Ended) {
+                return Response::ok("deleted");
+            }
+            self.library_transaction(|sql, s| {
+                let removed = sql
+                    .exec("SELECT uid FROM members", None)?
+                    .to_array::<crate::publication::Recipient>()?
+                    .into_iter()
+                    .map(|r| r.uid)
+                    .collect();
+                sql.exec("DELETE FROM members", None)?;
+                s.phase = crate::policy::transition(Some(s.phase), RoomPhase::Ended)
+                    .map_err(|_| fail("Invalid phase transition"))?;
+                s.capability = None;
+                s.title = None;
+                s.template_id = None;
+                s.cleanup_pending = Some(1);
+                Ok(removed)
+            })?;
             record(&self.env, reason);
         }
         // Identity/deletion tombstones persist: the UUID can never be reclaimed by
@@ -84,12 +82,7 @@ impl CloudDocument {
             }
             self.sql.exec("DELETE FROM resource_blobs; DELETE FROM records; DELETE FROM chunks; DELETE FROM heads; DELETE FROM catchups; UPDATE document_state SET seed_hash=NULL,seed_size=NULL,root=NULL,update_bytes=NULL,update_rows=NULL,base_version=NULL,app=NULL",None)?;
             self.state.storage().sync().await?;
-            if let Some(uid) = self.document_state()?.map(|s| s.owner_uid)
-                && !self.release_registration(&uid, None).await?
-            {
-                return Err(fail("Account release failed"));
-            }
-            self.sql.exec("UPDATE document_state SET access_generation=NULL,cleanup_pending=NULL", None)?;
+            self.sql.exec("UPDATE document_state SET cleanup_pending=NULL", None)?;
             self.state.storage().sync().await?;
         }
         Response::ok("deleted")

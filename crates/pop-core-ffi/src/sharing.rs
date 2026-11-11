@@ -46,7 +46,6 @@ pub struct ClientStatus {
 pub struct AccessState {
     pub document: String,
     pub sharing: bool,
-    pub generation: u64,
     pub capability: Option<String>,
     pub role: pop_sharing_protocol::document::DocumentRole,
 }

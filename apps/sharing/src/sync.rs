@@ -224,19 +224,7 @@ impl CloudDocument {
     }
     pub(crate) async fn message(&self, ws: &WebSocket, msg: WebSocketIncomingMessage) -> SocketResult {
         let access = ws.deserialize_attachment::<SocketState>()?.ok_or_else(|| fail("Missing socket"))?;
-        if !access.owner
-            && (access.generation != self.generation()?
-                || access.uid.is_empty()
-                || (self
-                    .sql
-                    .exec(
-                        "SELECT count(*) AS n FROM members WHERE uid=? AND generation=?",
-                        vec![access.uid.into(), (self.generation()? as i64).into()],
-                    )?
-                    .one::<NumberRow>()?
-                    .n
-                    == 0))
-        {
+        if !access.owner && self.role_for_uid(&access.uid)?.is_none() {
             let _ = ws.close(Some(1008), Some("Access revoked"));
             return Ok(());
         }
@@ -289,7 +277,6 @@ impl CloudDocument {
         if count >= ROOM_IP_CONNECTIONS {
             return Refusal::new(429, "limited", "Room IP connection limit").response();
         }
-        let generation = self.generation()?;
         if self.phase()? != Some(RoomPhase::Live) || self.role_for_uid(uid)?.is_none() {
             return Refusal::new(403, "denied", "Access revoked").response();
         }
@@ -300,7 +287,6 @@ impl CloudDocument {
             hello: false,
             socket_id: crate::room::random_hex(16)?,
             owner,
-            generation,
             uid: uid.into(),
             ip,
             window_start: now(),

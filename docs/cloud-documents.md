@@ -19,9 +19,15 @@ opaque Loro updates and never interprets them. Operators deploy it from
 - **Authority.** The per-document Durable Object (named by the UUID) owns permissions,
   lifecycle and accepted updates. A per-account Durable Object
   (named by the SHA-256 of the Firebase UID) registers the account's documents; that
-  registration is only a discovery hint. Joins, leaves and registry cleanup on one
-  document run one at a time: a join registers before it becomes a member, and a
-  retried cleanup releases hints left by failed joins but never a live member's. R2 holds
+  projection is only a discovery hint. Membership and the latest desired library entry
+  commit in the document's local transaction. A durable outbox retries one internal
+  apply-entry route with monotonically increasing document revisions; each account applies
+  only newer revisions. Removal high-water marks persist for the account's lifetime,
+  because timed-out calls may arrive arbitrarily late. Uploading entries stay hidden.
+  Account deletion fences new entries and directly deletes or leaves known documents;
+  a late outbox upsert also performs that cleanup before acknowledgment. Pending creation
+  reservations share the account entries table so deletion covers uncertain init replies.
+  R2 holds
   the seed and attachments under `{uuid}/…`. Every request is checked
   against Firebase identity and current membership; knowing a UUID grants nothing, and
   a link secret is exchanged once at `POST /members`, never reused as a credential.
@@ -49,9 +55,9 @@ JSON bodies over their limit are 413 and malformed ones 400. Document sockets ne
 | `GET`, `POST`, `DELETE …/sharing` | member (read), owner | The caller's current access, read from the document; enable (idempotent); revoke the invitation and its memberships. Only the owner receives the capability. |
 | `POST …/members` | identity | Exchange the invitation secret for editor membership. |
 | `DELETE …/members/me` | member | Leave without deleting the document. |
-| `PUT …/seed`, `GET …/seed` | owner, member | The seed snapshot, uploaded with its SHA-256, app digest and version in `X-Sharing-*` headers; immutable once live. Its version is the document's root. |
-| `POST …/open` | owner | Make the uploaded seed live. The body names it, `{"seedSha256": "<hex>"}`; any other seed is 409. Attachments are not checked. Replies with the document metadata. |
-| `GET …/blobs`; `GET`, `PUT …/blob/{hash}` | member | Immutable attachments. |
+| `GET …/seed` | member | Stream the recorded content-addressed seed blob; immutable once live. |
+| `POST …/open` | owner | Commit `{seed: hash, version, app: digest, attachments: [hash…]}`. Verify every named blob's recorded size and available R2 checksum, enforce attachment budgets, and remove unused staged blobs. Replies with document metadata. |
+| `GET …/blobs`; `GET`, `PUT …/blob/{hash}` | member (owner during upload) | Upload missing immutable seed and attachment blobs by SHA-256. The inventory lists all staged blobs before Open, and only attachments afterwards. |
 | `POST …/compact` | member | Replace the retained updates with one base; 204 with no body. |
 | `GET …/sync` | member | WebSocket carrying opaque update frames. |
 
@@ -69,11 +75,15 @@ including content since removed from view (**Share a Copy** sends a sanitized co
 The first upload seeds the document with the creator's saved file, staged once as an
 immutable local snapshot. The seed is SQLite holding the complete embedded app and retained
 history; attachments and artwork are not part of it. From that snapshot the creator uploads
-the seed and every attachment the seed references, then calls
-`POST …/open` with the seed's SHA-256. **The relay does not prove completeness**: Open
-checks that it names the stored seed, never the attachments, so uploading every required attachment first is the creator's contract. A failed upload
-leaves the document uploading and unbound; a retry stages again and sends only the blobs the
-relay lacks. Downloads fetch, verify and persist attachments before becoming ready.
+the seed and every attachment the seed references through `PUT …/blob/{hash}`, then calls
+`POST …/open` with the seed hash, version, app digest and exact attachment hashes. Open
+checks every named blob against its recorded size and any available R2 SHA-256 checksum,
+commits the set atomically and deletes unused staged blobs through a durable cleanup queue.
+The creator supplies the attachment list from the snapshot; the relay does not parse SQLite.
+Staged blobs do not consume the attachment budget, and the seed has its own 16 MiB limit.
+A failed upload leaves the document uploading and unbound; a retry stages again and sends
+only the blobs the relay lacks. Once live, the seed hash cannot change. Downloads fetch,
+verify and persist attachments before becoming ready.
 
 The seed is limited to 16 MiB of embedded app, history and SQLite overhead. A document
 beyond it cannot be shared; keep large media in attachments, which have their own limits

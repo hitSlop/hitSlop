@@ -1,7 +1,6 @@
 //! Persistent cloud document control, independent from invitation access.
 use crate::client::*;
 use crate::{attachments, journal, transport};
-use pop_contracts::relay::PauseKind;
 use pop_runtime::owner::Owner;
 use pop_sharing_protocol::document::{AccessState, JoinDocument, UpdateDocument};
 use pop_sharing_protocol::http::{CreateRoom, Invitation, OpenRoom, RoomPhase};
@@ -32,20 +31,6 @@ pub fn access(document: &str, token: &str) -> Result<AccessState> {
     RoomKey::identity(document, token)?;
     decode(&control("GET", &format!("documents/{document}/sharing"), token, &[])?)
 }
-pub fn document_metadata(document: &str, token: &str) -> Result<pop_sharing_protocol::document::DocumentMetadata> {
-    ready_document_metadata(document, token)?.ok_or_else(|| "Cloud document has not finished uploading".into())
-}
-pub fn ready_document_metadata(
-    document: &str,
-    token: &str,
-) -> Result<Option<pop_sharing_protocol::document::DocumentMetadata>> {
-    RoomKey::identity(document, token)?;
-    match transport::room_control(pop_sharing_protocol::TRUSTED_ORIGIN, document, "GET", "metadata", token, &[]) {
-        Ok(bytes) => decode(&bytes).map(Some),
-        Err(transport::HttpFailure { kind: PauseKind::Conflict, .. }) => Ok(None),
-        Err(error) => Err(error.into()),
-    }
-}
 /// Only a definite permission refusal/deletion removes a discovery reference;
 /// expired credentials and network failures remain retryable account errors.
 pub fn authorized_access(document: &str, token: &str) -> Result<Option<AccessState>> {
@@ -67,7 +52,7 @@ pub fn sharing_link(access: &AccessState) -> Result<Option<String>> {
         .map(Some)
         .map_err(|error| error.to_string())
 }
-pub fn join_member(link: &str, token: &str) -> Result<AccessState> {
+pub fn join_member(link: &str, token: &str) -> Result<pop_sharing_protocol::document::JoinedDocument> {
     let invitation = Invitation::parse(link).map_err(|error| error.to_string())?;
     decode(&control(
         "POST",
@@ -130,30 +115,30 @@ fn bootstrap_at(origin: &str, owner: &Owner, token: &str, state_directory: &Path
     }
     bind_owner(owner, &key, document)
 }
-/// Upload one staged seed and its attachments, then make exactly that seed live.
-/// The relay does not check attachments at Open: every one the seed references is uploaded
-/// first, from the same immutable snapshot, whatever the live document has done since.
-/// A failure leaves the room uploading for a retry, which sends only missing blobs.
+/// Upload the missing seed and attachments from one immutable snapshot, then commit the set.
 fn upload_seed(key: &RoomKey, seed: &Seed, token: &str, state_directory: &Path) -> Result<()> {
     let journal = journal::Journal::new(state_directory, &key.origin, &key.room)?;
-    transport::http(
-        key,
-        "PUT",
-        "seed",
-        Some(token),
-        &std::fs::read(&seed.path).map_err(fail)?,
-        &[
-            ("X-Sharing-Version", &serde_json::to_string(&seed.version).map_err(fail)?),
-            ("X-Sharing-App", &seed.app),
-            ("X-Sharing-SHA256", &seed.hash),
-        ],
-    )?;
+    let mut uploaded = attachments::remote_blobs(key)?;
+    if !uploaded.iter().any(|item| item.hash == seed.hash) {
+        transport::http(
+            key,
+            "PUT",
+            &format!("blob/{}", seed.hash),
+            Some(token),
+            &std::fs::read(&seed.path).map_err(fail)?,
+            &[("Content-Type", "application/octet-stream")],
+        )?;
+    }
     let store = Store::open(&seed.snapshot, Mode::Snapshot).map_err(fail)?;
     let attachments = attachments::inventory(store.attachments().map_err(fail)?);
-    let mut uploaded = attachments::remote_blobs(key)?;
     attachments::upload(key, &attachments, &mut uploaded, |id| Ok(store.attachment(id)?))?;
     store.close().map_err(fail)?;
-    let open = OpenRoom { seed_sha256: seed.hash.clone() };
+    let open = OpenRoom {
+        seed: seed.hash.clone(),
+        version: seed.version.clone(),
+        app: seed.app.clone(),
+        attachments: attachments.into_iter().map(|item| item.hash).collect(),
+    };
     transport::http(
         key,
         "POST",
@@ -286,13 +271,6 @@ mod tests {
                 room.phase.get_or_insert(RoomPhase::Uploading);
                 (204, Vec::new())
             }
-            ("PUT", "/seed") => {
-                room.seed = header("x-sharing-sha256");
-                if let Some(after) = room.after_seed.take() {
-                    after();
-                }
-                (200, b"ready".to_vec())
-            }
             ("GET", "/blobs") => (200, serde_json::to_vec(&room.blobs).unwrap()),
             ("PUT", blob) if blob.starts_with("/blob/") => {
                 if room.blob_limit.is_some_and(|limit| room.blobs.len() >= limit) {
@@ -300,16 +278,25 @@ mod tests {
                 }
                 let hash = blob["/blob/".len()..].to_owned();
                 let media_type = header("content-type").unwrap();
+                if body.starts_with(b"SQLite format 3")
+                    && let Some(after) = room.after_seed.take()
+                {
+                    after();
+                }
                 room.blobs.push(Resource { key: hash.clone(), hash, size: body.len() as u64, media_type });
                 (200, b"stored".to_vec())
             }
             ("POST", "/open") => {
                 let Ok(open) = serde_json::from_slice::<OpenRoom>(body) else { return (400, Vec::new()) };
-                if room.seed.as_ref() != Some(&open.seed_sha256) {
+                if !room.blobs.iter().any(|item| item.hash == open.seed)
+                    || open.attachments.iter().any(|id| !room.blobs.iter().any(|item| &item.hash == id))
+                {
                     return (409, Vec::new());
                 }
+                room.blobs.retain(|item| open.attachments.contains(&item.hash));
+                room.seed = Some(open.seed.clone());
                 room.phase = Some(RoomPhase::Live);
-                room.opened.push(open.seed_sha256);
+                room.opened.push(open.seed);
                 info(room)
             }
             _ => (404, Vec::new()),
@@ -351,18 +338,18 @@ mod tests {
         let document = owner.app().document_uuid.clone().unwrap();
         let relay = Relay::start(&document);
         let state = directory.path().join("relay-state");
-        relay.room().blob_limit = Some(1);
+        relay.room().blob_limit = Some(2);
         assert!(bootstrap_at(&relay.origin, &owner, "test-token", &state).is_err());
         let first = {
             let room = relay.room();
             assert_eq!(room.phase, Some(RoomPhase::Uploading), "a failed blob upload leaves the room uploading");
             assert!(
                 !room.requests.iter().any(|request| request.ends_with("/open")),
-                "the relay does not check attachments, so nothing may Open before they are all uploaded: {:?}",
+                "Open follows the complete staged upload: {:?}",
                 room.requests
             );
-            assert_eq!(room.blobs.len(), 1);
-            room.blobs[0].hash.clone()
+            assert_eq!(room.blobs.len(), 2);
+            room.blobs[1].hash.clone()
         };
         assert_eq!(endpoint(&owner), None, "the owner binds only to a live room");
         {

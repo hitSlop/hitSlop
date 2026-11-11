@@ -1,110 +1,112 @@
-//! Document seed operations.
+//! Commit a staged blob set as the immutable document seed and initial attachments.
 use crate::metrics::{Metric, record};
 use crate::refusal::Refusal;
-use crate::room::{CloudDocument, fail};
-use crate::room::{SQLITE_HEADER_BYTES, decode_hex, object_key, version, wire_version};
+use crate::room::{CloudDocument, SQLITE_HEADER_BYTES, fail, object_key, version, wire_version};
 use pop_contracts::hex;
 use pop_sharing_protocol::http::RoomPhase;
-use pop_sharing_protocol::{CONTROL_BYTES, SEED_BYTES};
-use sha2::{Digest, Sha256};
+use pop_sharing_protocol::{CONTROL_BYTES, SEED_BYTES, resources};
 use worker::*;
 
 impl CloudDocument {
     pub(crate) async fn open(&self, req: &mut Request, room: &str) -> Result<Response> {
         let _upload = self.uploads.lock().await;
-        let phase = self.phase()?.ok_or_else(|| fail("Missing phase"))?;
         let input: pop_sharing_protocol::http::OpenRoom = match crate::input::body(req, CONTROL_BYTES).await {
             Ok(input) => input,
             Err(error) => return error.response(),
         };
-        if !pop_contracts::wire::valid_attachment_id(&input.seed_sha256) {
-            return Refusal::new(400, "invalid_request", "Invalid seed hash").response();
-        }
-        // Reading the body yielded to Stop, which also removes the seed.
-        if self.phase()? == Some(RoomPhase::Ended) {
-            return Refusal::new(410, "sharing_ended", "Sharing ended").response();
-        }
-        // The one fence: only the stored seed can go live, so an older upload attempt
-        // cannot publish a seed uploaded after it. Attachments are not checked here;
-        // the creator uploads every one the seed references before Open.
-        match self.document_state()?.and_then(|s| s.seed_hash) {
-            None => return Refusal::new(409, "conflict", "Seed not ready").response(),
-            Some(stored) if stored != input.seed_sha256 => {
-                return Refusal::new(409, "conflict", "Different seed").response();
-            }
-            Some(_) => {}
-        }
-        if phase == RoomPhase::Live {
-            return Response::from_json(&self.info()?);
-        }
-        let bucket = self.env.bucket("SEEDS")?;
-        let seed_size: u64 = self.stored()?.seed_size.ok_or_else(|| fail("Invalid seed size"))? as u64;
-        if bucket.head(object_key(room, "seed")).await?.is_none_or(|o| o.size() != seed_size) {
-            return Refusal::new(409, "conflict", "Seed not ready").response();
-        }
-        if self.phase()? == Some(RoomPhase::Ended) {
-            return Refusal::new(410, "sharing_ended", "Sharing ended").response();
-        }
-        self.set_phase(RoomPhase::Live)?;
-        self.publish_library().await?;
-        record(&self.env, Metric::DocumentReady);
-        Response::from_json(&self.info()?)
-    }
-    pub(crate) async fn put_seed(&self, req: &mut Request, room: &str) -> Result<Response> {
-        let _upload = self.uploads.lock().await;
-        match self.phase()? {
-            Some(RoomPhase::Uploading) => {}
-            Some(RoomPhase::Ended) => return Refusal::new(410, "sharing_ended", "Sharing ended").response(),
-            _ => return Refusal::new(409, "conflict", "Room is live").response(),
-        }
-        let bucket = self.env.bucket("SEEDS")?;
-        let key = object_key(room, "seed");
-        let digest = req.headers().get("X-Sharing-SHA256")?.unwrap_or_default();
-        let app = req.headers().get("X-Sharing-App")?.unwrap_or_default();
-        let seed: Vec<(String, u32)> =
-            match req.headers().get("X-Sharing-Version")?.and_then(|v| serde_json::from_str(&v).ok()) {
-                Some(v) => v,
-                None => return Refusal::new(400, "invalid_request", "Seed version required").response(),
-            };
-        let heads = match version(&seed) {
-            Ok(heads) => heads,
-            Err(_) => return Refusal::new(400, "invalid_request", "Invalid seed version").response(),
+        let heads = match version(&input.version) {
+            Ok(heads) if heads.len() == input.version.len() => heads,
+            _ => return Refusal::new(400, "invalid_request", "Invalid seed version").response(),
         };
-        if !pop_contracts::wire::valid_attachment_id(&digest)
-            || !pop_contracts::wire::valid_attachment_id(&app)
-            || heads.len() != seed.len()
+        if !pop_contracts::wire::valid_attachment_id(&input.seed)
+            || !pop_contracts::wire::valid_attachment_id(&input.app)
+            || input.attachments.iter().any(|id| !pop_contracts::wire::valid_attachment_id(id) || id == &input.seed)
         {
             return Refusal::new(400, "invalid_request", "Invalid seed metadata").response();
         }
-        let body = match crate::input::bytes(req, SEED_BYTES).await {
-            Ok(bytes) => bytes,
-            Err(error) => return error.response(),
+        let root = serde_json::to_string(&wire_version(&heads))?;
+        let state = self.stored()?;
+        if state.phase == RoomPhase::Ended {
+            return Refusal::new(410, "sharing_ended", "Sharing ended").response();
+        }
+        if state.phase == RoomPhase::Live {
+            return if state.seed_hash.as_ref() == Some(&input.seed)
+                && state.app.as_ref() == Some(&input.app)
+                && state.root.as_ref() == Some(&root)
+            {
+                Response::from_json(&self.info()?)
+            } else {
+                Refusal::new(409, "conflict", "Different seed").response()
+            };
+        }
+        let staged = self.blob_inventory(false)?;
+        let Some(seed) = staged.iter().find(|item| item.hash == input.seed) else {
+            return Refusal::new(409, "conflict", "Seed not ready").response();
         };
-        if body.len() < SQLITE_HEADER_BYTES || hex(&Sha256::digest(&body)) != digest {
-            return Refusal::new(422, "invalid_request", "Seed checksum mismatch").response();
+        if seed.size < SQLITE_HEADER_BYTES as u64 || seed.size > SEED_BYTES as u64 {
+            return Refusal::new(400, "invalid_request", "Invalid seed size").response();
         }
+        let mut attachments = Vec::with_capacity(input.attachments.len());
+        for id in &input.attachments {
+            let Some(item) = staged.iter().find(|item| &item.hash == id) else {
+                return Refusal::new(409, "conflict", "Attachment not ready").response();
+            };
+            attachments.push(item.clone());
+        }
+        if resources::validate(&attachments).is_err() {
+            return Refusal::new(413, "invalid_request", "Room file limit reached").response();
+        }
+        let bucket = self.env.bucket("SEEDS")?;
+        for item in std::iter::once(seed).chain(attachments.iter()) {
+            let object = bucket.head(object_key(room, &format!("blobs/{}", item.hash))).await?;
+            if object.is_none_or(|o| {
+                o.size() != item.size || o.checksum().sha256.is_some_and(|digest| hex(&digest) != item.hash)
+            }) {
+                return Refusal::new(409, "conflict", "Blob not ready").response();
+            }
+        }
+        self.schedule_cleanup(1).await?;
         if self.phase()? == Some(RoomPhase::Ended) {
             return Refusal::new(410, "sharing_ended", "Sharing ended").response();
         }
-        let size = body.len();
-        bucket.put(key.clone(), body).sha256(decode_hex(&digest)?).execute().await?;
-        if self.phase()? == Some(RoomPhase::Ended) {
-            bucket.delete(key).await?;
-            return Refusal::new(410, "sharing_ended", "Sharing ended").response();
-        }
-        let version = serde_json::to_string(&wire_version(&heads))?;
-        self.update_state(|s| {
-            s.seed_hash = Some(digest);
-            s.seed_size = Some(size as u32);
-            s.app = Some(app);
-            s.root = Some(version);
+        let seed_size = seed.size as u32;
+        let room = room.to_owned();
+        self.library_transaction(move |sql, s| {
+            for item in &staged {
+                let attachment = input.attachments.contains(&item.hash);
+                if item.hash != input.seed && !attachment {
+                    sql.exec(
+                        "INSERT OR IGNORE INTO garbage VALUES(?)",
+                        vec![object_key(&room, &format!("blobs/{}", item.hash)).into()],
+                    )?;
+                    sql.exec("DELETE FROM resource_blobs WHERE id=?", vec![item.hash.clone().into()])?;
+                } else {
+                    sql.exec(
+                        "UPDATE resource_blobs SET attachment=? WHERE id=?",
+                        vec![i64::from(attachment).into(), item.hash.clone().into()],
+                    )?;
+                }
+            }
+            s.seed_hash = Some(input.seed.clone());
+            s.seed_size = Some(seed_size);
+            s.app = Some(input.app.clone());
+            s.root = Some(root.clone());
+            s.phase = RoomPhase::Live;
+            sql.exec("DELETE FROM heads", None)?;
+            Self::save_heads(sql, &heads)?;
+            Ok(vec![])
         })?;
-        self.sql.exec("DELETE FROM heads", None)?;
-        Self::save_heads(&self.sql, &heads)?;
-        Response::ok("ready")
+        self.state.storage().sync().await?;
+        // Failed deletes remain in the durable garbage queue; they cannot affect the live set.
+        self.sweep_garbage(&self.stored()?.document).await?;
+        record(&self.env, Metric::DocumentReady);
+        Response::from_json(&self.info()?)
     }
     pub(crate) async fn read_seed(&self, uid: &str, room: &str) -> Result<Response> {
-        let object = self.env.bucket("SEEDS")?.get(object_key(room, "seed")).execute().await?;
+        let Some(hash) = self.stored()?.seed_hash else {
+            return Refusal::new(404, "not_found", "Seed missing").response();
+        };
+        let object = self.env.bucket("SEEDS")?.get(object_key(room, &format!("blobs/{hash}"))).execute().await?;
         if self.role_for_uid(uid)?.is_none() {
             return Refusal::new(403, "denied", "Access revoked").response();
         }

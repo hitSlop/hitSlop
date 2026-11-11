@@ -83,7 +83,7 @@ fn decode_as(kind: &str, input: &Value) -> Result<Value, serde_json::Error> {
         "RoomPhase" => decoded::<RoomPhase>(input),
         "AccessState" => decoded::<AccessState>(input),
         "DocumentRole" => decoded::<DocumentRole>(input),
-        "DocumentMetadata" => decoded::<DocumentMetadata>(input),
+        "JoinedDocument" => decoded::<JoinedDocument>(input),
         "ApiFailure" => decoded::<ApiFailure>(input),
         "Resource" => decoded::<Resource>(input),
         "ResourceList" => decoded::<Vec<Resource>>(input),
@@ -116,7 +116,7 @@ fn every_http_dto_has_a_fixture() {
         "AccessState",
         "JoinDocument",
         "UpdateDocument",
-        "DocumentMetadata",
+        "JoinedDocument",
         "Resource",
     ] {
         assert!(covered.contains(name), "HTTP DTO {name} has no fixture in http.json");

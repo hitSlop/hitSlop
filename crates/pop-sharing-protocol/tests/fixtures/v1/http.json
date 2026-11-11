@@ -13,10 +13,16 @@
     "type": "OpenRoom",
     "name": "open request",
     "input": {
-      "seedSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      "seed": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "version": [],
+      "app": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "attachments": []
     },
     "canonical": {
-      "seedSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      "seed": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "version": [],
+      "app": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "attachments": []
     }
   },
   {
@@ -171,14 +177,12 @@
     "input": {
       "document": "00000000-0000-4000-8000-000000000001",
       "sharing": true,
-      "generation": 2,
       "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "role": "owner"
     },
     "canonical": {
       "document": "00000000-0000-4000-8000-000000000001",
       "sharing": true,
-      "generation": 2,
       "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "role": "owner"
     }
@@ -189,7 +193,6 @@
     "input": {
       "document": "00000000-0000-4000-8000-000000000001",
       "sharing": true,
-      "generation": 2,
       "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "role": "owner",
       "futureHint": {
@@ -199,7 +202,6 @@
     "canonical": {
       "document": "00000000-0000-4000-8000-000000000001",
       "sharing": true,
-      "generation": 2,
       "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "role": "owner"
     }
@@ -210,14 +212,12 @@
     "input": {
       "document": "00000000-0000-4000-8000-000000000001",
       "sharing": false,
-      "generation": 3,
       "capability": null,
       "role": "owner"
     },
     "canonical": {
       "document": "00000000-0000-4000-8000-000000000001",
       "sharing": false,
-      "generation": 3,
       "capability": null,
       "role": "owner"
     }
@@ -228,14 +228,12 @@
     "input": {
       "document": "00000000-0000-4000-8000-000000000001",
       "sharing": true,
-      "generation": 2,
       "capability": null,
       "role": "editor"
     },
     "canonical": {
       "document": "00000000-0000-4000-8000-000000000001",
       "sharing": true,
-      "generation": 2,
       "capability": null,
       "role": "editor"
     }
@@ -246,7 +244,6 @@
     "input": {
       "document": "00000000-0000-4000-8000-000000000001",
       "sharing": true,
-      "generation": 2,
       "capability": null,
       "role": "editor",
       "futureHint": {
@@ -256,7 +253,6 @@
     "canonical": {
       "document": "00000000-0000-4000-8000-000000000001",
       "sharing": true,
-      "generation": 2,
       "capability": null,
       "role": "editor"
     }
@@ -274,30 +270,46 @@
     "canonical": "editor"
   },
   {
-    "type": "DocumentMetadata",
+    "type": "JoinedDocument",
     "name": "catalog metadata",
     "input": {
       "title": "Weekly plan",
-      "templateId": "planner"
+      "templateId": "planner",
+      "document": "00000000-0000-4000-8000-000000000001",
+      "sharing": true,
+      "capability": null,
+      "role": "editor"
     },
     "canonical": {
       "title": "Weekly plan",
-      "templateId": "planner"
+      "templateId": "planner",
+      "document": "00000000-0000-4000-8000-000000000001",
+      "sharing": true,
+      "capability": null,
+      "role": "editor"
     }
   },
   {
-    "type": "DocumentMetadata",
+    "type": "JoinedDocument",
     "name": "catalog metadata with unknown field",
     "input": {
       "title": "Weekly plan",
       "templateId": "planner",
       "futureHint": {
         "ignored": true
-      }
+      },
+      "document": "00000000-0000-4000-8000-000000000001",
+      "sharing": true,
+      "capability": null,
+      "role": "editor"
     },
     "canonical": {
       "title": "Weekly plan",
-      "templateId": "planner"
+      "templateId": "planner",
+      "document": "00000000-0000-4000-8000-000000000001",
+      "sharing": true,
+      "capability": null,
+      "role": "editor"
     }
   },
   {

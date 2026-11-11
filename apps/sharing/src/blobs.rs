@@ -1,4 +1,4 @@
-//! Attachment blobs: immutable, content-addressed files in R2, inventoried in `resource_blobs`.
+//! Seed and attachment blobs: immutable, content-addressed files in R2, inventoried in `resource_blobs`.
 use crate::room::{CloudDocument, NumberRow, decode_hex, fail, object_key};
 
 use crate::refusal::Refusal;
@@ -37,12 +37,22 @@ impl CloudDocument {
         Ok(())
     }
     pub(crate) fn blobs(&self) -> Result<Vec<Resource>> {
+        self.blob_inventory(self.phase()? == Some(RoomPhase::Live))
+    }
+    pub(crate) fn blob_inventory(&self, attachments_only: bool) -> Result<Vec<Resource>> {
         #[derive(Deserialize)]
         struct Row {
             value: String,
         }
         self.sql
-            .exec("SELECT value FROM resource_blobs ORDER BY id", None)?
+            .exec(
+                if attachments_only {
+                    "SELECT value FROM resource_blobs WHERE attachment=1 ORDER BY id"
+                } else {
+                    "SELECT value FROM resource_blobs ORDER BY id"
+                },
+                None,
+            )?
             .to_array::<Row>()?
             .into_iter()
             .map(|r| serde_json::from_str(&r.value).map_err(Into::into))
@@ -80,11 +90,12 @@ impl CloudDocument {
             size,
             media_type: req.headers().get("Content-Type")?.unwrap_or_else(|| "application/octet-stream".into()),
         };
-        if resources::validate(std::slice::from_ref(&item)).is_err() {
+        if resources::validate_blobs(std::slice::from_ref(&item)).is_err() {
             return Refusal::new(400, "invalid_request", "Invalid resource metadata").response();
         }
+        let live = self.phase()? == Some(RoomPhase::Live);
         let mut all = self.blobs()?;
-        if let Some(old) = all.iter().find(|i| i.hash == id) {
+        if let Some(old) = self.blob_inventory(false)?.iter().find(|i| i.hash == id) {
             return if old.size == item.size && old.media_type == item.media_type {
                 Response::ok("existing")
             } else {
@@ -92,7 +103,7 @@ impl CloudDocument {
             };
         }
         all.push(item.clone());
-        if resources::validate(&all).is_err() {
+        if live && resources::validate(&all).is_err() {
             return Refusal::new(413, "invalid_request", "Room file limit reached").response();
         }
         // Probe-sized files are bounded by Rust limits; R2 verifies the supplied digest.
@@ -125,13 +136,13 @@ impl CloudDocument {
         if !current.iter().any(|i| i.hash == id) {
             current.push(item.clone());
         }
-        if resources::validate(&current).is_err() {
+        if live && resources::validate(&current).is_err() {
             bucket.delete(key).await?;
             return Refusal::new(413, "invalid_request", "Room file limit reached").response();
         }
         self.sql.exec(
-            "INSERT OR IGNORE INTO resource_blobs VALUES(?,?)",
-            vec![id.into(), serde_json::to_string(&item)?.into()],
+            "INSERT OR IGNORE INTO resource_blobs VALUES(?,?,?)",
+            vec![id.into(), serde_json::to_string(&item)?.into(), i64::from(live).into()],
         )?;
         self.sql.exec("DELETE FROM garbage WHERE key=?", vec![key.into()])?;
         self.state.storage().sync().await?;

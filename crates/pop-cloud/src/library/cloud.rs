@@ -110,19 +110,18 @@ impl Library {
         }
         let _change = self.changing();
         let generation = self.operation()?;
-        let access = crate::cloud::join_member(link, token).map_err(failed)?;
-        let metadata = crate::cloud::document_metadata(&access.document, token).map_err(failed)?;
+        let joined = crate::cloud::join_member(link, token).map_err(failed)?;
         self.current_operation(generation)?;
-        self.remember_join(&access, &metadata)?;
-        self.download(&access.document, token)
+        self.remember_join(&joined)?;
+        self.download(&joined.access.document, token)
     }
     /// The document decides the role: an owner opening their own invitation stays the owner,
     /// so catalog deletion later deletes rather than leaves.
-    fn remember_join(&self, access: &AccessState, metadata: &DocumentMetadata) -> Result<()> {
-        let id = &access.document;
+    fn remember_join(&self, joined: &JoinedDocument) -> Result<()> {
+        let id = &joined.access.document;
         let path = self.cached_path(id);
         let inner = self.inner.lock().unwrap();
-        index::upsert_joined(&inner.db, &self.account, access, metadata, &paths::store(&self.root, &path)?)
+        index::upsert_joined(&inner.db, &self.account, joined, &paths::store(&self.root, &path)?)
     }
     pub fn leave(&self, id: &str, token: &str) -> Result<()> {
         self.remove_cloud(id, token, false)

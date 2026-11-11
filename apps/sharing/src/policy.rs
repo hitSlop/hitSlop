@@ -227,3 +227,50 @@ mod tests {
         assert!(folds_record(0, &spans, &Version::new()));
     }
 }
+
+/// Account entries, including removal high-water marks, accept only newer document revisions.
+pub fn apply_library_revision(current: Option<u64>, incoming: u64) -> bool {
+    incoming > 0 && current.is_none_or(|revision| incoming > revision)
+}
+
+#[cfg(test)]
+mod library_tests {
+    use super::apply_library_revision;
+
+    #[test]
+    fn late_and_duplicate_deliveries_cannot_resurrect_removal_or_drop_rejoin() {
+        let mut current = None;
+        let mut present = false;
+        for (revision, entry, expected_revision, expected_present) in [
+            (1, true, 1, true),
+            (2, false, 2, false),
+            (1, true, 2, false),
+            (2, false, 2, false),
+            (3, true, 3, true),
+            (2, false, 3, true),
+            (3, true, 3, true),
+            (4, false, 4, false),
+        ] {
+            if apply_library_revision(current, revision) {
+                current = Some(revision);
+                present = entry;
+            }
+            assert_eq!((current, present), (Some(expected_revision), expected_present));
+        }
+    }
+
+    #[test]
+    fn reordering_converges_to_latest_revision() {
+        for order in [[1, 2, 3], [3, 2, 1], [2, 3, 1], [2, 1, 3], [1, 3, 2], [3, 1, 2]] {
+            let mut current = None;
+            for revision in order {
+                if apply_library_revision(current, revision) {
+                    current = Some(revision);
+                }
+            }
+            assert_eq!(current, Some(3));
+        }
+        assert!(!apply_library_revision(None, 0));
+        assert!(!apply_library_revision(Some(u64::MAX), u64::MAX));
+    }
+}

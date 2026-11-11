@@ -67,7 +67,7 @@ import Testing
     let document = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     func state(_ sharing: Bool) -> AccessState {
       AccessState(
-        document: document, sharing: sharing, generation: 1,
+        document: document, sharing: sharing,
         capability: sharing ? String(repeating: "b", count: 64) : nil, role: .owner)
     }
     var calls: [Bool] = []
@@ -113,7 +113,7 @@ import Testing
 
   @Test @MainActor func accountChangesClearSharingAccessAndFenceQueuedOldAccountControls() async throws {
     let old = AccessState(
-      document: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", sharing: false, generation: 1, capability: nil, role: .owner)
+      document: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", sharing: false, capability: nil, role: .owner)
     @MainActor final class Identity { var account = "account-a" }
     let identity = Identity()
     var calls: [String] = []

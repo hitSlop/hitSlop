@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     pop_sharing_protocol::http::OpenRoom::export_all(&config)?;
     pop_sharing_protocol::http::RoomInfo::export_all(&config)?;
     pop_sharing_protocol::library::LibraryFrame::export_all(&config)?;
-    pop_sharing_protocol::document::DocumentMetadata::export_all(&config)?;
+    pop_sharing_protocol::document::JoinedDocument::export_all(&config)?;
 
     pop_sharing_protocol::document::AccessState::export_all(&config)?;
     pop_sharing_protocol::document::UpdateDocument::export_all(&config)?;

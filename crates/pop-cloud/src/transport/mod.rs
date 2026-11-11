@@ -406,25 +406,6 @@ fn http_request_authorized(
     })
 }
 
-/// Control routes use an explicit bearer; locating a room uses its signed-in identity.
-pub(crate) fn room_control(
-    origin: &str,
-    room: &str,
-    method: &str,
-    route: &str,
-    identity: &str,
-    body: &[u8],
-) -> TransportResult<Vec<u8>> {
-    http_request_typed(
-        method,
-        &format!("{origin}/v1/documents/{room}/{route}"),
-        Some(identity),
-        body,
-        &[("Content-Type", "application/json")],
-        pop_sharing_protocol::CONTROL_BYTES as u64,
-    )
-}
-
 /// An access lookup keeps HTTP status until deciding whether access was denied.
 /// Bad requests, missing routes and expired credentials cannot authorize local removal.
 pub(crate) fn access_request(url: &str, identity: &str) -> TransportResult<Option<Vec<u8>>> {

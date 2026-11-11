@@ -9,20 +9,12 @@ pub struct Resource {
     pub media_type: String,
 }
 pub fn validate(items: &[Resource]) -> Result<(), pop_contracts::Error> {
-    let mut keys = std::collections::HashSet::new();
+    validate_blobs(items)?;
+    if items.iter().any(|item| item.size > pop_contracts::wire::ATTACHMENT_FILE_BYTES as u64) {
+        return Err(invalid("Invalid resource inventory"));
+    }
     let mut total = 0u64;
     for item in items {
-        if !pop_contracts::wire::valid_attachment_id(&item.hash)
-            || item.size > pop_contracts::wire::ATTACHMENT_FILE_BYTES as u64
-            || !keys.insert(&item.key)
-            || item.media_type.is_empty()
-            || item.media_type.len() > 100
-            || item.media_type.contains(['\r', '\n'])
-            || item.key != item.hash
-            || !pop_contracts::media::attachment_media_type(&item.media_type)
-        {
-            return Err(invalid("Invalid resource inventory"));
-        }
         total = total.checked_add(item.size).ok_or_else(|| invalid("Resource inventory overflow"))?;
     }
     if items.len() > pop_contracts::wire::ATTACHMENT_COUNT || total > pop_contracts::wire::ATTACHMENT_BYTES as u64 {
@@ -30,11 +22,29 @@ pub fn validate(items: &[Resource]) -> Result<(), pop_contracts::Error> {
     }
     Ok(())
 }
+/// Staged blobs include the seed and abandoned attempts, outside attachment budgets.
+pub fn validate_blobs(items: &[Resource]) -> Result<(), pop_contracts::Error> {
+    let mut keys = std::collections::HashSet::new();
+    for item in items {
+        if !pop_contracts::wire::valid_attachment_id(&item.hash)
+            || item.size > crate::SEED_BYTES as u64
+            || !keys.insert(&item.key)
+            || item.media_type.is_empty()
+            || item.media_type.len() > 100
+            || item.media_type.contains(['\r', '\n'])
+            || item.key != item.hash
+            || !pop_contracts::media::attachment_media_type(&item.media_type)
+        {
+            return Err(invalid("Invalid blob inventory"));
+        }
+    }
+    Ok(())
+}
 /// Transfer only absent immutable blobs. Both inventories are untrusted at this
 /// boundary; a matching hash with different metadata must never become a cache hit.
 pub fn missing_attachments(required: &[Resource], present: &[Resource]) -> Result<Vec<Resource>, pop_contracts::Error> {
     validate(required)?;
-    validate(present)?;
+    validate_blobs(present)?;
     let present: std::collections::HashMap<_, _> = present.iter().map(|item| (&item.hash, item)).collect();
     let mut missing = Vec::new();
     for item in required {

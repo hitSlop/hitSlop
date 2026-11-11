@@ -11,60 +11,24 @@ export function relayHarness(source: string) {
   return `import relay, {CloudDocument as Room, DocumentAccount as Account} from ${JSON.stringify(source)};
 export default relay;
 export class DocumentAccount {
-  constructor(state,env){this.state=state;this.inner=new Account(state,env);this.heldRegistrations=0;}
+  constructor(state,env){this.state=state;this.inner=new Account(state,env);}
   async fetch(req){
     const path = new URL(req.url).pathname;
     if (path === '/__test/sql') {
       const {sql,args=[]} = await req.json();
       return Response.json(this.state.storage.sql.exec(sql,...args).toArray());
     }
-    if (path === '/__test/fail-descriptions') { this.failDescriptions = (await req.json()).enabled; return new Response('ready'); }
-    if (path === '/internal/describe' && this.failDescriptions) return new Response('retry',{status:503});
-    // Holds the next member registration until released: a document awaiting it lets other requests in.
-    if (path === '/__test/hold-registration') {
-      this.registration = new Promise(resolve => this.releaseRegistration = resolve);
-      return new Response('ready');
+    if (path === '/__test/fail-deliveries') {this.failDeliveries=(await req.json()).enabled;return new Response('ready');}
+    if (path === '/internal/apply-entry' && this.failDeliveries) return new Response('retry',{status:503});
+    if (path === '/__test/hold-delivery') {this.delivery=new Promise(resolve=>this.releaseDelivery=resolve);return new Response('ready');}
+    if (path === '/__test/delivery-waiting') return Response.json(!!this.deliveryWaiting);
+    if (path === '/__test/release-delivery') {this.releaseDelivery?.();return new Response('ready');}
+    if (path === '/internal/apply-entry' && this.delivery) {
+      const held=this.delivery;this.delivery=undefined;this.deliveryWaiting=true;
+      await held;this.deliveryWaiting=false;
     }
-    if (path === '/__test/held-registrations') return Response.json(this.heldRegistrations);
-    if (path === '/__test/release-registration') { this.releaseRegistration?.(); return new Response('ready'); }
-    // The next registration is stored, then its reply is held until finished, or replaced by a failure.
-    if (path === '/__test/hold-registration-response') {
-      this.registrationResponse = new Promise(resolve => this.finishRegistrationResponse = resolve);
-      return new Response('ready');
-    }
-    if (path === '/__test/held-registration-responses') return Response.json(this.heldRegistrationResponses ?? 0);
-    if (path === '/__test/finish-registration-response') { this.finishRegistrationResponse?.(); return new Response('ready'); }
-    if (path === '/__test/fail-registration-response') { this.failRegistrationResponse = true; return new Response('ready'); }
-    // Releases fail while enabled: refused, or committed with the reply lost.
-    if (path === '/__test/release-failure') {
-      const {enabled,committed=false} = await req.json();
-      this.failRelease = enabled; this.commitFailedRelease = committed;
-      return new Response('ready');
-    }
-    if (path === '/internal/release' && this.failRelease) {
-      if (this.commitFailedRelease) await this.inner.fetch(req);
-      return new Response('unavailable',{status:503});
-    }
-    if (path === '/internal/member' && this.registration) {
-      const registration = this.registration;
-      this.registration = undefined;
-      this.heldRegistrations++;
-      await registration;
-    }
-    try {
-      const response = await this.inner.fetch(req);
-      if (path === '/internal/member' && this.registrationResponse) {
-        const held = this.registrationResponse;
-        this.registrationResponse = undefined;
-        this.heldRegistrationResponses = (this.heldRegistrationResponses ?? 0) + 1;
-        await held;
-      }
-      if (path === '/internal/member' && this.failRegistrationResponse) {
-        this.failRegistrationResponse = false;
-        return new Response('reply lost',{status:500});
-      }
-      return response;
-    } catch(error){console.error('Test account failure:',String(error));throw error;}
+    if (path === '/__test/reset') this.state.abort('Test reset');
+    try {return await this.inner.fetch(req);} catch(error){console.error('Test account failure:',String(error));throw error;}
   }
   webSocketMessage(ws,message){return this.inner.webSocketMessage(ws,message);}
   webSocketClose(ws,code,reason,clean){return this.inner.webSocketClose(ws,code,reason,clean);}
@@ -150,12 +114,6 @@ export class CloudDocument {
     if (path === '/__test/alarm') return await this.inner.alarm();
     if (path === '/__test/alarm-time') return Response.json(await this.state.storage.getAlarm());
     // Resets the object as a crash would: in-flight requests fail and memory is lost.
-    if (path === '/__test/hold-library') { this.libraryHold = new Promise(resolve => this.releaseLibrary = resolve); return new Response('ready'); }
-    if (path === '/__test/library-waiting') return Response.json(!!this.libraryWaiting);
-    if (path === '/__test/release-library') { this.releaseLibrary?.(); this.libraryHold=undefined; return new Response('ready'); }
-    if (path.endsWith('/library') && this.libraryHold) { this.libraryWaiting=true; await this.libraryHold; this.libraryWaiting=false; }
-    if (path === '/__test/library-unavailable') { this.libraryUnavailable = (await req.json()).enabled; return new Response('ready'); }
-    if (path.endsWith('/library') && this.libraryUnavailable) return new Response('unavailable',{status:503});
     if (path === '/__test/reset') this.state.abort('Test reset');
     try { return await this.inner.fetch(req); } catch(error) { console.error('Test document failure:',String(error)); throw error; }
   }
@@ -290,17 +248,12 @@ export async function checkCompaction(
   };
   const fixture = async (count: number, size = 1) => test("fixture", { count, size });
   const seed = new Uint8Array(512).fill(42);
-  assert.equal(
-    (
-      await call(base + "/seed", owner, "PUT", seed, {
-        "X-Sharing-SHA256": hash(seed),
-        "X-Sharing-App": "aa".repeat(32),
-        "X-Sharing-Version": '[["0000000000000002",5]]',
-      })
-    ).status,
-    200,
-  );
-  assert.equal((await call(base + "/open", owner, "POST", { seedSha256: hash(seed) })).status, 200);
+  assert.equal((await call(base + "/blob/" + hash(seed), owner, "PUT", seed, {
+    "Content-Length": String(seed.length),
+  })).status, 200);
+  assert.equal((await call(base + "/open", owner, "POST", {
+    seed: hash(seed), app: "aa".repeat(32), version: [["0000000000000002", 5]], attachments: [],
+  })).status, 200);
   room.access = identity("room-member");
   assert.equal((await call(base+"/members",room.access,"POST",{capability:room.capability})).status,200);
   const unlistedBlob = new Uint8Array([23, 24, 25]);
@@ -470,10 +423,10 @@ export async function checkCompaction(
   repeated.ws.send(hello());
   assert.equal((await repeated.next()).code, 1, "A second Hello must be a protocol refusal, never another backfill");
   assert.equal(await repeated.closed, 1008);
-  // The seed upload stored the document's root with its heads. A live document without it
+  // Open stored the document's root with its heads. A live document without it
   // is a fault in the document, never something a member supplies: nothing is installed.
   const [storedRoot] = await sql("SELECT root AS value FROM document_state");
-  assert.equal(storedRoot.value, '[["0000000000000002",5]]', "The seed upload stores the root");
+  assert.equal(storedRoot.value, '[["0000000000000002",5]]', "Open stores the root");
   await sql("UPDATE document_state SET root=NULL");
   const rootless = await compact(3);
   assert.equal(rootless.status, 500, "Compaction without a stored root is an internal failure");
@@ -681,17 +634,12 @@ export async function checkCompaction(
   assert.equal((await call("documents", owner, "POST", { document: idleRoom.room })).status, 204);
   const idleBase = "documents/" + idleRoom.room;
   idleRoom.capability = (await (await call(idleBase+"/sharing",owner,"POST")).json()).capability;
-  assert.equal(
-    (
-      await call(idleBase + "/seed", owner, "PUT", seed, {
-        "X-Sharing-SHA256": hash(seed),
-        "X-Sharing-App": "aa".repeat(32),
-        "X-Sharing-Version": "[]",
-      })
-    ).status,
-    200,
-  );
-  assert.equal((await call(idleBase + "/open", owner, "POST", { seedSha256: hash(seed) })).status, 200);
+  assert.equal((await call(idleBase + "/blob/" + hash(seed), owner, "PUT", seed, {
+    "Content-Length": String(seed.length),
+  })).status, 200);
+  assert.equal((await call(idleBase + "/open", owner, "POST", {
+    seed: hash(seed), app: "aa".repeat(32), version: [], attachments: [],
+  })).status, 200);
   idleRoom.access = identity("idleRoom-member");
   assert.equal((await call(idleBase+"/members",idleRoom.access,"POST",{capability:idleRoom.capability})).status,200);
   const idleStub = namespace.get(namespace.idFromName(documentName(idleRoom.room)));

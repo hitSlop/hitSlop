@@ -25,14 +25,17 @@ The creator stages one immutable local snapshot of the saved document. The trans
 seed is SQLite with the complete embedded app and retained history; attachments are not
 part of it, and neither is artwork. In order, the creator uploads the seed
 and every attachment the seed references, all from that snapshot, so later
-edits, imports or removals in the live document do not change what is sent. Only then does
-it call Open, naming the seed's SHA-256. The relay refuses Open for any other seed, which
-stops an older attempt from publishing a later one, and it does not check attachments: the
-upload order is the whole guarantee. The owner binds to the document only after Open.
+edits, imports or removals in the live document do not change what is sent. The seed and
+attachments use the same content-addressed blob upload route. Only then does it call Open,
+naming the seed's SHA-256, version, app digest and exact attachment hashes. Open verifies
+every named blob's presence, recorded size and available R2 checksum, enforces the attachment
+budget and commits the set atomically. Unused staged blobs enter durable garbage collection.
+The seed is excluded from the attachment budget and cannot change once live. The owner binds
+to the document only after Open.
 
 | Failure | Result |
 |---|---|
-| A seed or attachment upload fails | The document stays uploading and the owner unbound. A retry stages a fresh snapshot, replaces the seed and sends only the attachments the relay does not list. |
+| A seed or attachment upload fails | The document stays uploading and the owner unbound. A retry stages a fresh snapshot and sends only missing blobs. Staged blobs consume no attachment budget; the eventual Open selects the seed and attachments and discards the rest. |
 | The seed exceeds 16 MiB | Refused before the cloud document is created; the local document is retained. |
 | The document grew past 16 MiB after going live | Enabling sync again stages nothing and reconnects; the base limit under [Outgrown](#outgrown) still applies. |
 

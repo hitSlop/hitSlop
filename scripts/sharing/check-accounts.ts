@@ -17,8 +17,8 @@ const repository = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 // qualification in Node: Bun's undici shim intermittently resets proxy requests
 // under sustained socket/storage traffic. Bun remains the verification entry point.
 if (process.versions.bun) {
-  const output = join(repository, ".pop/sharing/check-accounts.mjs");
-  await mkdir(join(repository, ".pop/sharing"), { recursive: true });
+  const output = join(repository, "generated/sharing/check-accounts.mjs");
+  await mkdir(join(repository, "generated/sharing"), { recursive: true });
   const built = await Bun.build({ entrypoints: [fileURLToPath(import.meta.url)], target: "node",
     external: ["miniflare", "typescript"], define: { "import.meta.url": JSON.stringify(import.meta.url) } });
   if (!built.success) throw new Error(built.logs.join("\n"));
@@ -99,9 +99,11 @@ async function json<T>(path: string, token: string, method = "GET", body?: unkno
   assert.equal(response.status, 200, path + " must succeed");
   return await response.json() as T;
 }
-const seedHeaders = (bytes: Uint8Array) => ({
-  "X-Sharing-SHA256": hash(bytes), "X-Sharing-App": app, "X-Sharing-Version": "[]",
+const openSeed = (bytes: Uint8Array, attachments: string[] = []) => ({
+  seed: hash(bytes), version: [], app, attachments,
 });
+const uploadSeed = (base: string, token: string, bytes: Uint8Array) =>
+  call(base + "/blob/" + hash(bytes), token, "PUT", bytes, {"Content-Length": String(bytes.length)});
 try {
   assert.equal((await call("documents", a, "POST", new Uint8Array((1 << 20) + 1))).status, 413,
     "Oversized creation body is a bounded request refusal");
@@ -118,6 +120,42 @@ try {
   const oldLibrary = await call("account/library", a, "GET", undefined, {Upgrade:"websocket", "Sec-WebSocket-Protocol":"pop.library.v1"});
   assert.equal(oldLibrary.status,426);
   assert.equal((await oldLibrary.json() as {code:string}).code,"requires_update");
+  const retryDocument = "00000000-0000-4000-8000-000000000090";
+  const retryBase = "documents/" + retryDocument;
+  assert.equal((await call("documents", a, "POST", {document: retryDocument})).status, 204);
+  const missingSeed = await call(retryBase + "/open", a, "POST", openSeed(seed));
+  assert.equal(missingSeed.status, 409, "Open refuses an absent seed blob");
+  const put = (bytes: Uint8Array, n: number) => call(retryBase + "/blob/" + hash(bytes), a, "PUT", bytes, {
+    "Content-Length": String(bytes.length), "CF-Connecting-IP": "198.18." + Math.floor(n / 250) + "." + (n % 250 + 1),
+  });
+  const abandoned: string[] = [];
+  for (let n = 0; n < 256; n++) {
+    const bytes = Buffer.from("abandoned-upload-" + n);
+    abandoned.push(hash(bytes));
+    assert.equal((await put(bytes, n)).status, 200);
+  }
+  const replacement = Buffer.from("retry's different attachment");
+  const retryUpload = await put(replacement, 256);
+  assert.equal(retryUpload.status, 200,
+    "Staged blobs must not exhaust the retry's attachment budget: " + await retryUpload.text());
+  assert.equal((await put(seed, 257)).status, 200);
+  assert.equal((await call(retryBase + "/open", a, "POST", openSeed(seed, [...abandoned, hash(replacement)]))).status,
+    413, "Only the attachment set named by Open is charged to the budget");
+  assert.equal((await call(retryBase + "/open", a, "POST", openSeed(seed, [hash(replacement)]))).status, 200);
+  const retryBucket = await worker.getR2Bucket("SEEDS", "relay");
+  for (const id of abandoned) assert.equal(await retryBucket.get(retryDocument + "/blobs/" + id), null);
+  assert.deepEqual((await json<any[]>(retryBase + "/blobs", a)).map(item => item.hash), [hash(replacement)]);
+  const largeDocument = "00000000-0000-4000-8000-000000000089", largeBase = "documents/" + largeDocument;
+  assert.equal((await call("documents", a, "POST", {document: largeDocument})).status, 204);
+  const largeSeed = Buffer.alloc(11 << 20, 21);
+  assert.equal((await uploadSeed(largeBase, a, largeSeed)).status, 200, "The seed has its own limit above the attachment limit");
+  assert.equal((await call(largeBase + "/open", a, "POST", openSeed(largeSeed))).status, 200);
+  assert.deepEqual(await json(largeBase + "/blobs", a), [], "The seed is outside the attachment inventory");
+  const tooLargeAttachment = Buffer.alloc(11 << 20, 22);
+  assert.equal((await uploadSeed(largeBase, a, tooLargeAttachment)).status, 413, "Live attachments keep the per-file budget");
+  assert.equal((await uploadSeed(largeBase, a, Buffer.alloc((16 << 20) + 1))).status, 400, "Staging keeps the seed size limit");
+  console.log("Passed: Open refuses missing seed blobs; a changed upload set retries without staging quota and removes unused blobs.");
+  console.log("Passed: Open budgets only named attachments; the seed uses its own size limit and stays outside the live attachment inventory.");
   await checkCompaction(worker, call, uid("compaction-owner"), uid);
   // The join page, Apple callback, association file and icon deploy as static assets from
   // apps/sharing/public, with `_headers` and `_redirects`; this reads the files that ship.
@@ -183,10 +221,10 @@ try {
   }
   assert.equal((await call("documents",b,"POST",{document})).status,403,"UUID cannot be claimed by another account");
   const base="documents/"+document;
-  assert.equal((await call(base+"/seed",a,"PUT",seed,seedHeaders(seed))).status,200);
+  assert.equal((await uploadSeed(base,a,seed)).status,200);
   assert.equal((await call(base+"/blobs",a)).status,200,"The creator lists uploaded blobs before Open");
   assert.equal((await call(base+"/blobs",b)).status,403,"Others cannot");
-  assert.equal((await call(base+"/open",a,"POST",{seedSha256:hash(seed)})).status,200);
+  assert.equal((await call(base+"/open",a,"POST",openSeed(seed))).status,200);
   // The live account feed is isolated by verified identity and survives reconnects.
   const library = async (token:string) => {
     const reply = await call("account/library", token, "GET", undefined, {Upgrade:"websocket"});
@@ -211,38 +249,19 @@ try {
   assert.deepEqual((await outsiderLibrary.next()).entries,[],"An unrelated account sees no private entries");
   const bootstrapAccounts=await worker.getDurableObjectNamespace("ACCOUNTS");
   const bootstrapAccount=bootstrapAccounts.get(bootstrapAccounts.idFromName(hash(Buffer.from("creator-a"))));
-  await bootstrapAccount.fetch("https://test/__test/fail-descriptions",{method:"POST",body:JSON.stringify({enabled:true})});
+  await bootstrapAccount.fetch("https://test/__test/fail-deliveries",{method:"POST",body:JSON.stringify({enabled:true})});
   await json(base,a,"PATCH",{title:"Live title",templateId:"fixture"});
   await libraryDocument.fetch("https://test/__test/alarm");
-  const owed=await (await libraryDocument.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"SELECT library_pending AS value FROM document_state"})})).json() as {value:number}[];
-  assert.equal(owed[0]!.value,1,"Failed publication stays durable without another edit");
-  await bootstrapAccount.fetch("https://test/__test/fail-descriptions",{method:"POST",body:JSON.stringify({enabled:false})});
+  const owed=await (await libraryDocument.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"SELECT count(*) AS value FROM library_outbox"})})).json() as {value:number}[];
+  assert.ok(owed[0]!.value>0,"Failed publication stays durable without another edit");
+  await bootstrapAccount.fetch("https://test/__test/fail-deliveries",{method:"POST",body:JSON.stringify({enabled:false})});
   await libraryDocument.fetch("https://test/__test/alarm");
   let changed=await ownerLibrary.next();
   while(changed.type === "upsert" && changed.entry.title !== "Live title")changed=await ownerLibrary.next();
   assert.equal(changed.type,"upsert"); assert.equal(changed.entry.title,"Live title");
   ownerLibrary.socket.close(); outsiderLibrary.socket.close();
-  await bootstrapAccount.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"DELETE FROM projections"})});
-  await libraryDocument.fetch("https://test/__test/hold-library",{method:"POST"});
-  const stalledSnapshot=call("account/library",secondSession,"GET",undefined,{Upgrade:"websocket"});
-  for(let n=0;n<500;n++) {
-    if(await (await libraryDocument.fetch("https://test/__test/library-waiting")).json()) break;
-    assert(n<499,"Bootstrap reached the stalled document");
-    await new Promise(resolve=>setTimeout(resolve,10));
-  }
-  const creationDuringBootstrap=await Promise.race([
-    call("documents",a,"POST",{document:"00000000-0000-4000-8000-000000000089"}).then(reply=>reply.status),
-    new Promise(resolve=>setTimeout(()=>resolve("blocked"),1500)),
-  ]);
-  assert.equal(creationDuringBootstrap,204,"Bootstrap lookup does not hold the account operations lock");
-  assert.equal((await stalledSnapshot).status,503,"A stalled bootstrap has a bounded failure");
-  await libraryDocument.fetch("https://test/__test/release-library",{method:"POST"});
-  await libraryDocument.fetch("https://test/__test/library-unavailable",{method:"POST",body:JSON.stringify({enabled:true})});
-  const unavailableSnapshot=await call("account/library",secondSession,"GET",undefined,{Upgrade:"websocket"});
-  assert.equal(unavailableSnapshot.status,503,"An unresolved lookup must not produce authoritative absence");
-  await libraryDocument.fetch("https://test/__test/library-unavailable",{method:"POST",body:JSON.stringify({enabled:false})});
   const reconnected=await library(secondSession);
-  assert.equal((await reconnected.next()).entries[0].title,"Live title", "Existing registrations backfill without a reset or Firestore");
+  assert.equal((await reconnected.next()).entries[0].title,"Live title","Reconnect reads the durable account projection");
   reconnected.socket.close();
   assert.equal((await call(base+"/seed",b)).status,403,"private bytes require owner identity");
   assert.equal((await call(base+"/sharing","not-a-valid-identity")).status,401,"invalid identity is retryable authentication, not lost membership");
@@ -257,7 +276,7 @@ try {
   const enabled=await json<AccessState>(base+"/sharing",a,"POST");assert(enabled.capability);assert(enabled.sharing);
   // Only the authorized access reply carries the invitation secret; document metadata never does,
   // even for the owner while sharing is on.
-  for (const info of [await json<RoomInfo>(base,a), await json<RoomInfo>(base+"/open",a,"POST",{seedSha256:hash(seed)})]) {
+  for (const info of [await json<RoomInfo>(base,a), await json<RoomInfo>(base+"/open",a,"POST",openSeed(seed))]) {
     assert.equal(info.document,document);
     assert.equal(info.phase,"live");
     assert.equal(typeof info.compact,"boolean","Every reply states whether compaction is due");
@@ -271,6 +290,8 @@ try {
   assert.equal((await call(base+"/seed",invitedIdentity)).status,200,"Signed-in identities may join");
   assert.equal((await call(base+"/seed",enabled.capability!)).status,401,"Invitation secrets cannot authorize document reads");
   const member=await json<AccessState>(base+"/members",b,"POST",{capability:enabled.capability});assert.equal(member.role,"editor");
+  assert.equal((member as AccessState & {title:string}).title,"Live title","Join carries metadata without a second request");
+  assert.equal((await call(base+"/metadata",b)).status,404,"The metadata route is removed");
   assert.equal((await call(base+"/seed",b)).status,200);
   await libraryDocument.fetch("https://test/__test/alarm");
   const memberLibrary=await library(b);
@@ -297,9 +318,9 @@ try {
   const memberEnded=new Promise<void>(resolve=>memberSocket.addEventListener("close",()=>resolve()));
   const documents = await worker.getDurableObjectNamespace("DOCUMENTS");
   const documentStub = documents.get(documents.idFromName(documentName(document)));
-  const revoked=await json<AccessState>(base+"/sharing",a,"DELETE");assert(!revoked.sharing);assert(revoked.generation>enabled.generation);
+  const revoked=await json<AccessState>(base+"/sharing",a,"DELETE");assert(!revoked.sharing);assert.ok(!("generation" in revoked));
   assert.equal((await call(base+"/seed",enabled.capability!)).status,401);assert.equal((await call(base+"/seed",invitedIdentity)).status,403);assert.equal((await call(base+"/seed",b)).status,403);
-  for (const [suffix,method] of [["","GET"],["/sharing","GET"],["/metadata","GET"],["/seed","GET"],["/blobs","GET"],["/blob/"+"b".repeat(64),"GET"],["/blob/"+"b".repeat(64),"PUT"],["/compact","POST"],["/sync","GET"]]) {
+  for (const [suffix,method] of [["","GET"],["/sharing","GET"],["/seed","GET"],["/blobs","GET"],["/blob/"+"b".repeat(64),"GET"],["/blob/"+"b".repeat(64),"PUT"],["/compact","POST"],["/sync","GET"]]) {
     const reply=await call(base+suffix,b,method);
     assert.equal(reply.status,403,"Revoked membership on "+suffix);
     assert.deepEqual(await reply.json(),{code:"denied",message:"Access revoked"});
@@ -330,240 +351,144 @@ try {
   const stubSQL=async<T>(stub:typeof documentStub,query:string,args:unknown[]=[])=>
     await (await stub.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:query,args})})).json() as T[];
   const accountNamespace=await worker.getDurableObjectNamespace("ACCOUNTS");
-  const joiner=(name:string)=>{
-    const account=accountNamespace.get(accountNamespace.idFromName(hash(Buffer.from(name))));
-    const hook=(path:string,body?:unknown)=>account.fetch("https://test/__test/"+path,{method:"POST",...(body===undefined?{}:{body:JSON.stringify(body)})});
-    const count=async(kind:string)=>Number(await (await account.fetch("https://test/__test/held-"+kind)).text());
-    // A registration held before the account handles it, or stored with its reply held.
-    const held=async()=>await count("registrations")>0,stored=async()=>await count("registration-responses")>0;
-    return {name,token:uid(name),account,hook,held,stored};
+  const accountFor=(name:string)=>accountNamespace.get(accountNamespace.idFromName(hash(Buffer.from(name))));
+  const hook=(account:typeof documentStub,path:string,body:unknown={})=>account.fetch("https://test/__test/"+path,{method:"POST",body:JSON.stringify(body)});
+  const flush=(stub:typeof documentStub)=>stub.fetch("https://test/__test/alarm");
+  const snapshot=async(token:string)=>{
+    const feed=await library(token);const entries:any[]=[];
+    for(;;){const page=await feed.next();assert.equal(page.type,"snapshot");entries.push(...page.entries);if(page.last)break;}
+    feed.socket.close();return entries;
   };
-  const registered = async(token:string,id:string) => {
-    const name = JSON.parse(Buffer.from(token.split(".")[1]!, "base64url").toString()).sub;
-    const account = accountNamespace.get(accountNamespace.idFromName(hash(Buffer.from(name))));
-    return (await stubSQL<{n:number}>(account,"SELECT count(*) AS n FROM documents WHERE document=?",[id]))[0]!.n > 0;
-  };
-  const queuedAt=async(stub:typeof documentStub,name:string)=>(await stubSQL<{n:number}>(stub,"SELECT count(*) AS n FROM pending_registry WHERE uid=?",[name]))[0]!.n>0;
-  assert.equal(await readAttachment(b),200,"A member reads attachments");
-  // Leave revokes before it releases the account's hint. Here the account commits the release
-  // but its reply is lost: leaving still ends access at once, and the release stays queued.
-  const leaver=joiner("creator-b");
-  await leaver.hook("release-failure",{enabled:true,committed:true});
-  assert.equal((await call(base+"/members/me",b,"DELETE")).status,200,"Leave succeeds whatever the account replies");
-  assert.equal((await call(base+"/seed",b)).status,403,"leave removes identity membership without deleting canonical bytes");
-  let removal = await memberLibrary.next();
-  while(removal.type !== "remove")removal = await memberLibrary.next();
-  assert.equal(removal.document, document, "Leave removes the entry live");
-  memberLibrary.socket.close();
-
-  assert.equal(await readAttachment(b),403,"Leaving ends that member's attachment access");
-  assert.equal(await readAttachment(staying),200,"Another member keeps attachment access");
-  assert.ok(!await registered(b,document)&&await queuedAt(documentStub,leaver.name),"The release without a reply stays queued");
-  await leaver.hook("release-failure",{enabled:false});
-  assert.equal((await documentStub.fetch("https://test/__test/alarm")).status,200);
-  assert.ok(!await queuedAt(documentStub,leaver.name),"Cleanup completes the queued release");
-  // Membership on one document: joins, leaves and registry cleanup run one at a time. A join
-  // registers with its account before it inserts the member, so a member always has its
-  // account hint; a hint without a member is a stale entry that a retried cleanup releases.
-  const sleep=(ms:number)=>new Promise(resolve=>setTimeout(resolve,ms));
+  const listed=async(token:string,id:string)=>(await snapshot(token)).some(e=>e.document===id);
   const until=async(check:()=>Promise<boolean>,message:string)=>{
-    for(let n=0;n<500;n++) { if(await check()) return; await sleep(10); }
+    for(let n=0;n<500;n++){if(await check())return;await new Promise(resolve=>setTimeout(resolve,10));}
     assert.fail(message);
   };
   const liveDocument=async(id:string)=>{
     const base="documents/"+id;
     assert.equal((await call("documents",a,"POST",{document:id})).status,204);
-    assert.equal((await call(base+"/seed",a,"PUT",seed,seedHeaders(seed))).status,200);
-      assert.equal((await call(base+"/open",a,"POST",{seedSha256:hash(seed)})).status,200);
-    return {id,base,stub:documents.get(documents.idFromName(documentName(id))),invite:await json<AccessState>(base+"/sharing",a,"POST")};
+    assert.equal((await uploadSeed(base,a,seed)).status,200);
+    assert.equal((await call(base+"/open",a,"POST",openSeed(seed))).status,200);
+    const stub=documents.get(documents.idFromName(documentName(id)));
+    await hook(stub,"hold-alarms",{enabled:true});
+    return {id,base,stub,invite:await json<AccessState>(base+"/sharing",a,"POST")};
   };
-  const idle="00000000-0000-4000-8000-000000000095";
-  const {base:idleBase,stub:idleStub,invite:idleInvite}=await liveDocument(idle);
-  const joinIdle=(token:string)=>call(idleBase+"/members",token,"POST",{capability:idleInvite.capability});
-  const cleanup=async()=>assert.equal((await idleStub.fetch("https://test/__test/alarm")).status,200);
-  const queued=(name:string)=>queuedAt(idleStub,name);
-  const memberRows=async(name:string)=>(await stubSQL<{n:number}>(idleStub,"SELECT count(*) AS n FROM members WHERE uid=?",[name]))[0]!.n;
-  // A non-member's leave makes no account call (its account refuses releases) and does not
-  // disturb a join in progress.
-  const waiter=joiner("idle-join"),stranger=joiner("stranger");
-  await stranger.hook("release-failure",{enabled:true});
-  await waiter.hook("hold-registration");
-  const waitingJoin=joinIdle(waiter.token);
-  await until(waiter.held,"The join awaits its account registration");
-  const strangerLeave=call(idleBase+"/members/me",stranger.token,"DELETE");
-  await waiter.hook("release-registration");
-  assert.equal((await strangerLeave).status,200,"A non-member's leave succeeds without an account call");
-  assert.equal((await waitingJoin).status,200,"A non-member's leave does not disturb a concurrent join");
-  assert.equal((await call(idleBase+"/seed",waiter.token)).status,200);
-  // The account stores a registration but its reply fails: the join fails closed, and cleanup
-  // releases the stale hint, keeping it queued while the account refuses the release.
-  const lost=joiner("lost-reply");
-  await lost.hook("release-failure",{enabled:true});
-  await lost.hook("fail-registration-response");
-  assert.equal((await joinIdle(lost.token)).status,409);
-  assert.equal((await call(idleBase+"/seed",lost.token)).status,403,"A failed registration reply authorizes nothing");
-  assert.ok(await registered(lost.token,idle)&&await queued(lost.name),"The stored hint is queued for release");
-  await cleanup();
-  assert.ok(await registered(lost.token,idle)&&await queued(lost.name),"A refused release stays queued");
-  await lost.hook("release-failure",{enabled:false});
-  await cleanup();
-  assert.ok(!await registered(lost.token,idle)&&!await queued(lost.name),"A retried cleanup releases the stale hint");
-  // No reply in time is an unknown outcome: the join fails closed, and its queued release
-  // (whose alarm may already have run it) removes what the account stored.
-  const slow=joiner("slow-account");
-  await slow.hook("hold-registration-response");
-  assert.equal((await joinIdle(slow.token)).status,503,"A registration without a timely reply fails closed");
-  assert.ok(await slow.stored()&&await memberRows(slow.name)===0,"The account stored it; the document did not admit it");
-  await slow.hook("finish-registration-response");
-  await cleanup();
-  assert.ok(!await registered(slow.token,idle)&&!await queued(slow.name),"Cleanup releases the hint of a timed-out registration");
-  // A reset after the account stored a registration, before the join recorded anything more:
-  // the release was queued with its alarm before the call, so cleanup still finds the hint.
-  const resetDocument=await liveDocument("00000000-0000-4000-8000-000000000092");
-  const reset=joiner("reset-join");
-  await reset.hook("hold-registration-response");
-  const resetJoin=call(resetDocument.base+"/members",reset.token,"POST",{capability:resetDocument.invite.capability});
-  await until(reset.stored,"The account stores the registration");
-  try { await resetDocument.stub.fetch("https://test/__test/reset"); } catch { /* The reset fails its own request. */ }
-  assert.notEqual((await resetJoin).status,200,"A join interrupted by a reset fails");
-  assert.equal((await call(resetDocument.base+"/seed",reset.token)).status,403,"A join interrupted by a reset admits no one");
-  await reset.hook("finish-registration-response");
-  const restarted=documents.get(documents.idFromName(documentName(resetDocument.id))); // A reset breaks old stubs.
-  assert.ok(await registered(reset.token,resetDocument.id),"The account kept the registration");
-  assert.ok(await queuedAt(restarted,reset.name),"Its release outlives the reset");
-  assert.notEqual(await (await restarted.fetch("https://test/__test/alarm-time")).json(),null,
-    "Its cleanup alarm outlives the reset");
-  assert.equal((await restarted.fetch("https://test/__test/alarm")).status,200);
-  assert.ok(!await registered(reset.token,resetDocument.id)&&!await queuedAt(restarted,reset.name),
-    "Cleanup releases the hint the interrupted join left");
-  // A delayed cleanup of a failed attempt never removes the registration of the rejoin that
-  // succeeds meanwhile. The rejoin's registration is stored, its reply held; the cleanup has
-  // read the queued row and waits for the rejoin, then finds a member.
-  const rejoin=joiner("rejoin");
-  await rejoin.hook("fail-registration-response");
-  assert.equal((await joinIdle(rejoin.token)).status,409);
-  assert.ok(await queued(rejoin.name));
-  await rejoin.hook("hold-registration-response");
-  const rejoinRetry=joinIdle(rejoin.token);
-  await until(rejoin.stored,"The rejoin's registration is stored");
-  const delayed=cleanup();
-  await stubSQL(idleStub,"SELECT 1"); // Answered once the cleanup has read the row and waits.
-  await rejoin.hook("finish-registration-response");
-  assert.equal((await rejoinRetry).status,200);
-  await delayed;
-  assert.ok(await registered(rejoin.token,idle),"A successful rejoin keeps its registration through a delayed cleanup");
-  assert.equal((await call(idleBase+"/seed",rejoin.token)).status,200,"The rejoined member still works");
-  assert.ok(!await queued(rejoin.name));
-  // Concurrent joins by one identity run in turn: the first fails, the second succeeds, and
-  // cleanup leaves one member with its registration.
-  const twice=joiner("same-identity");
-  await twice.hook("hold-registration");
-  await twice.hook("fail-registration-response");
-  const firstJoin=joinIdle(twice.token);
-  await until(twice.held,"The first join awaits its account registration");
-  const secondJoin=joinIdle(twice.token);
-  await sleep(50); // Lets the second join reach the document.
-  await twice.hook("release-registration");
-  assert.equal((await firstJoin).status,409);
-  assert.equal((await secondJoin).status,200);
-  await cleanup();
-  assert.equal(await memberRows(twice.name),1);
-  assert.ok(await registered(twice.token,idle),"The failed attempt's cleanup keeps the successful join's registration");
-  // Account deletion while that account's join is pending. Deletion holds the account's lock
-  // while its leave waits for the document's; the join's registration needs neither, so the
-  // fence refuses it and nothing deadlocks. The leave then removes the existing member.
-  const fenced=(account:typeof documentStub)=>until(async()=>
-    (await stubSQL<{n:number}>(account,"SELECT count(*) AS n FROM deleting"))[0]!.n>0,"Account deletion is fenced");
-  const deleting=joiner("deleting-pending-join");
-  assert.equal((await joinIdle(deleting.token)).status,200);
-  await deleting.hook("hold-registration");
-  const deletingJoin=joinIdle(deleting.token);
-  await until(deleting.held,"The rejoin awaits its account registration");
-  const accountDeletion=call("account",deleting.token,"DELETE");
-  await fenced(deleting.account);
-  await sleep(50); // Lets deletion's leave reach the document and wait for the join.
-  await deleting.hook("release-registration");
-  assert.equal((await deletingJoin).status,409,"The fenced account refuses the pending registration");
-  assert.equal((await accountDeletion).status,200,"Account deletion completes during a pending join");
-  assert.equal(await memberRows(deleting.name),0,"A deleted account keeps no membership");
-  assert.equal((await call(idleBase+"/seed",deleting.token)).status,403);
-  // The account stored a join's registration just before its deletion: deletion's leave waits
-  // for that join to insert the member, then removes it.
-  const stored=joiner("deleting-stored-join");
-  await stored.hook("hold-registration-response");
-  const storedJoin=joinIdle(stored.token);
-  await until(stored.stored,"The account stores the registration");
-  const storedDeletion=call("account",stored.token,"DELETE");
-  await fenced(stored.account);
-  await sleep(50); // Lets deletion's leave reach the document and wait for the join.
-  await stored.hook("finish-registration-response");
-  assert.equal((await storedJoin).status,200,"The join completes before deletion's leave");
-  assert.equal((await storedDeletion).status,200);
-  assert.equal(await memberRows(stored.name),0,"Deletion's leave removes a member whose join was pending");
-  // Revocation does not wait for a pending join; the join fails closed and cleanup releases
-  // the hint it stored.
-  const revokedJoiner=joiner("idle-refused");
-  await revokedJoiner.hook("hold-registration");
-  const revokedJoin=joinIdle(revokedJoiner.token);
-  await until(revokedJoiner.held,"The join awaits its account registration");
-  assert.equal((await call(idleBase+"/sharing",a,"DELETE")).status,200,"Revocation does not wait for a pending join");
-  await revokedJoiner.hook("release-registration");
-  assert.equal((await revokedJoin).status,403);
-  assert.equal(await memberRows(revokedJoiner.name),0,"A join revoked during its registration is not a member");
-  await cleanup();
-  assert.ok(!await registered(revokedJoiner.token,idle),"Cleanup releases the revoked join's hint");
-  // Deletion likewise ends a document at once. The pending join fails closed; deletion's
-  // registry cleanup waits for it, and the next cleanup releases its hint.
-  const stopping=await liveDocument("00000000-0000-4000-8000-000000000094");
-  const stoppingMember=joiner("stopping-member"),stopper=joiner("stopping-join");
-  assert.equal((await call(stopping.base+"/members",stoppingMember.token,"POST",{capability:stopping.invite.capability})).status,200);
-  await stopper.hook("hold-registration");
-  const stoppingJoin=call(stopping.base+"/members",stopper.token,"POST",{capability:stopping.invite.capability});
-  await until(stopper.held,"The join awaits its account registration");
-  const stoppingDeletion=call(stopping.base,a,"DELETE");
-  await until(async()=>JSON.stringify(await stubSQL(stopping.stub,"SELECT phase AS value FROM document_state")).includes("ended"),"Deletion ends the document");
-  await stopper.hook("release-registration");
-  assert.equal((await stoppingJoin).status,403,"A join pending at deletion fails closed");
-  assert.equal((await stoppingDeletion).status,200);
-  assert.equal((await stopping.stub.fetch("https://test/__test/alarm")).status,200);
-  for (const token of [stoppingMember.token,stopper.token])
-    assert.ok(!await registered(token,"00000000-0000-4000-8000-000000000094"),"Deletion releases every member's and pending join's hint");
-  // Open names the seed it makes live: an older bootstrap attempt cannot publish the seed
-  // a later attempt uploaded. Nothing else fences it; attachments are the creator's to upload first.
+  const leaver=accountFor("creator-b");
+  assert.equal(await readAttachment(b),200);
+  await hook(leaver,"fail-deliveries",{enabled:true});
+  assert.equal((await call(base+"/members/me",b,"DELETE")).status,200,"Leave is independent of account delivery");
+  assert.equal(await readAttachment(b),403);
+  assert.equal(await readAttachment(staying),200);
+  await flush(documentStub);
+  await hook(leaver,"fail-deliveries",{enabled:false});
+  await flush(documentStub);
+  let removal=await memberLibrary.next();while(removal.type!=="remove")removal=await memberLibrary.next();
+  assert.equal(removal.document,document);memberLibrary.socket.close();
+  assert.ok(!await listed(b,document),"Leave removes the member's library entry");
+
+  const idle=await liveDocument("00000000-0000-4000-8000-000000000095");
+  const who=uid("outbox-member"),account=accountFor("outbox-member");
+  const joinIdle=()=>call(idle.base+"/members",who,"POST",{capability:idle.invite.capability});
+  const pending=async()=>await stubSQL<any>(idle.stub,"SELECT payload FROM library_outbox WHERE uid=?",["outbox-member"]);
+  const desired=async()=>JSON.parse((await pending())[0]!.payload);
+  const apply=async(payload:unknown)=>{
+    const reply=await account.fetch("https://test/internal/apply-entry",{method:"POST",body:JSON.stringify(payload)});
+    assert.equal(reply.status,200);return await reply.json();
+  };
+  await hook(account,"fail-deliveries",{enabled:true});
+  assert.equal((await joinIdle()).status,200,"Join succeeds while the account is unavailable");
+  const firstEntry=await desired();
+  assert.equal((await call(idle.base+"/seed",who)).status,200,"Membership is already authoritative");
+  await flush(idle.stub);
+  assert.ok(!await listed(who,idle.id));
+  await hook(account,"fail-deliveries",{enabled:false});
+  await flush(idle.stub);
+  assert.ok(await listed(who,idle.id),"Retry adds the member's library entry");
+
+  assert.equal((await call(idle.base+"/members/me",who,"DELETE")).status,200);
+  const removed=await desired();
+  await flush(idle.stub);
+  assert.ok(!await listed(who,idle.id));
+  await apply(firstEntry);await apply(firstEntry);
+  assert.ok(!await listed(who,idle.id),"Late or duplicated upserts cannot resurrect removal");
+  assert.equal((await joinIdle()).status,200);
+  const rejoined=await desired();
+  await flush(idle.stub);
+  await apply(removed);await apply(removed);
+  assert.ok(await listed(who,idle.id),"A late leave delivery must not drop the rejoin's library entry");
+  assert.ok(rejoined.revision>removed.revision);
+
+  // A held old delivery must not acknowledge a newer replacement in the outbox.
+  await hook(account,"hold-delivery");
+  assert.equal((await call(idle.base+"/members/me",who,"DELETE")).status,200);
+  const delivering=flush(idle.stub);
+  await until(async()=>!!await (await account.fetch("https://test/__test/delivery-waiting")).json(),"Delivery is held");
+  assert.equal((await joinIdle()).status,200,"A pending delivery never blocks a rejoin");
+  await hook(account,"release-delivery");await delivering;
+  await flush(idle.stub);
+  assert.ok(await listed(who,idle.id),"The replacement upsert survives the old acknowledgment");
+
+  // Account deletion before first delivery fences and eventually leaves the authoritative member.
+  const lateAccount=accountFor("late-deleted"),lateToken=uid("late-deleted");
+  await hook(lateAccount,"fail-deliveries",{enabled:true});
+  assert.equal((await call(idle.base+"/members",lateToken,"POST",{capability:idle.invite.capability})).status,200);
+  assert.equal((await call("account",lateToken,"DELETE")).status,200);
+  await hook(lateAccount,"fail-deliveries",{enabled:false});
+  await flush(idle.stub);
+  assert.equal((await call(idle.base+"/seed",lateToken)).status,403,"Late entry delivery cleans up a deleted account's membership");
+
+  assert.equal((await call(idle.base+"/sharing",a,"DELETE")).status,200);
+  await flush(idle.stub);
+  assert.ok(!await listed(who,idle.id),"Stop sharing removes every member's library entry");
+  await apply(rejoined);
+  assert.ok(!await listed(who,idle.id),"A stopped invitation cannot be resurrected by old delivery");
+  assert.equal((await call(idle.base+"/seed",a)).status,200,"The owner keeps access");
+
+  const deleted=await liveDocument("00000000-0000-4000-8000-000000000094");
+  await call(deleted.base+"/members",who,"POST",{capability:deleted.invite.capability});
+  await flush(deleted.stub);
+  await hook(account,"fail-deliveries",{enabled:true});
+  assert.equal((await call(deleted.base,a,"DELETE")).status,200,"Delete does not depend on account delivery");
+  await hook(account,"fail-deliveries",{enabled:false});
+  await flush(deleted.stub);
+  assert.ok(!await listed(who,deleted.id),"Deletion removes a member entry");
+  assert.equal((await call("documents",a,"POST",{document:deleted.id})).status,410);
+
+  // Open chooses an immutable staged seed; a second attempt cannot replace a live seed.
   const competing="00000000-0000-4000-8000-000000000093",competingBase="documents/"+competing;
   const laterSeed=Buffer.alloc(512,43);
   await call("documents",a,"POST",{document:competing});
-  await call(competingBase+"/seed",a,"PUT",seed,seedHeaders(seed));
-  await call(competingBase+"/seed",a,"PUT",laterSeed,seedHeaders(laterSeed));
+  await uploadSeed(competingBase,a,seed);
+  await uploadSeed(competingBase,a,laterSeed);
   assert.equal((await call(competingBase+"/open",a,"POST")).status,400,"Open requires the seed it makes live");
-  assert.equal((await call(competingBase+"/open",a,"POST",{seedSha256:hash(seed)})).status,409,
-    "An older bootstrap cannot publish a newer seed");
+  assert.equal((await call(competingBase+"/open",a,"POST",openSeed(seed, ["f".repeat(64)]))).status,409,
+    "Open refuses a missing attachment");
   assert.equal((await json<RoomInfo>(competingBase,a)).phase,"uploading");
-  assert.equal((await call(competingBase+"/open",a,"POST",{seedSha256:hash(laterSeed)})).status,200);
-  assert.equal((await call(competingBase+"/open",a,"POST",{seedSha256:hash(seed)})).status,409,
+  const laterKey = competing + "/blobs/" + hash(laterSeed);
+  await retryBucket.delete(laterKey);
+  assert.equal((await call(competingBase+"/open",a,"POST",openSeed(laterSeed))).status,409,"Open checks R2 presence");
+  await retryBucket.put(laterKey, new Uint8Array(seed), {sha256: hash(seed)});
+  assert.equal((await call(competingBase+"/open",a,"POST",openSeed(laterSeed))).status,409,"Open checks available R2 checksums even at the same size");
+  await retryBucket.put(laterKey, new Uint8Array(100));
+  assert.equal((await call(competingBase+"/open",a,"POST",openSeed(laterSeed))).status,409,"Open checks the recorded size");
+  await retryBucket.put(laterKey, new Uint8Array(laterSeed), {sha256: hash(laterSeed)});
+  assert.equal((await call(competingBase+"/open",a,"POST",openSeed(laterSeed))).status,200);
+  assert.equal((await uploadSeed(competingBase,a,laterSeed)).status,200,"A live seed retry is harmless");
+  assert.equal((await call(competingBase+"/seed",a,"PUT",seed)).status,404,"No dedicated seed upload route");
+  assert.deepEqual(Buffer.from(await (await call(competingBase+"/seed",a)).arrayBuffer()),laterSeed);
+  assert.equal(await retryBucket.get(competing + "/blobs/" + hash(seed)),null);
+  assert.equal((await call(competingBase+"/open",a,"POST",openSeed(seed))).status,409,
     "A live document's Open still names only its own seed");
-  // Two new identities race for the last of 64 member places. Members go straight into the
-  // document: 63 real joins would only repeat the join path. The first join's registration
-  // is held, so it has counted 63 members; the second arrives meanwhile.
   const crowded="00000000-0000-4000-8000-000000000096",crowdedDocument=await liveDocument(crowded);
   const crowdedJoin=(token:string)=>call(crowdedDocument.base+"/members",token,"POST",{capability:crowdedDocument.invite.capability});
-  const crowdedMembers=async()=>(await stubSQL<{n:number}>(crowdedDocument.stub,"SELECT count(*) AS n FROM members"))[0]!.n;
-  await stubSQL(crowdedDocument.stub,"WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<63) INSERT INTO members SELECT 'filler-'||i,? FROM n",[crowdedDocument.invite.generation]);
-  const held=joiner("crowd-held"),racing=joiner("crowd-racing");
-  await held.hook("hold-registration");
-  const heldJoin=crowdedJoin(held.token);
-  await until(held.held,"The first join awaits its account registration after counting 63 members");
-  const racingJoin=crowdedJoin(racing.token);
-  await sleep(50); // Lets the second join reach the document.
-  await held.hook("release-registration");
-  const statuses=[(await heldJoin).status,(await racingJoin).status];
-  assert.deepEqual([...statuses].sort((x,y)=>x-y),[200,429],"Exactly one racing join takes the last place");
-  assert.equal(await crowdedMembers(),64,"The member limit holds under concurrent joins");
-  const [admitted,refused]=statuses[0]===200?[held,racing]:[racing,held];
-  assert.ok(await registered(admitted.token,crowded),"The admitted member's account lists the document");
-  assert.ok(!await registered(refused.token,crowded),"A join refused for the limit leaves no account registration");
-  assert.equal((await crowdedJoin(admitted.token)).status,200,"A member joining again at the limit keeps its place");
-  assert.ok(await crowdedMembers()===64&&await registered(admitted.token,crowded),"A rejoining member counts once and keeps its registration");
+  await stubSQL(crowdedDocument.stub,"WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<63) INSERT INTO members SELECT 'filler-'||i FROM n");
+  const racers=[uid("crowd-one"),uid("crowd-two")];
+  const statuses=await Promise.all(racers.map(async token=>(await crowdedJoin(token)).status));
+  assert.deepEqual([...statuses].sort((a,b)=>a-b),[200,429],"Exactly one racing join takes the last place");
+  const admitted=racers[statuses.indexOf(200)]!,refused=racers[statuses.indexOf(429)]!;
+  assert.equal((await crowdedJoin(admitted)).status,200,"Rejoining at the cap counts once");
+  await flush(crowdedDocument.stub);
+  assert.ok(await listed(admitted,crowded));assert.ok(!await listed(refused,crowded));
   assert.equal((await call(base+"/seed",a)).status,200);
   assert.equal((await call(base,a,"PATCH",{title:"Repairable private document",templateId:"fixture"})).status,200);
   // A metadata write still reading its body when the owner deletes the document is refused
@@ -591,13 +516,25 @@ try {
   assert.equal((await late.json() as {code:string}).code,"sharing_ended");
   const lateMeta=await (await lateStub.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"SELECT title,template_id FROM document_state WHERE title IS NOT NULL OR template_id IS NOT NULL"})})).json();
   assert.deepEqual(lateMeta,[],"A deleted document keeps no metadata written after deletion");
-  assert.equal((await call("documents/"+lateDocument+"/metadata",a)).status,410);
+  assert.equal((await call("documents/"+lateDocument+"/metadata",a)).status,404);
   const repairDocument="00000000-0000-4000-8000-000000000098";
   const repairBase="documents/"+repairDocument;
   assert.equal((await call("documents",a,"POST",{document:repairDocument})).status,204);
-  assert.equal((await call(repairBase+"/seed",a,"PUT",seed,seedHeaders(seed))).status,200);
-  assert.equal((await call(repairBase+"/open",a,"POST",{seedSha256:hash(seed)})).status,200);
+  const repairStub=documents.get(documents.idFromName(repairDocument));
+  await hook(repairStub,"hold-alarms",{enabled:true});
+  await hook(bootstrapAccount,"fail-deliveries",{enabled:true});
+  assert.equal((await uploadSeed(repairBase,a,seed)).status,200);
+  assert.equal((await call(repairBase+"/open",a,"POST",openSeed(seed))).status,200);
+  assert.ok((await stubSQL<any>(repairStub,"SELECT count(*) AS n FROM library_outbox"))[0].n>0,"An undelivered entry is durable before restart");
   await worker.dispose();worker=runtime();
+  const restartedDocuments=await worker.getDurableObjectNamespace("DOCUMENTS");
+  for(const id of [document,repairDocument]) {
+    const stub=restartedDocuments.get(restartedDocuments.idFromName(id));await flush(stub);
+  }
+  const restartedAccounts=await worker.getDurableObjectNamespace("ACCOUNTS");
+  const restartedMember=restartedAccounts.get(restartedAccounts.idFromName(hash(Buffer.from("outbox-member"))));
+  assert.equal((await restartedMember.fetch("https://test/internal/apply-entry",{method:"POST",body:JSON.stringify(firstEntry)})).status,200);
+  assert.ok(!await listed(who,idle.id),"Removal high-water marks survive an account restart");
   const restored = await library(secondSession);
   const restoredEntries:any[] = [];
   for (;;) {
@@ -609,8 +546,7 @@ try {
   restored.socket.close();
   assert(restoredEntries.some(row=>row.document===document&&row.role==="owner"));
   assert(restoredEntries.some(row=>row.document===repairDocument&&row.role==="owner"),"Acknowledged uploads remain discoverable through the live library after restart");
-  const metadata=await (await call(base+"/metadata",secondSession)).json();
-  assert.deepEqual(metadata,{title:"Repairable private document",templateId:"fixture"});
+
   const departed = await library(b);
   assert.deepEqual((await departed.next()).entries,[],"Leave removes the member library entry after restart");
   departed.socket.close();
@@ -640,7 +576,7 @@ try {
   const intentAccount=intentAccounts.get(intentAccounts.idFromName(hash(Buffer.from(intentName))));
   const intentSQL=async(sql:string,args:unknown[]=[])=>
     (await intentAccount.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql,args})})).json();
-  await intentSQL("INSERT INTO creation_intents VALUES(?)",[intentId]);
+  await intentSQL("INSERT INTO entries(document,revision,payload,visible,owned,initializing) VALUES(?,0,NULL,0,1,1)",[intentId]);
   const intentDocs=await worker.getDurableObjectNamespace("DOCUMENTS");
   const intentDoc=intentDocs.get(intentDocs.idFromName(intentId));
   assert.equal((await intentDoc.fetch(`https://test/internal/documents/${intentId}/init`,{method:"POST",body:JSON.stringify({owner_uid:intentName,document:intentId})})).status,204);
@@ -650,11 +586,11 @@ try {
   recovering.socket.close();
   const recoveredAccounts=await worker.getDurableObjectNamespace("ACCOUNTS");
   const recoveredAccount=recoveredAccounts.get(recoveredAccounts.idFromName(hash(Buffer.from(intentName))));
-  const recoveredRows=await (await recoveredAccount.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"SELECT owned FROM documents WHERE document=?",args:[intentId]})})).json();
+  const recoveredRows=await (await recoveredAccount.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"SELECT owned FROM entries WHERE document=?",args:[intentId]})})).json();
   assert.deepEqual(recoveredRows,[{owned:1}],"Restart recovers the owned registration from its durable intent");
   // Deletion must also cover an intent not yet recovered by a library connection.
-  await recoveredAccount.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"DELETE FROM documents WHERE document=?",args:[intentId]})});
-  await recoveredAccount.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"INSERT INTO creation_intents VALUES(?)",args:[intentId]})});
+  await recoveredAccount.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"DELETE FROM entries WHERE document=?",args:[intentId]})});
+  await recoveredAccount.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"INSERT INTO entries(document,revision,payload,visible,owned,initializing) VALUES(?,0,NULL,0,1,1)",args:[intentId]})});
   assert.equal((await call("account",intentToken,"DELETE")).status,200);
   assert.equal((await call("documents/"+intentId,intentToken)).status,410,"Account deletion includes unfinished initialization intents");
   await worker.dispose(); worker=runtime(true,false);
@@ -663,5 +599,6 @@ try {
     assert.equal(outage.status,503,"Identity-provider outages are retryable on "+path);
     assert.equal((await outage.json() as {code:string}).code,"unavailable");
   }
-  console.log("Passed: persistent UUID/private identity, named sign-in links and anonymous edge refusal, generation-bound members, member-bound attachment reads, fail-closed and reset-safe joins, revoke-first leaves and registry cleanup, the member limit under racing joins, owner-preserving revocation/leave, restart-safe registry repair, deletion tombstones.");
+  console.log("Passed: revisioned library upserts/removals, late and duplicate delivery, rejoin ordering, account deletion before delivery, stop-sharing, deletion tombstones and racing joins at the member cap.");
+  console.log("Passed: persistent identity, invitation metadata, private attachments, durable outbox retry/restart and creation reservations.");
 } finally { await worker.dispose(); await rm(root,{recursive:true,force:true}); }

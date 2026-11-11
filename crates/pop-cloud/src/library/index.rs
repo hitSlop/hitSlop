@@ -1,7 +1,7 @@
 //! The device index: its schema and every statement run against it. Projection reads one
 //! SQLite snapshot before inspecting files.
 use super::*;
-use pop_sharing_protocol::{document::DocumentMetadata, library::AccountEntry};
+use pop_sharing_protocol::{document::JoinedDocument, library::AccountEntry};
 
 /// These tables. Any other version is refused, and nothing in it is changed.
 const INDEX_VERSION: u32 = 2;
@@ -200,14 +200,9 @@ pub(super) fn remember_sharing(db: &Connection, account: &str, id: &str, sharing
     )?;
     Ok(())
 }
-pub(super) fn upsert_joined(
-    db: &Connection,
-    account: &str,
-    access: &AccessState,
-    metadata: &DocumentMetadata,
-    path: &str,
-) -> Result<()> {
-    db.execute("INSERT INTO documents(account,id,title,template,path,role,opened,sharing_enabled) VALUES(?1,?2,?3,?4,?5,?6,coalesce((SELECT opened FROM documents WHERE account='' AND id=?2),0),?7) ON CONFLICT(account,id) DO UPDATE SET title=excluded.title,template=excluded.template,role=excluded.role,deleted=0,sharing_enabled=excluded.sharing_enabled",params![account,access.document,metadata.title,metadata.template_id,path,stored_role(access.role),access.sharing])?;
+pub(super) fn upsert_joined(db: &Connection, account: &str, joined: &JoinedDocument, path: &str) -> Result<()> {
+    let access = &joined.access;
+    db.execute("INSERT INTO documents(account,id,title,template,path,role,opened,sharing_enabled) VALUES(?1,?2,?3,?4,?5,?6,coalesce((SELECT opened FROM documents WHERE account='' AND id=?2),0),?7) ON CONFLICT(account,id) DO UPDATE SET title=excluded.title,template=excluded.template,role=excluded.role,deleted=0,sharing_enabled=excluded.sharing_enabled",params![account,access.document,joined.title,joined.template_id,path,stored_role(access.role),access.sharing])?;
     Ok(())
 }
 /// A departing document stays listed until the cloud confirms its removal.

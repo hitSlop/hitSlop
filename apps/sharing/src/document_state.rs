@@ -1,8 +1,5 @@
 //! One typed SQL row owns document lifecycle and publication state.
-use crate::{
-    policy,
-    room::{CloudDocument, fail},
-};
+use crate::room::{CloudDocument, fail};
 use pop_sharing_protocol::http::RoomPhase;
 use serde::Deserialize;
 use worker::{Result, SqlStorage, SqlStorageValue};
@@ -21,10 +18,7 @@ pub(crate) struct DocumentState {
     pub(crate) update_bytes: Option<usize>,
     pub(crate) update_rows: Option<usize>,
     pub(crate) base_version: Option<String>,
-    pub(crate) access_generation: Option<u64>,
     pub(crate) library_revision: Option<u64>,
-    pub(crate) library_pending: Option<u64>,
-    pub(crate) library_retry_ms: Option<u64>,
     pub(crate) cleanup_pending: Option<u64>,
 }
 impl DocumentState {
@@ -37,7 +31,7 @@ impl DocumentState {
             RoomPhase::Live => "live",
             RoomPhase::Ended => "ended",
         };
-        sql.exec("INSERT OR REPLACE INTO document_state(id,owner_uid,document,phase,capability,title,template_id,seed_hash,seed_size,app,root,update_bytes,update_rows,base_version,access_generation,library_revision,library_pending,library_retry_ms,cleanup_pending) VALUES(1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", vec![
+        sql.exec("INSERT OR REPLACE INTO document_state(id,owner_uid,document,phase,capability,title,template_id,seed_hash,seed_size,app,root,update_bytes,update_rows,base_version,library_revision,cleanup_pending) VALUES(1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", vec![
  self.owner_uid.clone().into(), self.document.clone().into(), phase.into(),
  self.capability.clone().map(|v| v.into()).unwrap_or(SqlStorageValue::Null),
  self.title.clone().map(|v| v.into()).unwrap_or(SqlStorageValue::Null),
@@ -49,11 +43,8 @@ impl DocumentState {
  self.update_bytes.map(|v| (v as i64).into()).unwrap_or(SqlStorageValue::Null),
  self.update_rows.map(|v| (v as i64).into()).unwrap_or(SqlStorageValue::Null),
  self.base_version.clone().map(|v| v.into()).unwrap_or(SqlStorageValue::Null),
- self.access_generation.map(|v| (v as i64).into()).unwrap_or(SqlStorageValue::Null),
- self.library_revision.map(|v| (v as i64).into()).unwrap_or(SqlStorageValue::Null),
- self.library_pending.map(|v| (v as i64).into()).unwrap_or(SqlStorageValue::Null),
- self.library_retry_ms.map(|v| (v as i64).into()).unwrap_or(SqlStorageValue::Null),
- self.cleanup_pending.map(|v| (v as i64).into()).unwrap_or(SqlStorageValue::Null),
+  self.library_revision.map(|v| (v as i64).into()).unwrap_or(SqlStorageValue::Null),
+   self.cleanup_pending.map(|v| (v as i64).into()).unwrap_or(SqlStorageValue::Null),
         ])?;
         Ok(())
     }
@@ -65,20 +56,10 @@ impl CloudDocument {
     pub(crate) fn stored(&self) -> Result<DocumentState> {
         self.document_state()?.ok_or_else(|| fail("Missing document state"))
     }
-    pub(crate) fn update_state(&self, edit: impl FnOnce(&mut DocumentState)) -> Result<()> {
-        let mut state = self.stored()?;
-        edit(&mut state);
-        state.save(&self.sql)
-    }
     pub(crate) fn phase(&self) -> Result<Option<RoomPhase>> {
         Ok(self.document_state()?.map(|s| s.phase))
     }
-    pub(crate) fn set_phase(&self, to: RoomPhase) -> Result<()> {
-        let mut state = self.stored()?;
-        state.phase = policy::transition(Some(state.phase), to).map_err(|_| fail("Invalid phase transition"))?;
-        state.save(&self.sql)
-    }
 }
 pub(crate) fn initialize(sql: &SqlStorage) {
-    sql.exec("CREATE TABLE IF NOT EXISTS document_state(id INTEGER PRIMARY KEY CHECK(id=1),owner_uid TEXT NOT NULL,document TEXT NOT NULL,phase TEXT NOT NULL CHECK(phase IN ('uploading','live','ended')),capability TEXT,title TEXT,template_id TEXT,seed_hash TEXT,seed_size INTEGER CHECK(seed_size>=0),app TEXT,root TEXT,update_bytes INTEGER CHECK(update_bytes>=0),update_rows INTEGER CHECK(update_rows>=0),base_version TEXT,access_generation INTEGER CHECK(access_generation>=0),library_revision INTEGER CHECK(library_revision>=0),library_pending INTEGER CHECK(library_pending>=0),library_retry_ms INTEGER CHECK(library_retry_ms>=0),cleanup_pending INTEGER CHECK(cleanup_pending>=0));",None).expect("document state schema");
+    sql.exec("CREATE TABLE IF NOT EXISTS document_state(id INTEGER PRIMARY KEY CHECK(id=1),owner_uid TEXT NOT NULL,document TEXT NOT NULL,phase TEXT NOT NULL CHECK(phase IN ('uploading','live','ended')),capability TEXT,title TEXT,template_id TEXT,seed_hash TEXT,seed_size INTEGER CHECK(seed_size>=0),app TEXT,root TEXT,update_bytes INTEGER CHECK(update_bytes>=0),update_rows INTEGER CHECK(update_rows>=0),base_version TEXT,library_revision INTEGER CHECK(library_revision>=0),cleanup_pending INTEGER CHECK(cleanup_pending>=0));",None).expect("document state schema");
 }

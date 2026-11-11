@@ -143,7 +143,6 @@ pub(crate) struct SocketState {
     pub(crate) hello: bool,
     pub(crate) socket_id: String,
     pub(crate) owner: bool,
-    pub(crate) generation: u64,
     pub(crate) uid: String,
     pub(crate) ip: String,
     pub(crate) window_start: u64,
@@ -172,8 +171,6 @@ pub struct CloudDocument {
     pub(crate) env: Env,
     pub(crate) sql: SqlStorage,
     pub(crate) uploads: futures_util::lock::Mutex<()>,
-    /// Serializes joins, leaves and registry cleanup; lifecycle changes never wait for it.
-    pub(crate) membership: futures_util::lock::Mutex<()>,
 }
 
 impl CloudDocument {
@@ -229,8 +226,8 @@ impl CloudDocument {
 
 pub(crate) fn initialize(sql: &SqlStorage) {
     crate::document_state::initialize(sql);
-    sql.exec("CREATE TABLE IF NOT EXISTS pending_registry(uid TEXT PRIMARY KEY,generation INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS members(uid TEXT PRIMARY KEY,generation INTEGER NOT NULL)",None).expect("document access tables");
-    sql.exec("CREATE TABLE IF NOT EXISTS heads(peer TEXT PRIMARY KEY,end INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS catchups(socket_id TEXT PRIMARY KEY,version TEXT NOT NULL,cursor INTEGER NOT NULL,base_version TEXT); CREATE TABLE IF NOT EXISTS garbage(key TEXT PRIMARY KEY); CREATE TABLE IF NOT EXISTS resource_blobs(id TEXT PRIMARY KEY,value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS records(seq INTEGER PRIMARY KEY AUTOINCREMENT,spans BLOB NOT NULL,size INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS chunks(seq INTEGER NOT NULL,part INTEGER NOT NULL,bytes BLOB NOT NULL,PRIMARY KEY(seq,part))",None).expect("create sharing tables");
+    sql.exec("CREATE TABLE IF NOT EXISTS library_outbox(uid TEXT PRIMARY KEY,revision INTEGER NOT NULL,payload TEXT NOT NULL,retry_ms INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS members(uid TEXT PRIMARY KEY)",None).expect("document access tables");
+    sql.exec("CREATE TABLE IF NOT EXISTS heads(peer TEXT PRIMARY KEY,end INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS catchups(socket_id TEXT PRIMARY KEY,version TEXT NOT NULL,cursor INTEGER NOT NULL,base_version TEXT); CREATE TABLE IF NOT EXISTS garbage(key TEXT PRIMARY KEY); CREATE TABLE IF NOT EXISTS resource_blobs(id TEXT PRIMARY KEY,value TEXT NOT NULL,attachment INTEGER NOT NULL CHECK(attachment IN (0,1))); CREATE TABLE IF NOT EXISTS records(seq INTEGER PRIMARY KEY AUTOINCREMENT,spans BLOB NOT NULL,size INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS chunks(seq INTEGER NOT NULL,part INTEGER NOT NULL,bytes BLOB NOT NULL,PRIMARY KEY(seq,part))",None).expect("create sharing tables");
 }
 
 pub(crate) fn decode_hex(text: &str) -> Result<Vec<u8>> {
@@ -251,13 +248,7 @@ impl DurableObject for CloudDocument {
         );
         let sql = state.storage().sql();
         initialize(&sql);
-        Self {
-            state,
-            env,
-            sql,
-            uploads: futures_util::lock::Mutex::new(()),
-            membership: futures_util::lock::Mutex::new(()),
-        }
+        Self { state, env, sql, uploads: futures_util::lock::Mutex::new(()) }
     }
     async fn fetch(&self, mut req: Request) -> Result<Response> {
         let Some((route, document, hash)) = routes::resolve(&req)? else {
@@ -284,7 +275,6 @@ impl DurableObject for CloudDocument {
         }
         match route.op {
             Op::Init => self.initialize_document(&mut req).await,
-            Op::LibraryDescription => self.describe_document(role.ok_or_else(|| fail("Missing role"))?),
             Op::DeleteDocument | Op::InternalDelete => self.delete_document(room).await,
             Op::PatchDocument => self.patch_document(&mut req).await,
             Op::GetSharing => self.get_sharing(role.ok_or_else(|| fail("Missing role"))?),
@@ -292,10 +282,8 @@ impl DurableObject for CloudDocument {
             Op::DisableSharing => self.disable_sharing().await,
             Op::Join => self.join(&mut req, uid, role).await,
             Op::Leave | Op::InternalLeave => self.leave(uid, role).await,
-            Op::GetMetadata => self.get_metadata(),
             Op::GetDocument => Response::from_json(&self.info()?),
             Op::Open => self.open(&mut req, room).await,
-            Op::PutSeed => self.put_seed(&mut req, room).await,
             Op::GetSeed => self.read_seed(uid, room).await,
             Op::ListBlobs => Response::from_json(&self.blobs()?),
             Op::GetBlob => self.read_blob(room, hash.as_deref(), uid).await,
@@ -317,14 +305,8 @@ impl DurableObject for CloudDocument {
                 self.sweep_garbage(&document).await?;
             }
         }
-        self.flush_registry().await?;
         self.flush_library().await?;
-        let pending = self
-            .sql
-            .exec("SELECT ((SELECT count(*) FROM pending_registry)+(SELECT count(*) FROM garbage)) AS n", None)?
-            .one::<NumberRow>()?
-            .n
-            > 0;
+        let pending = self.sql.exec("SELECT count(*) AS n FROM garbage", None)?.one::<NumberRow>()?.n > 0;
         if pending {
             self.schedule_cleanup(60_000).await?;
         }

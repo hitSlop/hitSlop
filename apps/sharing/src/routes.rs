@@ -5,12 +5,9 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Op {
     Init,
-    LibraryDescription,
     InternalDelete,
     InternalLeave,
-    Describe,
-    Release,
-    Register,
+    ApplyEntry,
     Health,
     CreateDocument,
     DeleteAccount,
@@ -18,7 +15,6 @@ pub enum Op {
     GetDocument,
     PatchDocument,
     DeleteDocument,
-    GetMetadata,
     GetSharing,
     EnableSharing,
     DisableSharing,
@@ -26,7 +22,6 @@ pub enum Op {
     Leave,
     Open,
     GetSeed,
-    PutSeed,
     ListBlobs,
     GetBlob,
     PutBlob,
@@ -106,15 +101,6 @@ use Scope::{Account, Document, Service};
 pub static ROUTES: &[Route] = &[
     route(Op::Init, "POST", "/internal/documents/{document}/init", Document, L::None, Access::Internal, Phases::Active),
     route(
-        Op::LibraryDescription,
-        "POST",
-        "/internal/documents/{document}/library",
-        Document,
-        L::None,
-        Access::InternalMember,
-        Phases::Live,
-    ),
-    route(
         Op::InternalDelete,
         "DELETE",
         "/internal/documents/{document}/delete",
@@ -132,9 +118,7 @@ pub static ROUTES: &[Route] = &[
         Access::InternalSignedIn,
         Phases::Active,
     ),
-    route(Op::Describe, "POST", "/internal/describe", Account, L::None, Access::Internal, Phases::Any),
-    route(Op::Release, "POST", "/internal/release", Account, L::None, Access::Internal, Phases::Any),
-    route(Op::Register, "POST", "/internal/member", Account, L::None, Access::Internal, Phases::Any),
+    route(Op::ApplyEntry, "POST", "/internal/apply-entry", Account, L::None, Access::Internal, Phases::Any),
     route(Op::Health, "GET", "/health", Service, L::None, Access::Public, Phases::Any),
     route(Op::CreateDocument, "POST", "/v1/documents", Account, L::None, Access::SignedIn, Phases::Any),
     route(Op::DeleteAccount, "DELETE", "/v1/account", Account, L::None, Access::SignedIn, Phases::Any),
@@ -150,7 +134,6 @@ pub static ROUTES: &[Route] = &[
     ),
     route(Op::PatchDocument, "PATCH", "/v1/documents/{document}", Document, L::None, Access::Owner, Phases::Active),
     route(Op::DeleteDocument, "DELETE", "/v1/documents/{document}", Document, L::None, Access::Owner, Phases::Any),
-    route(Op::GetMetadata, "GET", "/v1/documents/{document}/metadata", Document, L::None, Access::Member, Phases::Live),
     route(Op::GetSharing, "GET", "/v1/documents/{document}/sharing", Document, L::None, Access::Member, Phases::Active),
     route(
         Op::EnableSharing,
@@ -182,7 +165,6 @@ pub static ROUTES: &[Route] = &[
     ),
     route(Op::Open, "POST", "/v1/documents/{document}/open", Document, L::None, Access::Owner, Phases::Active),
     route(Op::GetSeed, "GET", "/v1/documents/{document}/seed", Document, L::Seed, Access::Member, Phases::MemberLive),
-    route(Op::PutSeed, "PUT", "/v1/documents/{document}/seed", Document, L::None, Access::Owner, Phases::Uploading),
     route(
         Op::ListBlobs,
         "GET",
@@ -354,9 +336,6 @@ pub fn authorize(operation: &Route, caller: Caller, phase: Option<RoomPhase>) ->
     if operation.scope == Scope::Document && phase.is_none() && operation.op != Op::Init {
         return Err(Refusal::new(404, "not_found", "Unknown room"));
     }
-    if operation.op == Op::LibraryDescription && phase != Some(Live) {
-        return Err(Refusal::new(409, "conflict", "Document not live"));
-    }
     // Deletion is retryable only for the owner. Other ended routes retain their refusal.
     if phase == Some(Ended) && !matches!(operation.phases, Phases::Any) {
         return Err(Refusal::new(
@@ -364,9 +343,6 @@ pub fn authorize(operation: &Route, caller: Caller, phase: Option<RoomPhase>) ->
             "sharing_ended",
             if operation.op == Op::Init { "Sharing ended" } else { "Document deleted" },
         ));
-    }
-    if operation.op == Op::GetMetadata && phase != Some(Live) {
-        return Err(Refusal::new(409, "conflict", "Document upload is not ready"));
     }
     let allowed = match operation.access {
         Public | SignedIn | InternalSignedIn => true,
@@ -385,13 +361,7 @@ pub fn authorize(operation: &Route, caller: Caller, phase: Option<RoomPhase>) ->
         Phases::MemberLive => role == Role::Owner || phase == Some(Live),
     };
     if !phase_allowed {
-        let message = match operation.op {
-            Op::PutSeed => "Room is live",
-            Op::GetMetadata => "Document upload is not ready",
-            Op::LibraryDescription => "Document not live",
-            _ => "Publication pending",
-        };
-        return Err(Refusal::new(409, "conflict", message));
+        return Err(Refusal::new(409, "conflict", "Publication pending"));
     }
     Ok(if matches!(operation.access, Internal) { Role::Internal } else { role })
 }
@@ -473,8 +443,6 @@ mod authorization_tests {
             (Op::GetSeed, None, Live, Err(403)),
             (Op::GetSeed, Some(DocumentRole::Owner), Ended, Err(410)),
             (Op::DeleteDocument, Some(DocumentRole::Owner), Ended, Ok(Role::Owner)),
-            (Op::GetMetadata, None, Uploading, Err(409)),
-            (Op::PutSeed, Some(DocumentRole::Owner), Live, Err(409)),
         ] {
             let row = ROUTES.iter().find(|r| r.op == op).unwrap();
             assert_eq!(
@@ -483,7 +451,7 @@ mod authorization_tests {
                 "{op:?} {role:?} {phase:?}"
             );
         }
-        for op in [Op::Init, Op::Describe, Op::Register, Op::Release, Op::InternalLeave] {
+        for op in [Op::Init, Op::ApplyEntry, Op::InternalLeave] {
             let row = ROUTES.iter().find(|r| r.op == op).unwrap();
             assert!(authorize(row, Caller { internal: true, role: None }, Some(Live)).is_ok(), "{op:?}");
             assert!(
