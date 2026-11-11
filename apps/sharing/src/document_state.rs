@@ -19,6 +19,7 @@ pub(crate) struct DocumentState {
     pub(crate) update_rows: Option<usize>,
     pub(crate) base_version: Option<String>,
     pub(crate) library_revision: Option<u64>,
+    pub(crate) staged_upload_ms: Option<u64>,
     pub(crate) cleanup_pending: Option<u64>,
 }
 impl DocumentState {
@@ -31,7 +32,7 @@ impl DocumentState {
             RoomPhase::Live => "live",
             RoomPhase::Ended => "ended",
         };
-        sql.exec("INSERT OR REPLACE INTO document_state(id,owner_uid,document,phase,capability,title,template_id,seed_hash,seed_size,app,root,update_bytes,update_rows,base_version,library_revision,cleanup_pending) VALUES(1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", vec![
+        sql.exec("INSERT OR REPLACE INTO document_state(id,owner_uid,document,phase,capability,title,template_id,seed_hash,seed_size,app,root,update_bytes,update_rows,base_version,library_revision,cleanup_pending,staged_upload_ms) VALUES(1,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", vec![
  self.owner_uid.clone().into(), self.document.clone().into(), phase.into(),
  self.capability.clone().map(|v| v.into()).unwrap_or(SqlStorageValue::Null),
  self.title.clone().map(|v| v.into()).unwrap_or(SqlStorageValue::Null),
@@ -45,6 +46,7 @@ impl DocumentState {
  self.base_version.clone().map(|v| v.into()).unwrap_or(SqlStorageValue::Null),
   self.library_revision.map(|v| (v as i64).into()).unwrap_or(SqlStorageValue::Null),
    self.cleanup_pending.map(|v| (v as i64).into()).unwrap_or(SqlStorageValue::Null),
+   self.staged_upload_ms.map(|v| (v as i64).into()).unwrap_or(SqlStorageValue::Null),
         ])?;
         Ok(())
     }
@@ -61,5 +63,5 @@ impl SharedDocument {
     }
 }
 pub(crate) fn initialize(sql: &SqlStorage) {
-    sql.exec("CREATE TABLE IF NOT EXISTS document_state(id INTEGER PRIMARY KEY CHECK(id=1),owner_uid TEXT NOT NULL,document TEXT NOT NULL,phase TEXT NOT NULL CHECK(phase IN ('uploading','live','ended')),capability TEXT,title TEXT,template_id TEXT,seed_hash TEXT,seed_size INTEGER CHECK(seed_size>=0),app TEXT,root TEXT,update_bytes INTEGER CHECK(update_bytes>=0),update_rows INTEGER CHECK(update_rows>=0),base_version TEXT,library_revision INTEGER CHECK(library_revision>=0),cleanup_pending INTEGER CHECK(cleanup_pending>=0));",None).expect("document state schema");
+    sql.exec("CREATE TABLE IF NOT EXISTS document_state(id INTEGER PRIMARY KEY CHECK(id=1),owner_uid TEXT NOT NULL,document TEXT NOT NULL,phase TEXT NOT NULL CHECK(phase IN ('uploading','live','ended')),capability TEXT,title TEXT,template_id TEXT,seed_hash TEXT,seed_size INTEGER CHECK(seed_size>=0),app TEXT,root TEXT,update_bytes INTEGER CHECK(update_bytes>=0),update_rows INTEGER CHECK(update_rows>=0),base_version TEXT,library_revision INTEGER CHECK(library_revision>=0),cleanup_pending INTEGER CHECK(cleanup_pending>=0),staged_upload_ms INTEGER CHECK(staged_upload_ms>=0));",None).expect("document state schema");
 }

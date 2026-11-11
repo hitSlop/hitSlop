@@ -84,7 +84,12 @@ the seed and every attachment the seed references through `PUT …/blob/{hash}`,
 checks every named blob against its recorded size and any available R2 SHA-256 checksum,
 commits the set atomically and deletes unused staged blobs through a durable cleanup queue.
 The creator supplies the attachment list from the snapshot; the relay does not parse SQLite.
-Staged blobs do not consume the attachment budget, and the seed has its own 16 MiB limit.
+Staging has a separate cap of twice one complete upload: 514 blobs and 232 MiB
+(two sets of 256 attachments totaling 100 MiB plus a 16 MiB seed). Exceeding either
+cap returns 413. While the document remains uploading, staged blobs expire 24 hours
+after the last staged upload; an alarm clears the inventory and retries failed blob
+deletions. The room stays uploading so the owner can start again. Open enforces the
+attachment budget separately, and the seed has its own 16 MiB limit.
 A failed upload leaves the document uploading and unbound; a retry stages again and sends
 only the blobs the relay lacks. Once live, the seed hash cannot change. Downloads fetch,
 verify and persist attachments before becoming ready.

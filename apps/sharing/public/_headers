@@ -4,7 +4,7 @@
 
 /join
   Cache-Control: no-store
-  Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  Content-Security-Policy: default-src 'none'; script-src 'sha256-dJ96eeYJo2wmMmoWuDJuSGYHKDaA9tNrD+UvyycI7Gc='; style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
 
 # The callback keeps the Apple fragment in the browser; the hash pins its one inline script.
 /auth/apple

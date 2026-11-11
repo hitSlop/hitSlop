@@ -80,7 +80,7 @@ impl SharedDocument {
                     bucket.delete(item.key()).await?;
                 }
             }
-            self.sql.exec("DELETE FROM resource_blobs; DELETE FROM records; DELETE FROM chunks; DELETE FROM heads; DELETE FROM catchups; UPDATE document_state SET seed_hash=NULL,seed_size=NULL,root=NULL,update_bytes=NULL,update_rows=NULL,base_version=NULL,app=NULL",None)?;
+            self.sql.exec("DELETE FROM resource_blobs; DELETE FROM records; DELETE FROM chunks; DELETE FROM heads; DELETE FROM catchups; UPDATE document_state SET seed_hash=NULL,seed_size=NULL,root=NULL,update_bytes=NULL,update_rows=NULL,base_version=NULL,app=NULL,staged_upload_ms=NULL",None)?;
             self.state.storage().sync().await?;
             self.sql.exec("UPDATE document_state SET cleanup_pending=NULL", None)?;
             self.state.storage().sync().await?;

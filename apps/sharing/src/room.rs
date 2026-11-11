@@ -301,6 +301,7 @@ impl DurableObject for SharedDocument {
         }
         {
             let _guard = self.uploads.lock().await;
+            self.expire_staging().await?;
             if let Some(document) = self.document_state()?.map(|s| s.document) {
                 self.sweep_garbage(&document).await?;
             }

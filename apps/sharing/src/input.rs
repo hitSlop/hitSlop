@@ -40,17 +40,45 @@ impl std::error::Error for InputError {
         }
     }
 }
+/// Metadata refusals also consume a bounded body so a normal upload can receive them.
+pub(crate) async fn discard(req: &mut Request, limit: usize) {
+    let Ok(mut stream) = req.stream() else {
+        return;
+    };
+    let mut remaining = limit.saturating_add(crate::limits::REQUEST_DRAIN_BYTES);
+    while let Some(Ok(chunk)) = stream.next().await {
+        remaining = remaining.saturating_sub(chunk.len());
+        if remaining == 0 {
+            break;
+        }
+    }
+}
+
 pub(crate) async fn bytes(req: &mut Request, limit: usize) -> Result<Vec<u8>, InputError> {
     let mut stream = req.stream().map_err(InputError::Read)?;
     let mut body = Vec::new();
+    let mut received = 0usize;
+    let mut oversized = false;
     while let Some(chunk) = stream.next().await {
-        let chunk = chunk.map_err(InputError::Read)?;
-        if chunk.len() > limit.saturating_sub(body.len()) {
-            return Err(InputError::TooLarge);
+        let chunk = match chunk {
+            Ok(chunk) => chunk,
+            Err(_) if oversized => return Err(InputError::TooLarge),
+            Err(error) => return Err(InputError::Read(error)),
+        };
+        received = received.saturating_add(chunk.len());
+        if received > limit {
+            oversized = true;
+            body.clear();
+            // A bounded drain lets ordinary excess bodies finish before the 413 closes
+            // the connection, without buffering or consuming an arbitrary upload.
+            if received >= limit.saturating_add(crate::limits::REQUEST_DRAIN_BYTES) {
+                return Err(InputError::TooLarge);
+            }
+        } else {
+            body.extend(chunk);
         }
-        body.extend(chunk);
     }
-    Ok(body)
+    if oversized { Err(InputError::TooLarge) } else { Ok(body) }
 }
 /// The one JSON request reader: at most `limit` bytes, 413 over it, 400 when not a `T`.
 pub(crate) async fn body<T: DeserializeOwned>(req: &mut Request, limit: usize) -> Result<T, InputError> {

@@ -3,7 +3,7 @@
  * has no test key, token bypass, configurable certificate URL or asserted UID path.
  * Run through `bun run verify sharing` after installing worker-build (README). */
 import assert from "node:assert/strict";
-import { checkCompaction, relayHarness, decode, helloFrame, push, documentName } from "./check-compaction";
+import { checkCompaction, relayHarness, decode, helloFrame, push, documentName, objects, resent } from "./check-compaction";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { mkdtemp, rm, readFile, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -86,13 +86,15 @@ function runtime(roomsAvailable = true, identityAvailable = true) {
 let worker = runtime();
 async function call(path: string, token: string | undefined, method = "GET", body?: unknown, headers: Record<string, string> = {}) {
   const binary = body instanceof Uint8Array;
-  const response = await worker.dispatchFetch("https://share.dotpop.click/v1/" + path, {
-    method, headers: { ...headers, ...(token ? { Authorization: "Bearer " + token } : {}), ...(body === undefined ? {} : { "Content-Type": binary ? "application/octet-stream" : "application/json" }) },
-    ...(body === undefined ? {} : { body: binary ? body : JSON.stringify(body) }),
+  return resent(async () => {
+    const response = await worker.dispatchFetch("https://share.dotpop.click/v1/" + path, {
+      method, headers: { ...headers, ...(token ? { Authorization: "Bearer " + token } : {}), ...(body === undefined ? {} : { "Content-Type": binary ? "application/octet-stream" : "application/json" }) },
+      ...(body === undefined ? {} : { body: binary ? body : JSON.stringify(body) }),
+    });
+    if (response.status === 101) return response;
+    const bytes = await response.arrayBuffer();
+    return new LocalResponse(response.status === 204 ? null : bytes, {status: response.status, headers: response.headers});
   });
-  if (response.status === 101) return response;
-  const bytes = await response.arrayBuffer();
-  return new LocalResponse(response.status === 204 ? null : bytes, {status: response.status, headers: response.headers});
 }
 async function json<T>(path: string, token: string, method = "GET", body?: unknown): Promise<T> {
   const response = await call(path, token, method, body);
@@ -105,6 +107,58 @@ const openSeed = (bytes: Uint8Array, attachments: string[] = []) => ({
 const uploadSeed = (base: string, token: string, bytes: Uint8Array) =>
   call(base + "/blob/" + hash(bytes), token, "PUT", bytes, {"Content-Length": String(bytes.length)});
 try {
+  const cappedDocument = "00000000-0000-4000-8000-000000000087";
+  const cappedBase = "documents/" + cappedDocument;
+  const stagingOwner = uid("staging-owner");
+  assert.equal((await call("documents", stagingOwner, "POST", {document: cappedDocument})).status, 204);
+  for (let n = 0; n <= 2 * (256 + 1); n++) {
+    const bytes = Buffer.from("bounded-staging-" + n);
+    const response = await call(cappedBase + "/blob/" + hash(bytes), stagingOwner, "PUT", bytes, {
+      "Content-Length": String(bytes.length),
+      "CF-Connecting-IP": "198.19." + Math.floor(n / 250) + "." + (n % 250 + 1),
+    });
+    assert.equal(response.status, n < 514 ? 200 : 413,
+      "Unopened room refuses distinct staged blob 515 beyond its 514-blob cap");
+  }
+  const expiryDocument = "00000000-0000-4000-8000-000000000086";
+  const expiryBase = "documents/" + expiryDocument;
+  assert.equal((await call("documents", stagingOwner, "POST", {document: expiryDocument})).status, 204);
+  assert.equal((await uploadSeed(expiryBase, stagingOwner, seed)).status, 200);
+  assert.equal((await uploadSeed(expiryBase, stagingOwner, Buffer.from("expired attachment"))).status, 200);
+  const stagingNamespace = await objects(worker, "DOCUMENTS");
+  const stagingStub = stagingNamespace.get(stagingNamespace.idFromName(expiryDocument));
+  const stagingHook = (path: string, body?: unknown) => stagingStub.fetch("https://test/__test/" + path,
+    {method: "POST", ...(body === undefined ? {} : {body: JSON.stringify(body)})});
+  const stagingSQL = async (sql: string, args: unknown[] = []) =>
+    (await stagingHook("sql", {sql, args})).json() as Promise<any[]>;
+  await stagingHook("hold-alarms", {enabled: true});
+  await stagingHook("fire-alarm");
+  const [{staged_upload_ms: lastUpload}] = await stagingSQL("SELECT staged_upload_ms FROM document_state");
+  const expiry = lastUpload + 24 * 60 * 60 * 1000;
+  const scheduled = await (await stagingHook("alarm-time")).json() as number;
+  assert.ok(scheduled >= expiry - 1000 && scheduled <= expiry + 1000,
+    "Staging expiry is scheduled without another request");
+  await stagingHook("fire-alarm");
+  assert.equal((await json<any[]>(expiryBase + "/blobs", stagingOwner)).length, 2,
+    "Recent staging survives an early alarm");
+  await stagingSQL("UPDATE document_state SET staged_upload_ms=?", [Date.now() - 24 * 60 * 60 * 1000 - 1000]);
+  await stagingHook("delete-failure", {enabled: true});
+  await stagingHook("fire-alarm");
+  assert.deepEqual(await json(expiryBase + "/blobs", stagingOwner), [], "Expired staging clears the inventory");
+  assert.equal((await json<RoomInfo>(expiryBase, stagingOwner)).phase, "uploading", "Expiry keeps the room retryable");
+  assert.equal((await stagingSQL("SELECT staged_upload_ms FROM document_state"))[0].staged_upload_ms, null);
+  assert.equal((await stagingSQL("SELECT count(*) AS n FROM garbage"))[0].n, 2,
+    "Failed R2 deletes remain durably queued");
+  assert.ok(await (await stagingHook("alarm-time")).json(), "Failed deletes schedule their retry");
+  await stagingHook("delete-failure", {enabled: false});
+  await stagingHook("fire-alarm");
+  assert.equal((await stagingSQL("SELECT count(*) AS n FROM garbage"))[0].n, 0);
+  const stagingBucket = await worker.getR2Bucket("SEEDS", "relay");
+  assert.equal((await stagingBucket.list({prefix: expiryDocument + "/"})).objects.length, 0);
+  assert.equal(await (await stagingHook("alarm-time")).json(), null, "Empty staging does not loop alarms");
+  assert.equal((await uploadSeed(expiryBase, stagingOwner, seed)).status, 200, "The owner can stage again after expiry");
+  assert.equal((await call(expiryBase + "/open", stagingOwner, "POST", openSeed(seed))).status, 200);
+  console.log("Passed: staging count cap, scheduled 24-hour expiry, durable R2 deletion retries and upload after expiry.");
   assert.equal((await call("documents", a, "POST", new Uint8Array((1 << 20) + 1))).status, 413,
     "Oversized creation body is a bounded request refusal");
   assert.equal((await call("documents", a, "POST", new TextEncoder().encode("{not json"))).status, 400,
@@ -154,7 +208,7 @@ try {
   const tooLargeAttachment = Buffer.alloc(11 << 20, 22);
   assert.equal((await uploadSeed(largeBase, a, tooLargeAttachment)).status, 413, "Live attachments keep the per-file budget");
   assert.equal((await uploadSeed(largeBase, a, Buffer.alloc((16 << 20) + 1))).status, 400, "Staging keeps the seed size limit");
-  console.log("Passed: Open refuses missing seed blobs; a changed upload set retries without staging quota and removes unused blobs.");
+  console.log("Passed: Open refuses missing seed blobs; a changed upload set retries within the staging cap and removes unused blobs.");
   console.log("Passed: Open budgets only named attachments; the seed uses its own size limit and stays outside the live attachment inventory.");
   await checkCompaction(worker, call, uid("compaction-owner"), uid);
   // The join page, Apple callback, association file and icon deploy as static assets from
@@ -200,8 +254,21 @@ try {
     `<meta property="og:image" content="${SharingHost.origin}/share-icon.png"`,
     `<link rel="apple-touch-icon" href="${SharingHost.origin}/share-icon.png"`,
   ]) assert.ok(joinPage.includes(tag), `Preview metadata is present without running JavaScript: ${tag}`);
-  assert.ok(!joinPage.includes("<script") && !joinPage.includes(invitation) && !joinPage.includes("b".repeat(64)), "The join page runs no code and holds no invitation credential");
-  assert.match(rule("/join", "Content-Security-Policy") ?? "", /^default-src 'none'; style-src 'unsafe-inline'; /, "The join page allows no script");
+  assert.match(joinPage, /<a id="open-dotpop" hidden>Open in dotpop<\/a>/);
+  assert.ok(!joinPage.includes(invitation) && !joinPage.includes("b".repeat(64)), "The static page holds no invitation credential");
+  const joinScript = /<script>([\s\S]*?)<\/script>/.exec(joinPage)![1]!;
+  const joinDigest = createHash("sha256").update(joinScript).digest("base64");
+  assert.equal(rule("/join", "Content-Security-Policy"),
+    `default-src 'none'; script-src 'sha256-${joinDigest}'; style-src 'unsafe-inline'; img-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'`);
+  for (const fragment of [invitation.slice(invitation.indexOf("#")), "", "#"]) {
+    const link = { href: undefined as string | undefined, hidden: true };
+    runInNewContext(joinScript, {
+      location: { hash: fragment },
+      document: { getElementById(id: string) { assert.equal(id, "open-dotpop"); return link; } },
+    });
+    assert.equal(link.href, fragment.length > 1 ? "dotpop://join" + fragment : undefined);
+    assert.equal(link.hidden, fragment.length <= 1);
+  }
   assert.equal((await text("_redirects")).trim(), "/ https://dotpop.click 302");
   const image = await readFile(join(publicRoot, "share-icon.png"));
   assert.equal(image.subarray(0, 8).toString("hex"), "89504e470d0a1a0a");
@@ -239,7 +306,7 @@ try {
     });
     return {socket,next};
   };
-  const libraryNamespace = await worker.getDurableObjectNamespace("DOCUMENTS");
+  const libraryNamespace = await objects(worker, "DOCUMENTS");
   const libraryDocument = libraryNamespace.get(libraryNamespace.idFromName(document));
   await libraryDocument.fetch("https://test/__test/alarm");
   const ownerLibrary=await library(a), outsiderLibrary=await library(b);
@@ -247,7 +314,7 @@ try {
   assert.equal(initialLibrary.type,"snapshot"); assert.equal(initialLibrary.last,true);
   assert.equal(initialLibrary.entries[0].document,document);
   assert.deepEqual((await outsiderLibrary.next()).entries,[],"An unrelated account sees no private entries");
-  const bootstrapAccounts=await worker.getDurableObjectNamespace("ACCOUNTS");
+  const bootstrapAccounts=await objects(worker, "ACCOUNTS");
   const bootstrapAccount=bootstrapAccounts.get(bootstrapAccounts.idFromName(hash(Buffer.from("creator-a"))));
   await bootstrapAccount.fetch("https://test/__test/fail-deliveries",{method:"POST",body:JSON.stringify({enabled:true})});
   await json(base,a,"PATCH",{title:"Live title",templateId:"fixture"});
@@ -316,7 +383,7 @@ try {
   const ownerSocket=ownerConnection.socket,memberSocket=memberConnection.socket;let ownerClosed=false;
   ownerSocket.addEventListener("close",()=>ownerClosed=true);
   const memberEnded=new Promise<void>(resolve=>memberSocket.addEventListener("close",()=>resolve()));
-  const documents = await worker.getDurableObjectNamespace("DOCUMENTS");
+  const documents = await objects(worker, "DOCUMENTS");
   const documentStub = documents.get(documents.idFromName(documentName(document)));
   const revoked=await json<AccessState>(base+"/sharing",a,"DELETE");assert(!revoked.sharing);assert.ok(!("generation" in revoked));
   assert.equal((await call(base+"/seed",enabled.capability!)).status,401);assert.equal((await call(base+"/seed",invitedIdentity)).status,403);assert.equal((await call(base+"/seed",b)).status,403);
@@ -350,7 +417,7 @@ try {
   };
   const stubSQL=async<T>(stub:typeof documentStub,query:string,args:unknown[]=[])=>
     await (await stub.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:query,args})})).json() as T[];
-  const accountNamespace=await worker.getDurableObjectNamespace("ACCOUNTS");
+  const accountNamespace=await objects(worker, "ACCOUNTS");
   const accountFor=(name:string)=>accountNamespace.get(accountNamespace.idFromName(hash(Buffer.from(name))));
   const hook=(account:typeof documentStub,path:string,body:unknown={})=>account.fetch("https://test/__test/"+path,{method:"POST",body:JSON.stringify(body)});
   const flush=(stub:typeof documentStub)=>stub.fetch("https://test/__test/alarm");
@@ -527,11 +594,11 @@ try {
   assert.equal((await call(repairBase+"/open",a,"POST",openSeed(seed))).status,200);
   assert.ok((await stubSQL<any>(repairStub,"SELECT count(*) AS n FROM library_outbox"))[0].n>0,"An undelivered entry is durable before restart");
   await worker.dispose();worker=runtime();
-  const restartedDocuments=await worker.getDurableObjectNamespace("DOCUMENTS");
+  const restartedDocuments=await objects(worker, "DOCUMENTS");
   for(const id of [document,repairDocument]) {
     const stub=restartedDocuments.get(restartedDocuments.idFromName(id));await flush(stub);
   }
-  const restartedAccounts=await worker.getDurableObjectNamespace("ACCOUNTS");
+  const restartedAccounts=await objects(worker, "ACCOUNTS");
   const restartedMember=restartedAccounts.get(restartedAccounts.idFromName(hash(Buffer.from("outbox-member"))));
   assert.equal((await restartedMember.fetch("https://test/internal/apply-entry",{method:"POST",body:JSON.stringify(firstEntry)})).status,200);
   assert.ok(!await listed(who,idle.id),"Removal high-water marks survive an account restart");
@@ -572,19 +639,19 @@ try {
   // An initialization committed before the account stored its registration.
   const intentName="creation-intent", intentToken=uid(intentName);
   const intentId="00000000-0000-4000-8000-000000000088";
-  const intentAccounts=await worker.getDurableObjectNamespace("ACCOUNTS");
+  const intentAccounts=await objects(worker, "ACCOUNTS");
   const intentAccount=intentAccounts.get(intentAccounts.idFromName(hash(Buffer.from(intentName))));
   const intentSQL=async(sql:string,args:unknown[]=[])=>
     (await intentAccount.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql,args})})).json();
   await intentSQL("INSERT INTO entries(document,revision,payload,visible,owned,initializing) VALUES(?,0,NULL,0,1,1)",[intentId]);
-  const intentDocs=await worker.getDurableObjectNamespace("DOCUMENTS");
+  const intentDocs=await objects(worker, "DOCUMENTS");
   const intentDoc=intentDocs.get(intentDocs.idFromName(intentId));
   assert.equal((await intentDoc.fetch(`https://test/internal/documents/${intentId}/init`,{method:"POST",body:JSON.stringify({owner_uid:intentName,document:intentId})})).status,204);
   await worker.dispose(); worker=runtime();
   const recovering=await library(intentToken);
   assert.deepEqual((await recovering.next()).entries,[],"Unfinished uploads remain hidden after intent recovery");
   recovering.socket.close();
-  const recoveredAccounts=await worker.getDurableObjectNamespace("ACCOUNTS");
+  const recoveredAccounts=await objects(worker, "ACCOUNTS");
   const recoveredAccount=recoveredAccounts.get(recoveredAccounts.idFromName(hash(Buffer.from(intentName))));
   const recoveredRows=await (await recoveredAccount.fetch("https://test/__test/sql",{method:"POST",body:JSON.stringify({sql:"SELECT owned FROM entries WHERE document=?",args:[intentId]})})).json();
   assert.deepEqual(recoveredRows,[{owned:1}],"Restart recovers the owned registration from its durable intent");

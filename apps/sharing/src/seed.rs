@@ -92,6 +92,7 @@ impl SharedDocument {
             s.app = Some(input.app.clone());
             s.root = Some(root.clone());
             s.phase = RoomPhase::Live;
+            s.staged_upload_ms = None;
             sql.exec("DELETE FROM heads", None)?;
             Self::save_heads(sql, &heads)?;
             Ok(vec![])

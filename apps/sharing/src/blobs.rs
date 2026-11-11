@@ -91,19 +91,32 @@ impl SharedDocument {
             media_type: req.headers().get("Content-Type")?.unwrap_or_else(|| "application/octet-stream".into()),
         };
         if resources::validate_blobs(std::slice::from_ref(&item)).is_err() {
+            crate::input::discard(req, pop_sharing_protocol::SEED_BYTES).await;
             return Refusal::new(400, "invalid_request", "Invalid resource metadata").response();
         }
         let live = self.phase()? == Some(RoomPhase::Live);
         let mut all = self.blobs()?;
         if let Some(old) = self.blob_inventory(false)?.iter().find(|i| i.hash == id) {
             return if old.size == item.size && old.media_type == item.media_type {
+                self.record_staged_upload().await?;
                 Response::ok("existing")
             } else {
                 Refusal::new(409, "conflict", "Immutable blob conflict").response()
             };
         }
         all.push(item.clone());
-        if live && resources::validate(&all).is_err() {
+        if (live && resources::validate(&all).is_err())
+            || (!live
+                && !crate::policy::staging_fits(
+                    all.len(),
+                    all.iter().fold(0u64, |total, item| total.saturating_add(item.size)),
+                ))
+        {
+            crate::input::discard(
+                req,
+                if live { pop_contracts::wire::ATTACHMENT_FILE_BYTES } else { pop_sharing_protocol::SEED_BYTES },
+            )
+            .await;
             return Refusal::new(413, "invalid_request", "Room file limit reached").response();
         }
         // Probe-sized files are bounded by Rust limits; R2 verifies the supplied digest.
@@ -145,9 +158,52 @@ impl SharedDocument {
             vec![id.into(), serde_json::to_string(&item)?.into(), i64::from(live).into()],
         )?;
         self.sql.exec("DELETE FROM garbage WHERE key=?", vec![key.into()])?;
+        self.record_staged_upload().await?;
         self.state.storage().sync().await?;
         Response::ok("stored")
     }
+    async fn record_staged_upload(&self) -> Result<()> {
+        if self.phase()? == Some(RoomPhase::Uploading) {
+            self.sql.exec(
+                "UPDATE document_state SET staged_upload_ms=? WHERE phase='uploading'",
+                vec![(crate::room::now() as i64).into()],
+            )?;
+            self.schedule_cleanup(crate::limits::STAGING_TTL_MS).await?;
+        }
+        Ok(())
+    }
+
+    /// Caller holds uploads, so expiry cannot remove a blob while it is being committed.
+    pub(crate) async fn expire_staging(&self) -> Result<()> {
+        let Some(state) = self.document_state()? else {
+            return Ok(());
+        };
+        if state.phase != RoomPhase::Uploading {
+            return Ok(());
+        }
+        let Some(last_upload) = state.staged_upload_ms else {
+            return Ok(());
+        };
+        let remaining = last_upload.saturating_add(crate::limits::STAGING_TTL_MS).saturating_sub(crate::room::now());
+        if remaining > 0 {
+            return self.schedule_cleanup(remaining).await;
+        }
+        let staged = self.blob_inventory(false)?;
+        let sql = self.sql.clone();
+        self.transaction(move || {
+            for item in &staged {
+                sql.exec(
+                    "INSERT OR IGNORE INTO garbage VALUES(?)",
+                    vec![object_key(&state.document, &format!("blobs/{}", item.hash)).into()],
+                )?;
+            }
+            sql.exec("DELETE FROM resource_blobs; UPDATE document_state SET staged_upload_ms=NULL", None)?;
+            Ok(())
+        })?;
+        self.state.storage().sync().await?;
+        Ok(())
+    }
+
     pub(crate) async fn read_blob(&self, room: &str, hash: Option<&str>, uid: &str) -> Result<Response> {
         let id = match hash {
             Some(id) if pop_contracts::wire::valid_attachment_id(id) => id,

@@ -50,6 +50,18 @@
         margin: 0 0 1rem;
         color: var(--muted);
       }
+      #open-dotpop {
+        display: inline-block;
+        padding: 0.75rem 1.25rem;
+        border-radius: 0.75rem;
+        background: var(--link);
+        color: var(--bg);
+        font-weight: 600;
+        text-decoration: none;
+      }
+      #open-dotpop[hidden] {
+        display: none;
+      }
       a {
         color: var(--link);
       }
@@ -58,11 +70,20 @@
   <body>
     <main>
       <h1>Open a shared pop</h1>
+      <p><a id="open-dotpop" hidden>Open in dotpop</a></p>
       <p>dotpop runs on Mac and iPhone. Install it, sign in with Apple, then open this link again to join.</p>
       <p>
         <a href="https://github.com/hitSlop/dotpop/releases/latest/download/dotpop.dmg">Download for Mac</a> ·
         <a href="https://testflight.apple.com/join/F4qfCkgg">Get dotpop for iPhone</a>
       </p>
     </main>
+    <script>
+      const link = document.getElementById("open-dotpop");
+      const fragment = location.hash.slice(1);
+      if (fragment) {
+        link.href = "dotpop://join#" + fragment;
+        link.hidden = false;
+      }
+    </script>
   </body>
 </html>

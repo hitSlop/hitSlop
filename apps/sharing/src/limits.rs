@@ -36,3 +36,10 @@ pub const CATCHUP_BYTES: usize = 1 << 20;
 pub const CATCHUP_ROWS: usize = 512;
 /// Yield between catch-up slices because Workers expose no socket backpressure signal.
 pub const CATCHUP_DELAY_MS: u64 = 25;
+
+/// Two complete upload attempts allow a changed snapshot to retry before Open.
+pub const STAGING_ALLOWANCES: usize = 2;
+/// Abandoned uploads retain their staged blobs for one day after the last upload.
+pub const STAGING_TTL_MS: u64 = 24 * 60 * 60 * 1000;
+/// Discard a modest excess so clients can finish writing and receive the refusal.
+pub const REQUEST_DRAIN_BYTES: usize = 1 << 20;

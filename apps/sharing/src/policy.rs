@@ -20,6 +20,14 @@ pub fn transition(from: Option<RoomPhase>, to: RoomPhase) -> Result<RoomPhase, R
     }
 }
 
+/// Staging has room for two complete seed and attachment sets, independent of Open.
+pub fn staging_fits(count: usize, bytes: u64) -> bool {
+    count <= limits::STAGING_ALLOWANCES * (pop_contracts::wire::ATTACHMENT_COUNT + 1)
+        && bytes
+            <= (limits::STAGING_ALLOWANCES * (pop_contracts::wire::ATTACHMENT_BYTES + pop_sharing_protocol::SEED_BYTES))
+                as u64
+}
+
 /// Parse bounded version headers, including duplicate-peer rejection.
 pub fn version_header(text: &str) -> Option<Version> {
     if text.len() > CONTROL_BYTES {
@@ -150,6 +158,22 @@ pub fn decode_spans(bytes: &[u8]) -> Result<Vec<Span>, &'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn staging_admission_bounds_count_and_bytes_independently() {
+        let count = limits::STAGING_ALLOWANCES * (pop_contracts::wire::ATTACHMENT_COUNT + 1);
+        let bytes = (limits::STAGING_ALLOWANCES
+            * (pop_contracts::wire::ATTACHMENT_BYTES + pop_sharing_protocol::SEED_BYTES)) as u64;
+        for (count, bytes, fits) in [
+            (0, 0, true),
+            (count, bytes, true),
+            (count + 1, 0, false),
+            (0, bytes + 1, false),
+            (usize::MAX, u64::MAX, false),
+        ] {
+            assert_eq!(staging_fits(count, bytes), fits);
+        }
+    }
+
     #[test]
     fn lifecycle_accepts_only_forward_transitions() {
         use RoomPhase::*;

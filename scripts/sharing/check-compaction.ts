@@ -112,6 +112,7 @@ export class SharedDocument {
     }
     if (path === '/__test/hold-alarms') { this.holdAlarms=(await req.json()).enabled; return new Response('ready'); }
     if (path === '/__test/alarm') return await this.inner.alarm();
+    if (path === '/__test/fire-alarm') { await this.state.storage.deleteAlarm(); return await this.inner.alarm(); }
     if (path === '/__test/alarm-time') return Response.json(await this.state.storage.getAlarm());
     // Resets the object as a crash would: in-flight requests fail and memory is lost.
     if (path === '/__test/reset') this.state.abort('Test reset');
@@ -196,6 +197,30 @@ const storedSpans = (bytes: number[]) => {
     view.getUint32(i * 16 + 8), view.getUint32(i * 16 + 12),
   ]);
 };
+/** Miniflare reaches the local runtime over kept-alive connections, which the runtime may
+ * close while a check waits or after it refuses an upload early; the next request on such a
+ * connection is reset before it is read. Sending it again is safe: a closed connection
+ * delivered nothing, and a refused upload is refused again. Anything else still fails. */
+export async function resent<T>(send: () => Promise<T>): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try { return await send(); } catch (error) {
+      const code = (error as { cause?: { code?: string } }).cause?.code;
+      if (attempt === 2 || (code !== "ECONNRESET" && code !== "EPIPE")) throw error;
+    }
+  }
+}
+/** A Durable Object namespace whose stubs resend a request a closed connection dropped. */
+export async function objects(worker: Miniflare, binding: string, service?: string) {
+  const namespace = await resent(() => worker.getDurableObjectNamespace(binding, service));
+  return {
+    idFromName: (name: string) => namespace.idFromName(name),
+    get: (id: ReturnType<typeof namespace.idFromName>) => {
+      const stub = namespace.get(id);
+      return { fetch: (...args: Parameters<typeof stub.fetch>) => resent(() => stub.fetch(...args)) };
+    },
+  };
+}
+
 export async function checkCompaction(
   worker: Miniflare,
   call: (
@@ -216,7 +241,7 @@ export async function checkCompaction(
     ).status,
     401,
   );
-  const namespace = await worker.getDurableObjectNamespace("DOCUMENTS", "relay");
+  const namespace = await objects(worker, "DOCUMENTS", "relay");
   const bucket = await worker.getR2Bucket("SEEDS", "relay");
   const room: { room: string; capability?: string; access?: string } = {
     room: "00000000-0000-4000-a000-000000000001",

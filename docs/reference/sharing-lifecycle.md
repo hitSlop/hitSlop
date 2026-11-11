@@ -35,7 +35,7 @@ to the document only after Open.
 
 | Failure | Result |
 |---|---|
-| A seed or attachment upload fails | The document stays uploading and the owner unbound. A retry stages a fresh snapshot and sends only missing blobs. Staged blobs consume no attachment budget; the eventual Open selects the seed and attachments and discards the rest. |
+| A seed or attachment upload fails | The document stays uploading and the owner unbound. A retry stages a fresh snapshot and sends only missing blobs. Staging admits at most two complete upload sets (514 blobs, 232 MiB), independently of the attachment budget; beyond either cap is 413. After 24 hours without a staged upload, an alarm clears staging through retryable garbage collection; the room stays uploading. The eventual Open selects the seed and attachments and discards the rest. |
 | The seed exceeds 16 MiB | Refused before the cloud document is created; the local document is retained. |
 | The document grew past 16 MiB after going live | Enabling sync again stages nothing and reconnects; the base limit under [Outgrown](#outgrown) still applies. |
 
