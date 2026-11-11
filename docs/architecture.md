@@ -182,7 +182,7 @@ owner retryable. An uncertain write fences further writes until its outcome is r
 | Author SDK | `packages/pop/src/sdk` | Descriptors, public types, errors, Svelte adapter; no host runtime |
 | Page shell | `packages/pop/src/shell` (served at `/__shell__/`) | Store, handles, text binding, write queue, barrier, attachments, theme application |
 | iPhone | `apps/apple/App/iOS` | Phone library, editor navigation, sharing UI and background refresh |
-| Widgets | `PopDocument/WidgetPublisher.swift`, Mac and iPhone publisher adapters | Shared capture scheduling and publication checks; platform identity and lifecycle |
+| Widgets | `PopDocument/WidgetPublisher.swift`, Mac and iPhone publisher adapters | Shared capture scheduling, library identity and publication checks; platform lifecycle |
 
 The window's failure screen (Reopen, Copy details, Get help) and the save-failure sheet
 are presented by `PopDocumentAttention.swift` and `PageFailureNotice.swift`. Native
@@ -516,7 +516,7 @@ collector admitted past an active barrier. A collector that throws, or an edit t
 refuses, leaves the blob unreferenced. Unshared documents reclaim it on close; shared
 and Synced Library documents retain it for other replicas.
 
-## macOS image widgets
+## Image widgets
 
 An optional embedded `Widget.svelte` renders small, medium and large PNGs from one
 saved snapshot, with family and viewport props and the document's effective theme.
@@ -552,45 +552,46 @@ cache tokens are simply stale: the previous images stay visible until replacemen
 succeeds. This disposable cache policy does not change the document format.
 
 One configurable WidgetKit extension offers the three sizes. Its AppIntents `Document`
-parameter lists successfully captured documents. The extension reads presentation
-records and PNGs only. The app and extension compile the shared intent source directly
+parameter lists library documents that declare a widget view. The extension reads
+presentation records, the library picker index and PNGs only. The app and extension
+compile the shared intent source directly
 so each bundle owns resolvable AppIntents metadata; the app passes active document IDs
 to the publisher. Swift owns the disposable cache format and image bounds; the
 extension does not link the document core. Rust owns stored declarations, capture
 viewports and scheduling bounds, carried to the host through UniFFI. Immutable generation folders precede an
 atomic record replacement; a late older capture cannot replace newer images. The cache
 retains the current and previous generation. Readers own image bytes and retry an
-expired pointer. App-side maintenance prunes confirmed missing/replaced files while
-retaining cached images when their source is temporarily unavailable.
+expired pointer. App-side maintenance removes records outside the visible library while
+retaining cached images when a library source is temporarily unavailable.
 
-Mac and iPhone use one `WidgetPublisher` core for capture serialization, save coalescing,
-freshness checks and publication. Their platform adapters retain distinct identity and lifecycle.
-Opening a file on Mac does not add a library entry.
+Mac and iPhone share capture serialization, save coalescing, freshness checks and
+publication, and one library-index publisher for picker entries, stored icons and account
+isolation. Widgets are keyed by library document id and use the library's entry and file
+as their source. Opening a file on Mac does not add a library entry; a file outside the
+library opens and edits normally but is not offered as a widget.
+Taps and clicks route the widget URL through the library to the document.
+The disposable App Group cache contains only library ids, presentation records, icons and
+image generations. Mac retains refresh-interval scheduling and watches library source
+files for saves by closed CLI owners. iPhone renders placed ids on saves, close, library
+version changes and foreground freshness checks.
 
-Each Mac choice has a host-minted ID and bookmark, with local file identity checked on
-resolution. Renames and same-volume moves refresh the choice's title, source location and bookmark
-without replacing its images or capture time, and request a WidgetKit reload even when
-the content fingerprint is unchanged. A cross-volume move drops the choice by design.
-Copies get different choices even when their content matches. A
-`dotpop://widget/<id>` URL resolves the source and routes through the existing document
-coordinator, which focuses an open document. Unavailable files report a native error.
-
-`widget.refreshMinutes` requests approximate capture intervals of 15–1440 minutes.
+The widget refresh declaration requests approximate capture intervals of 15–1440 minutes.
 The running Mac app queries active WidgetKit configurations, deduplicates document IDs,
 and serializes due captures using a tolerant background activity. Close captures bypass
-that queue and do not rewrite document artwork when only widget images are missing. It skips missed
-intervals after sleep. Open documents use the owner save/copy barrier; closed ones use
-the read-only snapshot path. Quitting stops captures and file watchers and leaves cached images. WidgetKit
-controls visible reload timing. The `pop dev` composition selector previews all three families with HMR. iOS
-Home Screen widgets use the shared image cache and canvases, keyed by library document id. The phone
-publishes an atomic library index with stored icons for the picker and renders only placed ids,
-on saves, close, library version changes and foreground freshness checks. Taps open the library
-document by id. Account changes clear the phone cache; Mac bookmarks and file identity stay local
-to macOS. `PhoneAppDelegate` registers a `BGAppRefreshTask`. A background lease
-refreshes downloaded library documents and placed widgets, with
-expiration cancelling work. The app requests a refresh no earlier than 30 minutes later;
-iOS decides whether and when it runs, and WidgetKit controls visible reloads. See the
-historical [platform spike evidence](evidence/widget-images-2026-10-11.md).
+that queue and do not rewrite document artwork when only widget images are missing.
+It skips missed intervals after sleep. Open documents use the owner save/copy barrier;
+closed ones use the read-only snapshot path. Quitting stops captures and file watchers
+and leaves cached images. WidgetKit controls visible reload timing. The development
+composition selector previews all three families with HMR.
+
+Account changes invalidate pending captures and remove account-bound cache entries and
+picker icons on both platforms. Account-less local documents retain their widgets across
+sign-in and sign-out. The index records account membership so the same isolation applies
+across app launches. PhoneAppDelegate registers a BGAppRefreshTask. A background lease
+refreshes downloaded library documents and placed widgets, with expiration cancelling work.
+The app requests a refresh no earlier than 30 minutes later; iOS decides whether and when
+it runs, and WidgetKit controls visible reloads. See the historical
+[platform spike evidence](evidence/widget-images-2026-10-11.md).
 
 ## CLI
 

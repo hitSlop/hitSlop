@@ -41,7 +41,7 @@ import UniformTypeIdentifiers
             if CGImageDestinationFinalize(destination) { icon = data as Data }
           }
         }
-        return WidgetLibraryEntry(id: entry.id, title: entry.title, icon: icon)
+        return WidgetLibraryEntry(id: entry.id, title: entry.title, icon: icon, accountBound: entry.accountBound)
       }
     }
   }

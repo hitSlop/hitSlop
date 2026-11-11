@@ -132,7 +132,6 @@ public struct PopDocumentRouting {
 @MainActor
 public final class PopDocumentWindowController: NSWindowController, NSWindowDelegate, DocumentSessionDelegate {
   public let url: URL
-  public let widgetFileIdentity: String?
   public let session: DocumentSession
   let routing: PopDocumentRouting
   public let telemetry: PopTelemetry
@@ -213,7 +212,6 @@ public final class PopDocumentWindowController: NSWindowController, NSWindowDele
     self.telemetry = telemetry
     presentation = WindowPresentation(started: started)
     self.url = url.standardizedFileURL
-    widgetFileIdentity = try? WidgetCache.identity(self.url)
     self.session = session
     // Start WebKit before building native chrome; bridge messages arrive only
     // after this initializer returns to the run loop.

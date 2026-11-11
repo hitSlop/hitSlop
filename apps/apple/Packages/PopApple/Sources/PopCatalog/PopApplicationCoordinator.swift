@@ -124,6 +124,28 @@ import SwiftUI
   /// A document's page is ready; the catalog that opened it steps aside.
   func hideCatalog() { catalogWindow?.window?.orderOut(nil) }
 
+  public func openLibraryDocument(id: String) {
+    Task {
+      let library = PopLibrary.shared
+      await library.refresh()
+      do {
+        guard let entry = library.visibleEntries.first(where: { $0.id == id }) else {
+          throw PopFailure("This widget’s document is no longer in the library. Choose a document in Edit Widget.")
+        }
+        let account = library.accountIdentity
+        if !entry.downloaded { try await library.download(entry) }
+        guard library.accountIdentity == account,
+          let current = library.visibleEntries.first(where: { $0.id == id }), current.downloaded
+        else { return }
+        openDocument(URL(fileURLWithPath: current.path))
+        NSApp.activate()
+      } catch {
+        showCatalog()
+        present(.failure(libraryMessage(error)), for: nil)
+      }
+    }
+  }
+
   public func openDocument(_ url: URL) {
     guard model.quitPhase == .running else { return }
     // A template opens by creating a document from it, wherever it lives. Its header

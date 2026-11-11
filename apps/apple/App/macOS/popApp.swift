@@ -91,9 +91,11 @@ private struct AppSettingsView: View {
     }
     PopWidgetPublisher.shared.start(
       activeSelections: { await PopWidgetIntent.placedDocumentIDs() },
-      openSession: { [weak self] identity in
-        self?.coordinator.documentControllers.first { $0.widgetFileIdentity == identity && !$0.isHiddenForClose }?
-          .session
+      openSession: { [weak self] url in
+        self?.coordinator.documentControllers.first {
+          $0.session.file.url.standardizedFileURL == url.standardizedFileURL && !$0.isHiddenForClose
+        }?
+        .session
       })
     PopFirebase.telemetry.send(.launched)
     // A crashed session's discovery file would name a dead owner; clear it off the main
@@ -128,21 +130,7 @@ private struct AppSettingsView: View {
         continue
       }
       guard let id = WidgetCache.selectionID(from: url) else { continue }
-      do {
-        let cache = try WidgetCache.shared()
-        guard let record = cache.record(id: id) else {
-          throw PopFailure(
-            "This widget's document is no longer available. Open the pop in pop, then choose it in Edit Widget.")
-        }
-        coordinator.openDocument(try cache.resolve(record))
-        NSApp.activate()
-      } catch {
-        showCatalog()
-        let alert = NSAlert()
-        alert.messageText = "Could not open this widget’s pop"
-        alert.informativeText = error.localizedDescription
-        alert.runModal()
-      }
+      coordinator.openLibraryDocument(id: id)
     }
   }
   func application(

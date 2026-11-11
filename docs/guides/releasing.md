@@ -432,7 +432,8 @@ Run all of these for 3.0.0. Later releases select them from the diff; record wha
   Save sheet, check diagnostic details contain no document values, and test Get help.
   Wedge a page with a busy loop: after 15 seconds it must terminate, recover through
   Reopen, and allow Close/Quit without hanging.
-- **Widgets or previews:** all widget sizes, rename and same-volume move, edits/saves,
+- **Widgets or previews:** all widget sizes, library selection and click/tap routing, edits/saves,
+  account changes preserving local widgets,
   regeneration after a Sparkle update, Finder icon and Quick Look after AirDrop.
 - **Rendering, native UI or platform dependencies:** PNG/PDF, keyboard focus, narrow
   windows, repeated open/close and menus on macOS 15.2 and the current supported macOS

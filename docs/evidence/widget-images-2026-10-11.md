@@ -40,7 +40,7 @@ also interacts with display scale; production output should explicitly normalize
 pixel dimensions.
 
 The spike used controlled HTML, not a `.slop` document. It did not prove a document
-picker, bookmark relocation, real click-to-open, sustained refresh budgets, memory peaks,
+picker, library-id routing, real click-to-open, sustained refresh budgets, memory peaks,
 sleep/wake, or iOS background rendering. Those remain integration checks. No application
 tests were selected by the earlier verification runs because the spike was ignored.
 
@@ -52,13 +52,12 @@ Capture requests and visible timelines remain separate under
 
 The `feat/slop-widget-documents` branch adds the dedicated role, typed viewport and
 refresh declaration, native saved-state capture, atomic cache, AppIntents document
-picker, bookmark opening handler and optional running-app scheduler. The Xcode widget
+picker, document opening handler and optional running-app scheduler. The Xcode widget
 product contains the extracted `SlopWidgetIntent`, entity and query metadata.
 
 The native boundary tests captured all three family sizes from saved document state,
 refused a document without the widget role, retained an earlier generation after an
-incomplete publication, distinguished a copied file, followed a rename and refused a
-replacement at the previous location. Both focused tests passed. `bun run verify`
+incomplete publication. Both focused tests passed. `bun run verify`
 and `bun run verify --native` passed; the latter ran 218 Swift tests and 26 native CLI
 tests, with three existing native scenarios skipped by their normal gates.
 Five focused WebKit browser checks also passed, including the bundled Svelte widget
@@ -80,15 +79,15 @@ queue regression was reproduced separately: a held scheduled renderer prevented 
 unrelated document from completing close. Both tests pass with the fixes. Missing
 widget images now render without document artwork writes, and a complete unchanged
 cache avoids capture. Four focused native widget tests pass, including saved-state
-capture, generation retention, expired-pointer reads, renames and deleted sources.
+capture, generation retention and expired-pointer reads.
 
 Scheduling policy is checked when authoring, not reopening stored definitions; a
 regression test first reproduced the stored-value refusal. The host clamps intervals.
 Swift owns the disposable cache record and image bounds, with no core dependency in
 the extension's shared target. Current and previous generations are retained; failed
-publications remove partial output, and app maintenance removes abandoned output and
-confirmed missing/replaced sources. Unavailable volumes and other access errors keep
-cached images. Open-session selection uses identity recorded when the document opens.
+publications remove partial output. App maintenance uses visible library membership;
+temporarily unavailable library files keep their cached images. Open-session selection
+uses the library entry’s source URL.
 
 The development composition selector exercises `capture.widget` with Rust-generated
 viewports. Focused browser checks cover all families, accepted edits surviving size

@@ -33,11 +33,7 @@ private struct Provider: AppIntentTimelineProvider {
     guard let cache = try? WidgetCache.shared(), let record = cache.record(id: selection.id) else {
       return Entry(date: Date(), id: selection.id, title: selection.title, image: nil)
     }
-    #if os(iOS)
-      let title = cache.libraryIndex().first(where: { $0.id == record.id })?.title ?? record.title
-    #else
-      let title = record.title
-    #endif
+    let title = cache.libraryIndex().first(where: { $0.id == record.id })?.title ?? record.title
     let data = cache.imageData(
       record, context.family == .systemSmall ? .small : context.family == .systemMedium ? .medium : .large)
     return Entry(

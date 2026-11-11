@@ -68,10 +68,9 @@ Release qualification of 3.0.0 and the current document format.
   client's sockets run in a Clip, and how a guest signs in with Apple and reaches the
   installed app. A Smart App Banner on the join page is the cheaper first step.
 - **Widgets.** Requalify every family and size and background refresh on devices.
-  The shared publisher core is implemented. Mac choices still use host IDs, bookmarks
-  and file identity; iPhone choices use library IDs. Mac library adoption on open and
-  library-ID widgets await a decision on copied UUIDs and moved paths. Opening a file
-  currently does not add a library entry.
+  Mac and iPhone share the publisher core, library-id cache and picker index.
+  Mac widgets require library membership; opening a file does not add a library entry.
+  Account changes remove account-bound widgets while retaining local widgets.
 - **Older documents on iPhone.** Edge-to-edge editors need safe-area padding and a
   reservation for the floating actions menu; documents keep their compiled app and may
   lack these styles. Qualify released documents on the phone (top and bottom controls,

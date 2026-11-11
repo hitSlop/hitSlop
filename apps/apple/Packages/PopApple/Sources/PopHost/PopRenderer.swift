@@ -119,24 +119,23 @@ import PopWidgets
     -> PopRenderedArtwork
   {
     let capturedAt = Date()
-    let widgetIdentity = widgetURL.flatMap { try? WidgetCache.identity($0) }
     if !renderArtwork {
-      if let widgetURL, let widgetIdentity {
+      if let widgetURL {
         await PopWidgetPublisher.shared.capture(
-          renderer: session, url: widgetURL, identity: widgetIdentity, capturedAt: capturedAt)
+          renderer: session, url: widgetURL, capturedAt: capturedAt)
       }
       return PopRenderedArtwork(preview: nil, icon: nil)
     }
     do {
       return try await session.withCaptureSnapshot(trace: trace) { source in
-        if let widgetURL, let widgetIdentity, let options = session.file.views.widget,
-          PopWidgetPublisher.shared.enabled
+        if let widgetURL, let options = session.file.views.widget,
+          PopWidgetPublisher.shared.needsCapture(url: widgetURL, edited: true)
         {
           var artwork = PopRenderedArtwork(preview: nil, icon: nil)
           // The publisher captures its lifetime before any asynchronous rendering.
           // A widget failure must not discard successful preview/icon output.
           await PopWidgetPublisher.shared.capture(
-            url: widgetURL, identity: widgetIdentity, capturedAt: capturedAt, options: options
+            url: widgetURL, capturedAt: capturedAt, options: options
           ) {
             let results: [CaptureResult]
             do { results = try await captureNative(url: source, outputs: [.preview, .icon, .widgets]) } catch {
