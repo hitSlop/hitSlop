@@ -3,18 +3,16 @@ use super::*;
 use crate::transport::account::LibraryUpdate;
 
 impl Library {
-    pub fn enable_sync(&self, id: &str, token: &str) -> Result<Entry> {
+    pub fn enable_sync(&self, account: &str, id: &str, token: &str) -> Result<Entry> {
         let _change = self.changing();
-        let generation = self.operation()?;
-        let entry = {
-            let inner = self.inner.lock().unwrap();
-            self.row(&inner, id)?
-        };
+        let generation = self.operation_for(account)?;
+        let entry = self.row(id)?;
         {
-            let mut inner = self.inner.lock().unwrap();
+            let mut inner = pop_core::lock(&self.inner);
+            self.current_operation(generation)?;
             index::begin_enable(
                 &mut inner.db,
-                &self.account,
+                &self.account(),
                 id,
                 &entry.title,
                 &entry.template,
@@ -22,8 +20,9 @@ impl Library {
                 &entry.version,
             )?;
         }
+        self.notify();
         let outcome = self.with_owner(id, |owner| {
-            crate::cloud::bootstrap(owner, token, &self.state_dir()).map_err(failed)?;
+            crate::cloud::bootstrap(owner, token, self.receipt(id, generation)?).map_err(failed)?;
             self.current_operation(generation)?;
             crate::cloud::update_document(id, &entry.title, &entry.template, token).map_err(failed)?;
             // Sharing is a presentation cache. Bootstrap completion must not
@@ -31,125 +30,126 @@ impl Library {
             self.current_operation(generation)
         });
         if let Err(error) = outcome {
-            index::record_problem(&self.inner.lock().unwrap().db, &self.account, id, &error.message)?;
+            let inner = pop_core::lock(&self.inner);
+            self.current_operation(generation)?;
+            index::record_problem(&inner.db, &self.account(), id, &error.to_string())?;
             return Err(error);
         }
         let live = {
-            let mut inner = self.inner.lock().unwrap();
-            index::finish_enable(&mut inner.db, &self.account, id)?;
+            let mut inner = pop_core::lock(&self.inner);
+            self.current_operation(generation)?;
+            index::finish_enable(&mut inner.db, &self.account(), id)?;
             inner.token = Some(token.into());
             inner.live.get(id).and_then(Weak::upgrade)
         };
         if let Some(owner) = live {
             self.attach(id, owner, token)?;
         }
-        let inner = self.inner.lock().unwrap();
-        self.row(&inner, id)
+        self.row(id)
     }
-    pub fn download(&self, id: &str, token: &str) -> Result<Entry> {
+    pub fn download(&self, account: &str, id: &str, token: &str) -> Result<Entry> {
         let _change = self.changing();
-        let generation = self.operation()?;
-        let entry = {
-            let inner = self.inner.lock().unwrap();
-            self.row(&inner, id)?
-        };
+        let generation = self.operation_for(account)?;
+        let entry = self.row(id)?;
         if entry.deleted {
             return Err(failed("Cloud document is no longer available"));
         }
         let access = crate::cloud::authorized_access(id, token).map_err(failed)?;
         self.current_operation(generation)?;
         let Some(access) = access else {
-            self.apply(LibraryUpdate::Remove(id.into()))?;
+            self.apply_at(LibraryUpdate::Remove(id.into()), generation)?;
             return Err(failed("Cloud document access was removed; local edits were retained"));
         };
-        self.remember_access(id, &access)?;
+        self.remember_access(id, &access, generation)?;
         if entry.downloaded {
-            return self.row(&self.inner.lock().unwrap(), id);
+            return self.row(id);
         }
         let resolved = crate::resolution::resolve(id, token)
             .map_err(failed)?
             .ok_or_else(|| failed("Cloud document is not ready"))?;
         self.current_operation(generation)?;
         resolved
-            .install_if_current(Path::new(&entry.path), &self.state_dir(), || {
-                self.current_operation(generation).map_err(|error| error.message)
+            .install_if_current(Path::new(&entry.path), self.receipt(id, generation)?, || {
+                self.current_operation(generation)
             })
             .map_err(failed)?;
         self.current_operation(generation)?;
         self.cache_file(id, None)?;
-        let inner = self.inner.lock().unwrap();
-        self.row(&inner, id)
+        self.row(id)
     }
-    fn remember_access(&self, id: &str, access: &AccessState) -> Result<()> {
+    fn remember_access(&self, id: &str, access: &AccessState, generation: u64) -> Result<()> {
         self.cloud()?;
         Self::valid(id)?;
         if access.document != id {
             return Err(failed("Access response belongs to another document"));
         }
-        index::remember_sharing(&self.inner.lock().unwrap().db, &self.account, &access.document, access.sharing)
+        let inner = pop_core::lock(&self.inner);
+        self.current_operation(generation)?;
+        index::remember_sharing(&inner.db, &self.account(), &access.document, access.sharing)
     }
-    pub fn access(&self, id: &str, token: &str) -> Result<AccessState> {
+    pub fn access(&self, account: &str, id: &str, token: &str) -> Result<AccessState> {
         let _change = self.changing();
-        let generation = self.operation()?;
+        let generation = self.operation_for(account)?;
         let access = crate::cloud::access(id, token).map_err(failed)?;
         self.current_operation(generation)?;
-        self.remember_access(id, &access)?;
+        self.remember_access(id, &access, generation)?;
         Ok(access)
     }
-    pub fn sharing(&self, id: &str, enabled: bool, token: &str) -> Result<AccessState> {
+    pub fn sharing(&self, account: &str, id: &str, enabled: bool, token: &str) -> Result<AccessState> {
         let _change = self.changing();
-        let generation = self.operation()?;
+        let generation = self.operation_for(account)?;
         let access = crate::cloud::set_sharing(id, enabled, token).map_err(failed)?;
         self.current_operation(generation)?;
-        self.remember_access(id, &access)?;
+        self.remember_access(id, &access, generation)?;
         Ok(access)
     }
-    pub fn join(&self, link: &str, token: &str) -> Result<Entry> {
-        if self.account.is_empty() || token.is_empty() {
-            return Err(Error { issue: Issue::SignInRequired, message: "Sign in to join".into() });
+    pub fn join(&self, account: &str, link: &str, token: &str) -> Result<Entry> {
+        if self.account().is_empty() || token.is_empty() {
+            return Err(Error::Library { issue: Issue::SignInRequired, message: "Sign in to join".into() });
         }
         let _change = self.changing();
-        let generation = self.operation()?;
+        let generation = self.operation_for(account)?;
         let joined = crate::cloud::join_member(link, token).map_err(failed)?;
         self.current_operation(generation)?;
-        self.remember_join(&joined)?;
-        self.download(&joined.access.document, token)
+        self.remember_join(&joined, generation)?;
+        self.download(account, &joined.access.document, token)
     }
     /// The document decides the role: an owner opening their own invitation stays the owner,
     /// so catalog deletion later deletes rather than leaves.
-    fn remember_join(&self, joined: &JoinedDocument) -> Result<()> {
+    fn remember_join(&self, joined: &JoinedDocument, generation: u64) -> Result<()> {
         let id = &joined.access.document;
         let path = self.cached_path(id);
-        let inner = self.inner.lock().unwrap();
-        index::upsert_joined(&inner.db, &self.account, joined, &paths::store(&self.root, &path)?)
+        let inner = pop_core::lock(&self.inner);
+        self.current_operation(generation)?;
+        index::upsert_joined(&inner.db, &self.account(), joined, &paths::store(&self.root, &path)?)
     }
-    pub fn leave(&self, id: &str, token: &str) -> Result<()> {
-        self.remove_cloud(id, token, false)
+    pub fn leave(&self, account: &str, id: &str, token: &str) -> Result<()> {
+        self.remove_cloud(account, id, token, false)
     }
-    pub fn delete_everywhere(&self, id: &str, token: &str) -> Result<()> {
-        self.remove_cloud(id, token, true)
+    pub fn delete_everywhere(&self, account: &str, id: &str, token: &str) -> Result<()> {
+        self.remove_cloud(account, id, token, true)
     }
-    fn remove_cloud(&self, id: &str, token: &str, delete: bool) -> Result<()> {
+    fn remove_cloud(&self, account: &str, id: &str, token: &str, delete: bool) -> Result<()> {
         let _change = self.changing();
-        let generation = self.operation()?;
+        let generation = self.operation_for(account)?;
         self.unregister(id)?;
-        if !delete && self.row(&self.inner.lock().unwrap(), id)?.downloaded {
+        if !delete && self.row(id)?.downloaded {
             self.local_copy(id, "Retained local copy")?;
         }
-        self.departing.lock().unwrap().insert(id.into());
+        pop_core::lock(&self.departing).insert((generation, id.into()));
         let result = (|| {
-            index::mark_departing(&self.inner.lock().unwrap().db, &self.account, id)?;
+            index::mark_departing(&pop_core::lock(&self.inner).db, &self.account(), id)?;
             let result = if delete { crate::cloud::delete_document(id, token) } else { crate::cloud::leave(id, token) };
             self.current_operation(generation)?;
             if let Err(error) = result {
-                index::restore_departing(&self.inner.lock().unwrap().db, &self.account, id)?;
+                index::restore_departing(&pop_core::lock(&self.inner).db, &self.account(), id)?;
                 return Err(failed(error));
             }
             Ok(())
         })();
-        self.departing.lock().unwrap().remove(id);
+        pop_core::lock(&self.departing).remove(&(generation, id.into()));
         // Discard the connection's queued frames; its next complete snapshot is authoritative.
-        if let Some(feed) = self.feed.lock().unwrap().as_ref() {
+        if let Some(feed) = pop_core::lock(&self.feed).as_ref() {
             feed.wake();
         }
         result
@@ -158,14 +158,15 @@ impl Library {
         let _change = self.changing();
         self.cloud()?;
         let entry = {
-            let inner = self.inner.lock().unwrap();
+            let inner = pop_core::lock(&self.inner);
             if inner.live.get(id).and_then(Weak::upgrade).is_some() {
-                return Err(Error {
+                return Err(Error::Library {
                     issue: Issue::Busy,
                     message: "Close this pop before removing its download".into(),
                 });
             }
-            self.row(&inner, id)?
+            drop(inner);
+            self.row(id)?
         };
         if entry.local_only {
             return Err(failed("Local-only documents have no cloud download"));
@@ -173,10 +174,15 @@ impl Library {
         if !entry.downloaded {
             return Ok(());
         }
-        if !Path::new(&entry.path).starts_with(self.root.join("accounts").join(&self.scope)) {
+        if !Path::new(&entry.path).starts_with(self.root.join("accounts").join(self.scope())) {
             return Err(failed("This document is outside the cloud cache; its original file is retained"));
         }
-        if !crate::client::saved_confirmed(Path::new(&entry.path), &self.state_dir(), id).map_err(failed)? {
+        let confirmed = {
+            let inner = pop_core::lock(&self.inner);
+            IndexedDocument::one(&inner.db, &self.account(), id)?.confirmed
+        };
+        let saved = crate::local::inspect(Path::new(&entry.path))?;
+        if confirmed.as_deref() != Some(&saved.version) {
             return Err(failed("This download has unconfirmed edits; synchronize it before removal"));
         }
         self.unregister(id)?;

@@ -1,153 +1,190 @@
 //! Persistent cloud document control, independent from invitation access.
 use crate::client::*;
-use crate::{attachments, journal, transport};
+use crate::library::receipts;
+use crate::{attachments, transport};
 use pop_runtime::owner::Owner;
 use pop_sharing_protocol::document::{AccessState, JoinDocument, UpdateDocument};
 use pop_sharing_protocol::http::{CreateRoom, Invitation, OpenRoom, RoomPhase};
 use pop_storage::store::{Mode, Store};
+use reqwest::Method;
+#[cfg(test)]
 use std::path::Path;
-pub(crate) fn control(method: &str, route: &str, token: &str, body: &[u8]) -> Result<Vec<u8>> {
-    control_at(pop_sharing_protocol::TRUSTED_ORIGIN, method, route, token, body)
+use transport::{Endpoint, HttpOperation, Reply};
+pub(crate) fn control(method: Method, endpoint: Endpoint<'_>, token: &str, body: &[u8]) -> Result<Vec<u8>> {
+    transport::block_on(control_at(pop_sharing_protocol::TRUSTED_ORIGIN, method, endpoint, token, body))
 }
-fn control_at(origin: &str, method: &str, route: &str, token: &str, body: &[u8]) -> Result<Vec<u8>> {
+async fn control_at(origin: &str, method: Method, endpoint: Endpoint<'_>, token: &str, body: &[u8]) -> Result<Vec<u8>> {
     if token.is_empty() || token.len() > pop_sharing_protocol::limits::IDENTITY_TOKEN_BYTES {
         return Err("Sign in to your account".into());
     }
-    transport::http_request(
-        method,
-        &format!("{origin}/v1/{route}"),
-        Some(token),
-        body,
-        &[("Content-Type", "application/json")],
-        pop_sharing_protocol::CONTROL_BYTES as u64,
+    Ok(transport::http(
+        origin,
+        token,
+        HttpOperation::new(method, endpoint).body(body).headers(&[("Content-Type", "application/json")]),
     )
+    .await?
+    .unwrap_or_default())
 }
 fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T> {
-    serde_json::from_slice(bytes).map_err(fail)
+    serde_json::from_slice(bytes).map_err(Error::from)
 }
 /// The caller's current access, read from the document. Any refusal is an error; see
 /// `authorized_access` for the reading that distinguishes a removed permission.
 pub fn access(document: &str, token: &str) -> Result<AccessState> {
     RoomKey::identity(document, token)?;
-    decode(&control("GET", &format!("documents/{document}/sharing"), token, &[])?)
+    decode(&control(Method::GET, Endpoint::Sharing(document), token, &[])?)
 }
 /// Only a definite permission refusal/deletion removes a discovery reference;
 /// expired credentials and network failures remain retryable account errors.
 pub fn authorized_access(document: &str, token: &str) -> Result<Option<AccessState>> {
     RoomKey::identity(document, token)?;
-    let url = format!("{}/v1/documents/{document}/sharing", pop_sharing_protocol::TRUSTED_ORIGIN);
-    transport::access_request(&url, token).map_err(String::from)?.map(|bytes| decode(&bytes)).transpose()
+    transport::block_on(async {
+        transport::http(
+            pop_sharing_protocol::TRUSTED_ORIGIN,
+            token,
+            HttpOperation::new(Method::GET, Endpoint::Sharing(document)).reply(Reply::Optional(&[403, 410])),
+        )
+        .await?
+        .map(|bytes| decode(&bytes))
+        .transpose()
+    })
 }
 pub fn set_sharing(document: &str, enabled: bool, token: &str) -> Result<AccessState> {
     RoomKey::identity(document, token)?;
-    decode(&control(if enabled { "POST" } else { "DELETE" }, &format!("documents/{document}/sharing"), token, &[])?)
+    decode(&control(if enabled { Method::POST } else { Method::DELETE }, Endpoint::Sharing(document), token, &[])?)
 }
 pub fn sharing_link(access: &AccessState) -> Result<Option<String>> {
     if !access.sharing {
         return Ok(None);
     }
     let capability = access.capability.as_deref().ok_or("Only the owner can read the invitation")?;
-    Invitation { room: access.document.clone(), capability: capability.into() }
-        .link()
-        .map(Some)
-        .map_err(|error| error.to_string())
+    Invitation { room: access.document.clone(), capability: capability.into() }.link().map(Some).map_err(Error::from)
 }
 pub fn join_member(link: &str, token: &str) -> Result<pop_sharing_protocol::document::JoinedDocument> {
-    let invitation = Invitation::parse(link).map_err(|error| error.to_string())?;
+    let invitation = Invitation::parse(link).map_err(Error::from)?;
     decode(&control(
-        "POST",
-        &format!("documents/{}/members", invitation.room),
+        Method::POST,
+        Endpoint::Members(&invitation.room),
         token,
-        &serde_json::to_vec(&JoinDocument { capability: invitation.capability }).map_err(fail)?,
+        &serde_json::to_vec(&JoinDocument { capability: invitation.capability }).map_err(Error::from)?,
     )?)
 }
 pub fn leave(document: &str, token: &str) -> Result<()> {
     RoomKey::identity(document, token)?;
-    control("DELETE", &format!("documents/{document}/members/me"), token, &[]).map(|_| ())
+    control(Method::DELETE, Endpoint::Member(document), token, &[]).map(|_| ())
 }
 pub fn delete_document(document: &str, token: &str) -> Result<()> {
     RoomKey::identity(document, token)?;
-    control("DELETE", &format!("documents/{document}"), token, &[]).map(|_| ())
+    control(Method::DELETE, Endpoint::Document(document), token, &[]).map(|_| ())
 }
 pub fn update_document(document: &str, title: &str, template_id: &str, token: &str) -> Result<()> {
     RoomKey::identity(document, token)?;
     control(
-        "PATCH",
-        &format!("documents/{document}"),
+        Method::PATCH,
+        Endpoint::Document(document),
         token,
-        &serde_json::to_vec(&UpdateDocument { title: title.into(), template_id: template_id.into() }).map_err(fail)?,
+        &serde_json::to_vec(&UpdateDocument { title: title.into(), template_id: template_id.into() })
+            .map_err(Error::from)?,
     )
     .map(|_| ())
 }
 /// Enable synchronization without replacing the live document, its history or its UUID.
 /// The uploaded seed is this document as saved; later edits sync on top of it.
-pub fn bootstrap(owner: &Owner, token: &str, state_directory: &Path) -> Result<()> {
-    bootstrap_at(pop_sharing_protocol::TRUSTED_ORIGIN, owner, token, state_directory)
+pub fn bootstrap(owner: &Owner, token: &str, receipt: receipts::Receipt) -> Result<()> {
+    let document = owner.app().document_uuid.as_deref().ok_or("Only documents synchronize")?;
+    validate_membership(owner.share()?, &RoomKey::identity(document, token)?)?;
+    transport::block_on(bootstrap_async(pop_sharing_protocol::TRUSTED_ORIGIN, owner, token, receipt))
 }
+#[cfg(test)]
 fn bootstrap_at(origin: &str, owner: &Owner, token: &str, state_directory: &Path) -> Result<()> {
+    let document = owner.app().document_uuid.as_deref().ok_or("Only documents synchronize")?;
+    validate_membership(owner.share()?, &RoomKey { origin: origin.into(), ..RoomKey::identity(document, token)? })?;
+    transport::block_on(bootstrap_async(origin, owner, token, crate::client::tests::receipt_at(state_directory)))
+}
+async fn bootstrap_async(origin: &str, owner: &Owner, token: &str, receipt: receipts::Receipt) -> Result<()> {
     let document = owner.app().document_uuid.as_deref().ok_or("Only documents synchronize")?;
     let key = RoomKey { origin: origin.into(), ..RoomKey::identity(document, token)? };
     // Stage a new room's seed first, so a document too large to share fails before any
     // room exists. An existing room keeps its recovery path: a live one only reconnects,
     // even after its document has grown past the initial limit.
-    let room = format!("{origin}/v1/documents/{document}");
-    let staged = match transport::lookup(&room, token, &[404]).map_err(String::from)? {
-        None => Some(stage(owner)?),
+    let staged = match transport::http(
+        origin,
+        token,
+        HttpOperation::new(Method::GET, Endpoint::Document(document)).reply(Reply::Optional(&[404])),
+    )
+    .await?
+    {
+        None => Some(stage_async(owner).await?),
         Some(_) => None,
     };
     // An empty acknowledgement: the document's phase is read next.
     control_at(
         origin,
-        "POST",
-        "documents",
+        Method::POST,
+        Endpoint::Documents,
         token,
-        &serde_json::to_vec(&CreateRoom { document: document.into() }).map_err(fail)?,
-    )?;
-    let info = room_info(&key, Some(token))?;
+        &serde_json::to_vec(&CreateRoom { document: document.into() }).map_err(Error::from)?,
+    )
+    .await?;
+    let info = room_info(&key).await?;
     if info.phase == RoomPhase::Uploading {
         let seed = match staged {
             Some(seed) => seed,
-            None => stage(owner)?,
+            None => stage_async(owner).await?,
         };
-        upload_seed(&key, &seed, token, state_directory)?;
+        upload_seed(&key, &seed, token, receipt).await?;
     } else if info.phase != RoomPhase::Live {
         return Err("Cloud document was deleted".into());
     }
-    bind_owner(owner, &key, document)
+    bind_owner(owner, &key, document).await
 }
 /// Upload the missing seed and attachments from one immutable snapshot, then commit the set.
-fn upload_seed(key: &RoomKey, seed: &Seed, token: &str, state_directory: &Path) -> Result<()> {
-    let journal = journal::Journal::new(state_directory, &key.origin, &key.room)?;
-    let mut uploaded = attachments::remote_blobs(key)?;
+async fn upload_seed(key: &RoomKey, seed: &Seed, token: &str, receipt: receipts::Receipt) -> Result<()> {
+    let mut uploaded = attachments::remote_blobs(key).await?;
     if !uploaded.iter().any(|item| item.hash == seed.hash) {
+        let path = seed.path.clone();
+        let bytes = transport::blocking(move || Ok(std::fs::read(path)?)).await?;
         transport::http(
-            key,
-            "PUT",
-            &format!("blob/{}", seed.hash),
-            Some(token),
-            &std::fs::read(&seed.path).map_err(fail)?,
-            &[("Content-Type", "application/octet-stream")],
-        )?;
+            &key.origin,
+            token,
+            HttpOperation::new(Method::PUT, Endpoint::Blob(&key.room, &seed.hash))
+                .body(&bytes)
+                .headers(&[("Content-Type", "application/octet-stream")]),
+        )
+        .await?;
     }
-    let store = Store::open(&seed.snapshot, Mode::Snapshot).map_err(fail)?;
-    let attachments = attachments::inventory(store.attachments().map_err(fail)?);
-    attachments::upload(key, &attachments, &mut uploaded, |id| Ok(store.attachment(id)?))?;
-    store.close().map_err(fail)?;
+    let path = seed.snapshot.clone();
+    let attachments = transport::blocking(move || {
+        let store = Store::open(&path, Mode::Snapshot)?;
+        let items = attachments::inventory(store.attachments()?);
+        store.close()?;
+        Ok(items)
+    })
+    .await?;
+    attachments::upload(key, &attachments, &mut uploaded, |id| {
+        let path = seed.snapshot.clone();
+        async move {
+            transport::blocking(move || {
+                let store = Store::open(&path, Mode::Snapshot)?;
+                let bytes = store.attachment(&id)?;
+                store.close()?;
+                Ok(bytes)
+            })
+            .await
+        }
+    })
+    .await?;
     let open = OpenRoom {
         seed: seed.hash.clone(),
         version: seed.version.clone(),
         app: seed.app.clone(),
         attachments: attachments.into_iter().map(|item| item.hash).collect(),
     };
-    transport::http(
-        key,
-        "POST",
-        "open",
-        Some(token),
-        &serde_json::to_vec(&open).map_err(fail)?,
-        &[("Content-Type", "application/json")],
-    )?;
-    Ok(journal::confirm_seed(&journal, seed.owner_version.clone())?)
+    control_at(&key.origin, Method::POST, Endpoint::Open(&key.room), token, &serde_json::to_vec(&open)?).await?;
+    {
+        let version = seed.owner_version.clone();
+        transport::blocking(move || receipt(version)).await
+    }
 }
 
 #[cfg(test)]
@@ -430,7 +467,10 @@ mod tests {
         let relay = Relay::start(&document);
         let state = directory.path().join("relay-state");
         let error = bootstrap_at(&relay.origin, &owner, "test-token", &state).unwrap_err();
-        assert!(error.contains("embedded app and saved history exceed the 16 MiB initial sync limit"), "{error}");
+        assert!(
+            error.to_string().contains("embedded app and saved history exceed the 16 MiB initial sync limit"),
+            "{error}"
+        );
         assert_eq!(
             relay.room().requests,
             [format!("GET /v1/documents/{document}")],

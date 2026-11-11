@@ -1,5 +1,6 @@
 //! Persistent cloud document synchronization under one Firebase identity.
-use crate::{attachments, cloud, journal, local, transport};
+use crate::library::receipts;
+use crate::{cloud, transport};
 use pop_contracts::hex;
 use pop_contracts::relay::SyncPhase;
 use pop_runtime::owner::{CallOptions, Completion, Owner};
@@ -11,36 +12,26 @@ use std::sync::{Arc, Mutex};
 use std::time::Instant;
 #[cfg(test)]
 pub(crate) mod tests;
-pub(crate) type Result<T> = std::result::Result<T, String>;
+pub(crate) use crate::error::{Error, Result};
 pub(crate) type Notice = Arc<Mutex<Option<Arc<dyn Fn() + Send + Sync>>>>;
-pub(crate) fn connection_notices(primary: &Notice, observer: &Notice) -> Notice {
-    let primary = primary.clone();
-    let observer = observer.clone();
-    Arc::new(Mutex::new(Some(Arc::new(move || {
-        let callbacks = [primary.lock().unwrap().clone(), observer.lock().unwrap().clone()];
-        for callback in callbacks.into_iter().flatten() {
-            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| callback()));
-        }
-    }))))
-}
-pub(crate) fn fail(error: impl std::fmt::Display) -> String {
-    error.to_string()
-}
-pub(crate) fn request<T: Send + 'static>(
-    owner: &Owner,
-    request: impl FnOnce(&Owner, CallOptions, Completion<T>),
-) -> std::result::Result<T, transport::HttpFailure> {
-    transport::owner_request(owner, request, transport::OwnerEffect::Other)
-}
-pub(crate) fn retry_busy<T: Send + 'static>(
+#[cfg(test)]
+pub(crate) use crate::local::request;
+pub(crate) async fn retry_busy<T: Send + 'static>(
     owner: &Owner,
     build: impl Fn(&Owner, CallOptions, Completion<T>),
-) -> std::result::Result<T, transport::HttpFailure> {
+) -> Result<T> {
     let deadline = Instant::now() + std::time::Duration::from_secs(2);
     loop {
-        match request(owner, &build) {
-            Err(transport::HttpFailure { kind: PauseKind::Busy, .. }) if Instant::now() < deadline => {
-                transport::pause(std::time::Duration::from_millis(25))?
+        match transport::owner_request(
+            owner,
+            &transport::OwnerOutcome::default(),
+            &build,
+            transport::OwnerEffect::Other,
+        )
+        .await
+        {
+            Err(crate::Error::Sharing { kind: PauseKind::Busy, .. }) if Instant::now() < deadline => {
+                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
             }
             result => return result,
         }
@@ -48,19 +39,24 @@ pub(crate) fn retry_busy<T: Send + 'static>(
 }
 pub(crate) fn private_file(path: &Path, bytes: &[u8]) -> Result<()> {
     use std::{io::Write, os::unix::fs::OpenOptionsExt};
-    let mut file = std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(path).map_err(fail)?;
-    file.write_all(bytes).map_err(fail)?;
-    file.sync_all().map_err(fail)
+    let mut file =
+        std::fs::OpenOptions::new().write(true).create_new(true).mode(0o600).open(path).map_err(Error::from)?;
+    file.write_all(bytes).map_err(Error::from)?;
+    file.sync_all().map_err(Error::from)
 }
 #[derive(Clone)]
 pub(crate) struct RoomKey {
     pub(crate) room: String,
     pub(crate) identity: String,
+    pub(crate) identity_updates: Option<tokio::sync::watch::Receiver<Option<String>>>,
     pub(crate) origin: String,
 }
 impl RoomKey {
-    pub(crate) fn bearer(&self) -> &str {
-        &self.identity
+    pub(crate) fn bearer(&self) -> String {
+        self.identity_updates
+            .as_ref()
+            .and_then(|identity| identity.borrow().clone())
+            .unwrap_or_else(|| self.identity.clone())
     }
     pub(crate) fn identity(document: &str, token: &str) -> Result<Self> {
         if !pop_contracts::identity::valid_document_id(document)
@@ -69,12 +65,23 @@ impl RoomKey {
         {
             return Err("Invalid cloud document access".into());
         }
-        Ok(Self { room: document.into(), identity: token.into(), origin: pop_sharing_protocol::TRUSTED_ORIGIN.into() })
+        Ok(Self {
+            room: document.into(),
+            identity: token.into(),
+            identity_updates: None,
+            origin: pop_sharing_protocol::TRUSTED_ORIGIN.into(),
+        })
     }
 }
-pub(crate) fn room_info(key: &RoomKey, token: Option<&str>) -> std::result::Result<RoomInfo, transport::HttpFailure> {
-    let bytes = transport::http_typed(key, "GET", "", Some(token.unwrap_or(key.bearer())), &[], &[])?;
-    let info: RoomInfo = serde_json::from_slice(&bytes).map_err(fail)?;
+pub(crate) async fn room_info(key: &RoomKey) -> std::result::Result<RoomInfo, crate::Error> {
+    let bytes = transport::http(
+        &key.origin,
+        &key.bearer(),
+        transport::HttpOperation::new(reqwest::Method::GET, transport::Endpoint::Document(&key.room)),
+    )
+    .await?
+    .unwrap_or_default();
+    let info: RoomInfo = serde_json::from_slice(&bytes).map_err(Error::from)?;
     if !pop_contracts::identity::valid_document_id(&info.document)
         || info.document != key.room
         || info.seed_hash.as_deref().is_some_and(|hash| !pop_contracts::wire::valid_attachment_id(hash))
@@ -91,14 +98,14 @@ pub(crate) fn validate_membership(share: Option<Share>, key: &RoomKey) -> Result
     }
     Ok(())
 }
-pub(crate) fn bind_owner(owner: &Owner, key: &RoomKey, document: &str) -> Result<()> {
+pub(crate) async fn bind_owner(owner: &Owner, key: &RoomKey, document: &str) -> Result<()> {
     if owner.app().document_uuid.as_deref() != Some(document) {
         return Err("Different cloud document".into());
     }
-    validate_membership(owner.share().map_err(fail)?, key)?;
     retry_busy(owner, |owner: &Owner, options, callback| {
         owner.set_share(Share { endpoint: key.origin.clone() }, options, callback)
-    })?;
+    })
+    .await?;
     Ok(())
 }
 /// The saved document as uploaded once, before the room goes live. Its history is the
@@ -113,50 +120,51 @@ pub(crate) struct Seed {
 }
 impl Drop for Seed {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(&self.path);
-        let _ = std::fs::remove_file(&self.snapshot);
-        if let Some(parent) = self.path.parent() {
-            let _ = std::fs::remove_dir(parent);
-        }
+        transport::discard_files(
+            vec![self.path.clone(), self.snapshot.clone()],
+            self.path.parent().map(Path::to_owned),
+        );
     }
 }
 
+#[cfg(test)]
 pub(crate) fn stage(owner: &Owner) -> Result<Seed> {
+    transport::block_on(stage_async(owner))
+}
+pub(crate) async fn stage_async(owner: &Owner) -> Result<Seed> {
     let directory = std::env::temp_dir()
         .join(format!("pop-sharing-{}", pop_core::random_hex(32).map_err(|_| "Cannot generate document identity")?));
     use std::os::unix::fs::DirBuilderExt;
-    std::fs::DirBuilder::new().mode(0o700).create(&directory).map_err(fail)?;
-    let path = directory.join("seed.pop");
-    let snapshot = directory.join("snapshot.pop");
-    let result = (|| {
-        retry_busy(owner, |owner: &Owner, options, callback| owner.stage_seed(snapshot.clone(), options, callback))?;
-        let source = Store::open(&snapshot, Mode::Snapshot).map_err(fail)?;
-        source.seed_without_attachments(&path).map_err(fail)?;
-        source.close().map_err(fail)?;
+    let create = directory.clone();
+    transport::blocking(move || Ok(std::fs::DirBuilder::new().mode(0o700).create(create)?)).await?;
+    let mut seed = Seed {
+        snapshot: directory.join("snapshot.pop"),
+        path: directory.join("seed.pop"),
+        version: vec![],
+        owner_version: String::new(),
+        app: String::new(),
+        hash: String::new(),
+    };
+    retry_busy(owner, |owner: &Owner, options, callback| owner.stage_seed(seed.snapshot.clone(), options, callback))
+        .await?;
+    transport::blocking(move || {
+        let source = Store::open(&seed.snapshot, Mode::Snapshot)?;
+        source.seed_without_attachments(&seed.path)?;
+        source.close()?;
         use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).map_err(fail)?;
-        if std::fs::metadata(&path).map_err(fail)?.len() > pop_sharing_protocol::SEED_BYTES as u64 {
+        std::fs::set_permissions(&seed.path, std::fs::Permissions::from_mode(0o600))?;
+        if std::fs::metadata(&seed.path)?.len() > pop_sharing_protocol::SEED_BYTES as u64 {
             return Err("The embedded app and saved history exceed the 16 MiB initial sync limit. Your local document is retained.".into());
         }
-        let store = Store::open(&path, Mode::Snapshot).map_err(fail)?;
-        let document = store.document().map_err(fail)?;
-        let seed = Seed {
-            snapshot: snapshot.clone(),
-            path: path.clone(),
-            version: document.wire_history(),
-            owner_version: document.version(),
-            app: hex(store.app_digest().map_err(fail)?.as_bytes()),
-            hash: hex(&Sha256::digest(std::fs::read(&path).map_err(fail)?)),
-        };
-        store.close().map_err(fail)?;
+        let store = Store::open(&seed.path, Mode::Snapshot)?;
+        let document = store.document()?;
+        seed.version = document.wire_history();
+        seed.owner_version = document.version();
+        seed.app = hex(store.app_digest()?.as_bytes());
+        seed.hash = hex(&Sha256::digest(std::fs::read(&seed.path)?));
+        store.close()?;
         Ok(seed)
-    })();
-    if result.is_err() {
-        let _ = std::fs::remove_file(&path);
-        let _ = std::fs::remove_file(&snapshot);
-        let _ = std::fs::remove_dir(&directory);
-    }
-    result
+    }).await
 }
 
 use pop_contracts::relay::PauseKind;
@@ -170,75 +178,62 @@ pub struct Client {
     key: Mutex<RoomKey>,
     connection: Mutex<Option<transport::Connection>>,
     notice: Notice,
-    observer: Notice,
-    journal: Arc<journal::Journal>,
+    receipt: receipts::Receipt,
 }
 impl Client {
-    fn new(owner: Arc<Owner>, key: RoomKey, state_directory: &Path) -> Result<Self> {
+    fn new(owner: Arc<Owner>, key: RoomKey, receipt: receipts::Receipt, notice: Notice) -> Result<Self> {
         let document = owner.app().document_uuid.as_deref().ok_or("Only documents can synchronize")?;
         if document != key.room {
             return Err("Different cloud document".into());
         }
-        validate_membership(owner.share().map_err(fail)?, &key)?;
-        let journal = Arc::new(journal::Journal::new(state_directory, &key.origin, document)?);
-        Ok(Self {
-            owner,
-            key: Mutex::new(key),
-            connection: Mutex::new(None),
-            notice: Arc::new(Mutex::new(None)),
-            observer: Arc::new(Mutex::new(None)),
-            journal,
-        })
+        validate_membership(owner.share().map_err(Error::from)?, &key)?;
+        Ok(Self { owner, key: Mutex::new(key), connection: Mutex::new(None), notice, receipt })
     }
-    pub(crate) fn cloud(owner: Arc<Owner>, document: &str, token: &str, state_directory: &Path) -> Result<Self> {
-        Self::new(owner, RoomKey::identity(document, token)?, state_directory)
+    pub(crate) fn cloud(
+        owner: Arc<Owner>,
+        document: &str,
+        token: &str,
+        receipt: receipts::Receipt,
+        notice: Notice,
+    ) -> Result<Self> {
+        Self::new(owner, RoomKey::identity(document, token)?, receipt, notice)
     }
     /// Includes transient reconnects and compaction; terminal supervisors are stopped.
     pub(crate) fn is_running(&self) -> bool {
-        self.connection.lock().unwrap().as_ref().is_some_and(transport::Connection::is_running)
+        pop_core::lock(&self.connection).as_ref().is_some_and(transport::Connection::is_running)
     }
     /// Refresh credentials within the caller's existing account binding. Account changes
-    /// detach the old library/client rather than transfer its live connection.
+    /// stop existing clients before rebinding the long-lived library.
     pub(crate) fn set_identity(&self, token: &str) -> Result<()> {
         {
-            let mut key = self.key.lock().unwrap();
+            let mut key = pop_core::lock(&self.key);
             RoomKey::identity(&key.room, token)?;
             key.identity = token.to_owned();
         }
-        if let Some(connection) = self.connection.lock().unwrap().as_ref() {
+        if let Some(connection) = pop_core::lock(&self.connection).as_ref() {
             connection.set_identity(token.to_owned());
         }
         Ok(())
     }
     pub(crate) fn connect(&self) -> Result<()> {
         self.pause();
-        let key = self.key.lock().unwrap().clone();
-        bind_owner(&self.owner, &key, &key.room)?;
-        let connection = transport::Connection::start(
-            self.owner.clone(),
-            key,
-            connection_notices(&self.notice, &self.observer),
-            self.journal.clone(),
-        );
-        *self.connection.lock().unwrap() = Some(connection);
+        let key = pop_core::lock(&self.key).clone();
+        validate_membership(self.owner.share()?, &key)?;
+        transport::block_on(bind_owner(&self.owner, &key, &key.room))?;
+        let connection =
+            transport::Connection::start(self.owner.clone(), key, self.notice.clone(), self.receipt.clone());
+        *pop_core::lock(&self.connection) = Some(connection);
         Ok(())
     }
     pub(crate) fn pause(&self) {
-        let connection = self.connection.lock().unwrap().take();
+        let connection = pop_core::lock(&self.connection).take();
         if let Some(connection) = connection {
             connection.stop();
         }
     }
     pub(crate) fn flush(&self) -> Result<()> {
-        retry_busy(&self.owner, Owner::flush)?;
+        transport::block_on(retry_busy(&self.owner, Owner::flush))?;
         Ok(())
-    }
-    /// Internal owner of catalog snapshots; independent from the document UI listener.
-    pub(crate) fn observe(&self, observer: Arc<dyn Fn() + Send + Sync>) {
-        *self.observer.lock().unwrap() = Some(observer);
-    }
-    pub fn listen(&self, notice: Arc<dyn Fn() + Send + Sync>) {
-        *self.notice.lock().unwrap() = Some(notice);
     }
     pub fn status(&self) -> ClientStatus {
         let (phase, detail, pause_kind) = self
@@ -257,70 +252,11 @@ impl Drop for Client {
 }
 /// Parse an invitation without using its capability as an ongoing connection identity.
 pub fn invitation_document(link: &str) -> Result<String> {
-    Ok(Invitation::parse(link).map_err(fail)?.room)
+    Ok(Invitation::parse(link).map_err(Error::from)?.room)
 }
 pub fn local_document(path: &Path) -> Result<Option<String>> {
-    Ok(Store::open(path, Mode::Snapshot).map_err(fail)?.app().document_uuid.clone())
+    Ok(Store::open(path, Mode::Snapshot).map_err(Error::from)?.app().document_uuid.clone())
 }
 pub fn delete_account(token: &str) -> Result<()> {
-    cloud::control("DELETE", "account", token, &[]).map(|_| ())
-}
-pub(crate) fn install_seed(
-    destination: &Path,
-    key: &RoomKey,
-    info: &RoomInfo,
-    bytes: &[u8],
-    current: impl FnOnce() -> Result<()>,
-) -> Result<()> {
-    if Some(hex(&Sha256::digest(bytes))) != info.seed_hash || Some(bytes.len() as u32) != info.seed_size {
-        return Err("Seed checksum mismatch".into());
-    }
-    if let Some(parent) = destination.parent() {
-        std::fs::create_dir_all(parent).map_err(fail)?;
-    }
-    let stage = destination.with_file_name(format!(
-        ".pop-sharing-{}.pop",
-        pop_core::random_hex(32).map_err(|_| "Cannot generate document identity")?
-    ));
-    let result = (|| {
-        private_file(&stage, bytes)?;
-        // A re-share seed may still contain its predecessor's membership. Bind the
-        // new replica through its owner before callers restore the new credential.
-        let owner = Owner::open(&stage, Mode::Document, Arc::new(|_| {})).map_err(fail)?;
-        let binding: Result<()> = (|| {
-            request(&owner, |owner: &Owner, options, callback| {
-                owner.set_share(Share { endpoint: key.origin.clone() }, options, callback)
-            })?;
-            attachments::download_blobs(&owner, key, &mut Vec::new())?;
-            Ok(())
-        })();
-        let closed = request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback));
-        binding?;
-        closed?;
-        current()?;
-        local::install(&stage, destination, &info.document)?;
-        Ok(())
-    })();
-    let _ = std::fs::remove_file(stage);
-    result
-}
-
-/// Bounded receipt metadata for catalog status; this does not open document state.
-pub(crate) fn confirmed_saved_version(state_directory: &Path, document: &str) -> Result<Option<String>> {
-    let journal = journal::Journal::inspect(state_directory, pop_sharing_protocol::TRUSTED_ORIGIN, document)?;
-    let Some(transaction) = journal.inspection()? else { return Ok(None) };
-    Ok(transaction.current()?.map(|receipt| receipt.owner_version))
-}
-
-/// Removing a cache requires a saved frontier acknowledged by this cloud document.
-pub(crate) fn saved_confirmed(path: &Path, state_directory: &Path, document: &str) -> Result<bool> {
-    let store = Store::open(path, Mode::Snapshot).map_err(fail)?;
-    if store.app().document_uuid.as_deref() != Some(document) {
-        return Err("Different cloud document".into());
-    }
-    let version = store.document().map_err(fail)?.version();
-    store.close().map_err(fail)?;
-    let journal = journal::Journal::inspect(state_directory, pop_sharing_protocol::TRUSTED_ORIGIN, document)?;
-    let Some(transaction) = journal.inspection()? else { return Ok(false) };
-    Ok(transaction.current()?.is_some_and(|receipt| receipt.owner_version == version))
+    cloud::control(reqwest::Method::DELETE, transport::Endpoint::Account, token, &[]).map(|_| ())
 }

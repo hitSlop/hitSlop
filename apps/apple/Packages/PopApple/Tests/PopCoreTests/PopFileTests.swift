@@ -210,7 +210,7 @@ private func writeSkin(to url: URL, width: Int, height: Int) throws {
       id: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", title: "Document", template: "fixture", path: "/document.pop",
       version: "saved", assetRevision: "", artworkVersion: "", dirty: true, deleted: false,
       localOnly: false, accountBound: true, downloaded: true, problem: nil, role: role, revision: 1,
-      sharingEnabled: sharingEnabled, inbox: false)
+      sharingEnabled: sharingEnabled, inbox: false, phase: .offline, pauseKind: nil, detail: "Offline")
   }
   #expect(entry(role: .owner, sharingEnabled: nil).catalogPresentation.badge == nil)
   #expect(entry(role: .owner, sharingEnabled: false).catalogPresentation.badge == nil)

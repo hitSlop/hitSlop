@@ -836,7 +836,11 @@ fn sync_callback_panics_preserve_editing_and_saving() {
         }));
         if reconnect {
             call(&owner, Owner::state).unwrap();
-            assert!(!connection.frame(vec![0; pop_contracts::relay::frame::MAX_FRAME + 1]));
+            assert!(!connection.frame(pop_runtime::owner::ReceivedFrame::decode(vec![
+                0;
+                pop_contracts::relay::frame::MAX_FRAME
+                    + 1
+            ])));
         } else {
             connection.base(move |_| {
                 base_entered.send(()).unwrap();
@@ -934,9 +938,9 @@ fn sync_input_budget_recovers_and_old_connections_cannot_detach_the_replacement(
         wait.recv_timeout(Duration::from_secs(5)).unwrap();
         let count = if frame.is_empty() { pop_contracts::relay::limits::QUEUED_FRAMES } else { 2 };
         for _ in 0..count {
-            assert!(old.frame(frame.clone()));
+            assert!(old.frame(pop_runtime::owner::ReceivedFrame::decode(frame.clone())));
         }
-        let refused = !old.frame(vec![0]);
+        let refused = !old.frame(pop_runtime::owner::ReceivedFrame::decode(vec![0]));
         release.send(()).unwrap();
         assert!(refused, "Owner admission must bound both queued bytes and frame count");
         loop {
@@ -955,9 +959,11 @@ fn sync_input_budget_recovers_and_old_connections_cannot_detach_the_replacement(
             }
         };
         old.detach();
-        assert!(!old.frame(Frame::CaughtUp.encode()));
-        assert!(replacement.frame(Frame::Welcome { permission: Permission::Write, version }.encode()));
-        assert!(replacement.frame(Frame::CaughtUp.encode()));
+        assert!(!old.frame(pop_runtime::owner::ReceivedFrame::decode(Frame::CaughtUp.encode())));
+        assert!(replacement.frame(pop_runtime::owner::ReceivedFrame::decode(
+            Frame::Welcome { permission: Permission::Write, version }.encode()
+        )));
+        assert!(replacement.frame(pop_runtime::owner::ReceivedFrame::decode(Frame::CaughtUp.encode())));
         loop {
             if matches!(
                 next.recv_timeout(Duration::from_secs(5)).unwrap(),
@@ -1009,10 +1015,12 @@ fn pump(
                         let (replies, stored) = relay.reply(&bytes);
                         for reply in replies {
                             joined[i] |= matches!(reply, Frame::Welcome { .. });
-                            owners[i].0.frame(reply.encode());
+                            owners[i].0.frame(pop_runtime::owner::ReceivedFrame::decode(reply.encode()));
                         }
                         if !stored.is_empty() && joined[1 - i] {
-                            owners[1 - i].0.frame(Frame::Records(stored).encode());
+                            owners[1 - i]
+                                .0
+                                .frame(pop_runtime::owner::ReceivedFrame::decode(Frame::Records(stored).encode()));
                         }
                     }
                     SyncEvent::Status { status: s } => status[i] = Some(s),
@@ -1071,7 +1079,7 @@ fn owners_of_a_shared_document_sync_through_their_hooks() {
     let (replies, _) = relay.reply(&hello);
     for reply in replies {
         joined[0] |= matches!(reply, Frame::Welcome { .. });
-        a_connection.frame(reply.encode());
+        a_connection.frame(pop_runtime::owner::ReceivedFrame::decode(reply.encode()));
     }
     let (b_sink, b_sync) = sync_sink();
     let b_connection = b.sync_connection(b_sink);
@@ -1162,8 +1170,10 @@ fn an_outgrown_shared_document_keeps_editing_and_saving_without_pushing() {
             break version;
         }
     };
-    assert!(connection.frame(Frame::Welcome { permission: Permission::Write, version }.encode()));
-    assert!(connection.frame(Frame::CaughtUp.encode()));
+    assert!(connection.frame(pop_runtime::owner::ReceivedFrame::decode(
+        Frame::Welcome { permission: Permission::Write, version }.encode()
+    )));
+    assert!(connection.frame(pop_runtime::owner::ReceivedFrame::decode(Frame::CaughtUp.encode())));
     connection.pause(PauseKind::Outgrown, "This document has outgrown sharing".into());
     loop {
         if matches!(
@@ -1228,8 +1238,10 @@ fn durable_sync_confirmation_requires_ack_and_save_in_either_order() {
             let _ = send.send(event);
         }));
         let Frame::Hello { version, .. } = frame(&events) else { panic!("expected Hello") };
-        connection.frame(Frame::Welcome { permission: Permission::Write, version }.encode());
-        connection.frame(Frame::CaughtUp.encode());
+        connection.frame(pop_runtime::owner::ReceivedFrame::decode(
+            Frame::Welcome { permission: Permission::Write, version }.encode(),
+        ));
+        connection.frame(pop_runtime::owner::ReceivedFrame::decode(Frame::CaughtUp.encode()));
         synced(&events);
         assert!(confirmed(&connection).is_some());
         let lock = rusqlite::Connection::open(&path).unwrap();
@@ -1243,7 +1255,7 @@ fn durable_sync_confirmation_requires_ack_and_save_in_either_order() {
             call(&owner, Owner::flush).unwrap();
             assert!(confirmed(&connection).is_none(), "a save without relay acknowledgement is insufficient");
         }
-        connection.frame(Frame::Ack { id, status: Ack::Stored }.encode());
+        connection.frame(pop_runtime::owner::ReceivedFrame::decode(Frame::Ack { id, status: Ack::Stored }.encode()));
         synced(&events);
         if !save_first {
             assert!(confirmed(&connection).is_none(), "a relay acknowledgement must not confirm unsaved state");
@@ -1295,7 +1307,7 @@ fn welcome_push_ack_does_not_confirm_withheld_backfill() {
     let Frame::Hello { app_digest, ref version, .. } = hello else { panic!("expected Hello") };
     let mut relay = support::relay::Relay { app: app_digest, records: vec![], heads: version.clone() };
     for reply in relay.reply(&hello.encode()).0 {
-        a_connection.frame(reply.encode());
+        a_connection.frame(pop_runtime::owner::ReceivedFrame::decode(reply.encode()));
     }
     call(&a, theme("#123456", Origin::Agent)).unwrap();
     let remote = frame(&a_events);
@@ -1303,7 +1315,7 @@ fn welcome_push_ack_does_not_confirm_withheld_backfill() {
     let (replies, stored) = relay.reply(&remote.encode());
     assert!(!stored.is_empty());
     for reply in replies {
-        a_connection.frame(reply.encode());
+        a_connection.frame(pop_runtime::owner::ReceivedFrame::decode(reply.encode()));
     }
     close(&a);
 
@@ -1315,14 +1327,14 @@ fn welcome_push_ack_does_not_confirm_withheld_backfill() {
     let mut backfill = relay.reply(&hello.encode()).0.into_iter();
     let welcome = backfill.next().unwrap();
     assert!(matches!(welcome, Frame::Welcome { permission: Permission::Write, .. }));
-    b_connection.frame(welcome.encode());
+    b_connection.frame(pop_runtime::owner::ReceivedFrame::decode(welcome.encode()));
 
     // Deliberately deliver only Welcome: the real owner pushes its offline edit
     // before it has received the earlier remote record or CaughtUp.
     let own = frame(&b_events);
     assert!(matches!(own, Frame::Push { .. }));
     for reply in relay.reply(&own.encode()).0 {
-        b_connection.frame(reply.encode());
+        b_connection.frame(pop_runtime::owner::ReceivedFrame::decode(reply.encode()));
     }
     call(&b, Owner::flush).unwrap();
     assert_eq!(state(&b)["theme"]["accent"], "#335577");
@@ -1335,7 +1347,7 @@ fn welcome_push_ack_does_not_confirm_withheld_backfill() {
     let mut received_records = false;
     for reply in backfill {
         received_records |= matches!(reply, Frame::Records(_));
-        b_connection.frame(reply.encode());
+        b_connection.frame(pop_runtime::owner::ReceivedFrame::decode(reply.encode()));
     }
     assert!(received_records);
     call(&b, Owner::flush).unwrap();

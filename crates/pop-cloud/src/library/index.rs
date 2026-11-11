@@ -4,11 +4,11 @@ use super::*;
 use pop_sharing_protocol::{document::JoinedDocument, library::AccountEntry};
 
 /// These tables. Any other version is refused, and nothing in it is changed.
-const INDEX_VERSION: u32 = 2;
+const INDEX_VERSION: u32 = 1;
 /// The device index, beside the managed `documents` and per-account `accounts` folders.
 const INDEX: &str = "index.sqlite";
 
-const COLUMNS: &str = "account,id,title,template,path,version,role,revision,deleted,problem,artwork_version,artwork_digest,file_stamp,pending_enable,sharing_enabled,opened";
+const COLUMNS: &str = "account,id,title,template,path,version,role,revision,deleted,problem,artwork_version,artwork_digest,file_stamp,pending_enable,sharing_enabled,opened,(SELECT version FROM receipts WHERE receipts.account=documents.account AND receipts.id=documents.id)";
 
 pub(super) struct IndexedDocument {
     pub account: String,
@@ -27,6 +27,7 @@ pub(super) struct IndexedDocument {
     pub pending: bool,
     pub sharing_enabled: Option<bool>,
     pub opened: bool,
+    pub confirmed: Option<String>,
 }
 impl IndexedDocument {
     fn read(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
@@ -47,6 +48,7 @@ impl IndexedDocument {
             pending: row.get(13)?,
             sharing_enabled: row.get(14)?,
             opened: row.get(15)?,
+            confirmed: row.get(16)?,
         })
     }
     pub fn one(db: &Connection, account: &str, id: &str) -> Result<Self> {
@@ -56,7 +58,7 @@ impl IndexedDocument {
         )?)
     }
     pub fn all(db: &Connection, account: &str) -> Result<Vec<Self>> {
-        Ok(db.prepare(&format!("SELECT {COLUMNS} FROM documents AS d WHERE account=?1 OR (account='' AND NOT EXISTS(SELECT 1 FROM documents AS preferred WHERE preferred.id=d.id AND preferred.account=?1)) ORDER BY title"))?
+        Ok(db.prepare(&format!("SELECT {COLUMNS} FROM documents WHERE account=?1 OR (account='' AND NOT EXISTS(SELECT 1 FROM documents AS preferred WHERE preferred.id=documents.id AND preferred.account=?1)) ORDER BY title"))?
             .query_map([account], Self::read)?.collect::<rusqlite::Result<_>>()?)
     }
 }
@@ -69,11 +71,11 @@ pub(super) fn stored_role(role: DocumentRole) -> &'static str {
     }
 }
 
-pub(super) fn open(root: &Path) -> Result<Connection> {
+pub(crate) fn open(root: &Path) -> Result<Connection> {
     let db = Connection::open(root.join(INDEX))?;
     let version: u32 = db.query_row("PRAGMA user_version", [], |row| row.get(0))?;
-    if version > INDEX_VERSION {
-        return Err(Error {
+    if version != 0 && version != INDEX_VERSION {
+        return Err(Error::Library {
             issue: Issue::RequiresUpdate,
             message: "This local index requires a newer pop; existing files are retained".into(),
         });
@@ -81,6 +83,7 @@ pub(super) fn open(root: &Path) -> Result<Connection> {
     db.execute_batch(
         "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL;
             CREATE TABLE IF NOT EXISTS documents(account TEXT NOT NULL,id TEXT NOT NULL,title TEXT NOT NULL,template TEXT NOT NULL,path TEXT NOT NULL,version TEXT NOT NULL DEFAULT '',role TEXT,revision INTEGER NOT NULL DEFAULT 0,deleted INTEGER NOT NULL DEFAULT 0,problem TEXT,pending_enable INTEGER NOT NULL DEFAULT 0,artwork_version TEXT NOT NULL DEFAULT '',artwork_digest TEXT NOT NULL DEFAULT '',file_stamp TEXT NOT NULL DEFAULT '',listed INTEGER NOT NULL DEFAULT 0,sharing_enabled INTEGER,opened INTEGER NOT NULL DEFAULT 1,PRIMARY KEY(account,id));
+            CREATE TABLE IF NOT EXISTS receipts(account TEXT NOT NULL,id TEXT NOT NULL,version TEXT NOT NULL,PRIMARY KEY(account,id));
             ",
     )?;
     db.pragma_update(None, "user_version", INDEX_VERSION)?;
@@ -177,7 +180,7 @@ pub(super) fn begin_enable(
     version: &str,
 ) -> Result<()> {
     let tx = db.transaction()?;
-    tx.execute("INSERT INTO documents(account,id,title,template,path,version,role,pending_enable) VALUES(?1,?2,?3,?4,?5,?6,'owner',1) ON CONFLICT(account,id) DO UPDATE SET pending_enable=1,path=excluded.path,role='owner',deleted=0",params![account,id,title,template,path,version])?;
+    tx.execute("INSERT INTO documents(account,id,title,template,path,version,role,pending_enable) VALUES(?1,?2,?3,?4,?5,?6,'owner',1) ON CONFLICT(account,id) DO UPDATE SET pending_enable=1,path=excluded.path,role='owner',deleted=0,problem=NULL",params![account,id,title,template,path,version])?;
     tx.execute("DELETE FROM documents WHERE account='' AND id=?1", [id])?;
     tx.commit()?;
     Ok(())
@@ -268,5 +271,17 @@ pub(super) fn is_live(db: &Connection, account: &str, id: &str) -> Result<bool> 
 }
 pub(super) fn mark_removed(db: &Connection, account: &str, id: &str) -> Result<()> {
     db.execute("UPDATE documents SET deleted=1,listed=0 WHERE account=?1 AND id=?2", params![account, id])?;
+    Ok(())
+}
+
+/// A receipt and the confirmed index version commit together.
+pub(crate) fn confirm(db: &mut Connection, account: &str, id: &str, version: &str) -> Result<()> {
+    let tx = db.transaction()?;
+    tx.execute("INSERT INTO receipts(account,id,version) VALUES(?1,?2,?3) ON CONFLICT(account,id) DO UPDATE SET version=excluded.version", params![account,id,version])?;
+    tx.execute(
+        "UPDATE documents SET version=?3,problem=NULL WHERE account=?1 AND id=?2",
+        params![account, id, version],
+    )?;
+    tx.commit()?;
     Ok(())
 }

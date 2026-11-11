@@ -11,7 +11,7 @@ use commands::{Evaluation, Invocation, Work as EvaluationWork};
 use persistence::{Work, persistence};
 pub(super) use sync::Admission;
 use sync::{Link, SyncMessage};
-pub use sync::{SyncConnection, SyncEvent, SyncSink};
+pub use sync::{ReceivedFrame, SyncConnection, SyncEvent, SyncSink};
 
 pub(super) struct Started {
     pub sender: mpsc::Sender<Message>,

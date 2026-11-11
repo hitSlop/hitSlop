@@ -1,14 +1,11 @@
 //! Accepted local document inspection, owner calls and exclusive installation.
+use crate::error::{Error, Result};
 use pop_contracts::hex;
 use pop_runtime::owner::{CallOptions, Completion, Owner};
 use pop_storage::file;
 use pop_storage::store::{Mode, Store};
 use sha2::{Digest, Sha256};
 use std::path::Path;
-use std::sync::mpsc;
-use std::time::Duration;
-
-type Result<T> = std::result::Result<T, String>;
 #[derive(Debug)]
 pub struct Info {
     pub id: String,
@@ -19,31 +16,16 @@ pub fn request<T: Send + 'static>(
     owner: &Owner,
     request: impl FnOnce(&Owner, CallOptions, Completion<T>),
 ) -> Result<T> {
-    request_typed(owner, request).map_err(|e| e.to_string())
-}
-pub(crate) fn request_typed<T: Send + 'static>(
-    owner: &Owner,
-    request: impl FnOnce(&Owner, CallOptions, Completion<T>),
-) -> std::result::Result<T, pop_runtime::owner::Failure> {
-    let (send, receive) = mpsc::channel();
-    request(
+    crate::transport::block_on(crate::transport::owner_request(
         owner,
-        CallOptions::default(),
-        Box::new(move |result| {
-            let _ = send.send(result);
-        }),
-    );
-    receive.recv_timeout(Duration::from_secs(20)).map_err(|e| pop_runtime::owner::Failure {
-        kind: pop_runtime::owner::FailureKind::Failed,
-        message: e.to_string(),
-        reason: None,
-        op_index: None,
-        path: vec![],
-    })?
+        &crate::transport::OwnerOutcome::default(),
+        request,
+        crate::transport::OwnerEffect::Other,
+    ))
 }
 pub fn inspect(path: &Path) -> Result<Info> {
-    let store = Store::open(path, Mode::Snapshot).map_err(|e| e.to_string())?;
-    let version = store.document().map_err(|e| e.to_string())?.version();
+    let store = Store::open(path, Mode::Snapshot).map_err(Error::from)?;
+    let version = store.document().map_err(Error::from)?.version();
     Ok(Info {
         id: store.app().document_uuid.clone().ok_or("Not a document")?,
         version,
@@ -57,16 +39,16 @@ pub fn install(source: &Path, destination: &Path, expected_id: &str) -> Result<(
         return Err("Snapshot identity does not match its record".into());
     }
     if let Some(parent) = destination.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        std::fs::create_dir_all(parent).map_err(Error::from)?;
     }
-    file::copy_replica(source, destination).map_err(|e| e.to_string())
+    file::copy_replica(source, destination).map_err(Error::from)
 }
 /// Cosmetic bytes are independent of the Loro version. Hash only the bounded saved PNGs.
 pub(crate) fn artwork_digest(store: &Store) -> Result<String> {
     let mut hash = Sha256::new();
     for name in file::Artwork::ALL {
         hash.update(name.as_str().as_bytes());
-        if let Some(bytes) = store.artwork(name).map_err(|e| e.to_string())? {
+        if let Some(bytes) = store.artwork(name).map_err(Error::from)? {
             hash.update((bytes.len() as u64).to_le_bytes());
             hash.update(bytes);
         }

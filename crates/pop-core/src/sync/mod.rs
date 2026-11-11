@@ -203,7 +203,17 @@ impl Session {
         {
             return Step::default();
         }
-        let frame = match Frame::decode(bytes) {
+        self.receive_frame(doc, Frame::decode(bytes))
+    }
+    /// Apply a frame already decoded at the socket boundary.
+    pub fn receive_frame(&mut self, doc: &mut Document, frame: Result<Frame, pop_contracts::Error>) -> Step {
+        if (matches!(self.status, Status::Paused { .. })
+            && !matches!(self.status, Status::Paused { kind: PauseKind::RoomFull, .. }))
+            || self.status == Status::Offline
+        {
+            return Step::default();
+        }
+        let frame = match frame {
             Ok(frame) => frame,
             Err(error) => {
                 self.pause(PauseKind::Refused, refused(&error));

@@ -2,10 +2,9 @@ import Combine
 import Foundation
 import PopCoreBinding
 import SwiftUI
-import Synchronization
 
 public func libraryMessage(_ error: Error) -> String {
-  if case LibraryError.Failed(let message) = error { return message }
+  if case LibraryError.Failed(_, let message) = error { return message }
   return error.localizedDescription
 }
 private final class LibrarySnapshotListener: LibraryListener, @unchecked Sendable {
@@ -16,33 +15,6 @@ private final class LibrarySnapshotListener: LibraryListener, @unchecked Sendabl
 
 extension LibraryEntry: Identifiable {}
 
-/// Connects the library to document owners regardless of which finishes opening first.
-final class LibraryOwners: Sendable {
-  private struct OwnerReference { weak var owner: NativeOwner? }
-  private struct State {
-    var library: NativeLibrary?
-    var owners: [OwnerReference] = []
-  }
-  private let active = Mutex(State())
-  var library: NativeLibrary? { active.withLock { $0.library } }
-  func register(_ owner: NativeOwner) throws {
-    try active.withLock { state in
-      state.owners.removeAll { $0.owner == nil }
-      state.owners.append(OwnerReference(owner: owner))
-      try state.library?.registerOwner(owner: owner)
-    }
-  }
-  func activate(_ library: NativeLibrary?) throws {
-    try active.withLock { state in
-      state.owners.removeAll { $0.owner == nil }
-      for reference in state.owners {
-        if let owner = reference.owner { try library?.registerOwner(owner: owner) }
-      }
-      state.library = library
-    }
-  }
-}
-
 public struct LibrarySyncAttention {
   public let explanation: String
   public let report: String
@@ -51,13 +23,18 @@ public struct LibrarySyncAttention {
 /// Presentation of the Rust local index and cloud-document coordinator.
 /// The Firebase adapter supplies identity and discovery; document bytes stay in Rust.
 @MainActor public final class PopLibrary: ObservableObject {
-  public static let shared = PopLibrary(owners: active)
-  nonisolated private static let active = LibraryOwners()
-  public nonisolated static func register(owner: NativeOwner) throws { try active.register(owner) }
+  nonisolated private static let active: Result<NativeLibrary, Error> = Result {
+    try NativeLibrary.open(root: managedFolder.path, account: "")
+  }
+  public static let shared = PopLibrary(native: active)
+  public nonisolated static func register(owner: NativeOwner) throws {
+    guard case .success(let library) = active else { return }
+    try library.registerOwner(owner: owner)
+  }
   public nonisolated static func publishArtwork(owner: NativeOwner, sourceVersion: String, preview: Data?, icon: Data?)
     async throws -> Bool
   {
-    guard let library = active.library else { return false }
+    guard case .success(let library) = active else { return false }
     return try await Task.detached(priority: .utility) {
       try library.publishArtwork(owner: owner, sourceVersion: sourceVersion, preview: preview, icon: icon)
     }.value
@@ -91,7 +68,6 @@ public struct LibrarySyncAttention {
   private var native: NativeLibrary?
   private var pendingAccount: String?
   private var concealedPaths: [String] = []
-  private var generation: UInt64 = 0
   private var task: Task<Void, Never>?
   private var syncTask: Task<Void, Never>?
   private var syncAgain = false
@@ -100,13 +76,30 @@ public struct LibrarySyncAttention {
   private var snapshotRefresh: Task<Void, Never>?
   private var refreshAgain = false
   private let root: URL
-  private let owners: LibraryOwners
-  init(root: URL = PopLibrary.managedFolder, owners: LibraryOwners = LibraryOwners()) {
+  private var watcher: LibraryFolderWatcher?
+  init(root: URL = PopLibrary.managedFolder) {
     self.root = root
-    self.owners = owners
+    let opened = Result { try NativeLibrary.open(root: root.path, account: "") }
+    native = try? opened.get()
+    isReady = native != nil
+    if let native { observeSnapshots(native) }
+    if case .failure(let error) = opened { lastError = libraryMessage(error) }
   }
+  private init(native: Result<NativeLibrary, Error>) {
+    root = Self.managedFolder
+    self.native = try? native.get()
+    isReady = self.native != nil
+    if let native = self.native { observeSnapshots(native) }
+    if case .failure(let error) = native { lastError = libraryMessage(error) }
+  }
+  func registerOwner(_ owner: NativeOwner) throws { try native?.registerOwner(owner: owner) }
+  var nativeLibrary: NativeLibrary? { native }
   public nonisolated static var managedFolder: URL {
-    FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+    if let registry = ProcessInfo.processInfo.environment["POP_TEST_REGISTRY"] {
+      return URL(fileURLWithPath: registry).deletingLastPathComponent().appendingPathComponent(
+        "library", isDirectory: true)
+    }
+    return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
       .appendingPathComponent("pop/CloudDocuments", isDirectory: true)
   }
   public func start() {
@@ -115,41 +108,14 @@ public struct LibrarySyncAttention {
       .sink { @Sendable [weak self] _ in
         Task { @MainActor [weak self] in self?.requestRefresh() }
       }
-    task = Task {
-      if native == nil { try? await setAccount("") }
-      while !Task.isCancelled {
-        await refresh()
-        try? await Task.sleep(for: .seconds(2))
-      }
-    }
+    watcher = LibraryFolderWatcher(root: root) { [weak self] in self?.requestRefresh() }
+    task = Task { await refresh() }
   }
-  /// A failed flush keeps the old account and its writers. Call before signing out.
+  /// A failed close retains its owner and lets the person retry.
   public func setAccount(_ account: String, external: Bool = false) async throws {
-    if native != nil && accountIdentity == account {
-      guard !isReady else { return }
-      generation += 1
-      let current = generation
-      let path = root.path
-      let restored = try await PopPreparation.run { try NativeLibrary.open(root: path, account: account) }
-      guard current == generation else {
-        try? restored.detach()
-        return
-      }
-      restored.setAccountActive(active: accountActive)
-      native = restored
-      observeSnapshots(restored, generation: current)
-      try owners.activate(restored)
-      pendingAccount = nil
-      isReady = true
-      concealAccountDocuments?(concealedPaths, false)
-      concealedPaths = []
-      lastError = nil
-      await refresh()
-      return
-    }
+    guard let native else { throw PopFailure("The local library is unavailable.") }
+    if isReady && accountIdentity == account { return }
     pendingAccount = external ? account : nil
-    generation += 1
-    let current = generation
     syncTask?.cancel()
     syncTask = nil
     isSyncing = false
@@ -160,49 +126,38 @@ public struct LibrarySyncAttention {
       concealedPaths = cloudPaths
       concealAccountDocuments?(cloudPaths, true)
       entries.removeAll { $0.accountBound }
-      // Auth is already lost: fence transport before attempting the normal page close.
-      if let native { try await PopPreparation.run { try native.detach() } }
+      if accountIdentity != account {
+        try native.suspendAccount()
+      }
     }
-    do { try await closeAccountDocuments?(cloudPaths) } catch {
-      // Normal close restores a failed window for retry. Lost auth still conceals its page.
-      if external { concealAccountDocuments?(cloudPaths, true) }
-      throw error
+    if accountIdentity != account {
+      do { try await closeAccountDocuments?(cloudPaths) } catch {
+        if external { concealAccountDocuments?(cloudPaths, true) }
+        throw error
+      }
     }
-    guard current == generation else { throw PopFailure("The account changed. Retry.") }
-    if !external, let native { try await PopPreparation.run { try native.detach() } }
-    guard current == generation else { throw PopFailure("The account changed. Retry.") }
-    try owners.activate(nil)
-    let location = root.path
-    let opened = try await PopPreparation.run { try NativeLibrary.open(root: location, account: account) }
-    guard current == generation else {
-      try? opened.detach()
-      return
-    }
-    opened.setAccountActive(active: accountActive)
-    native = opened
-    observeSnapshots(opened, generation: current)
+    try await PopPreparation.run(on: Self.queue) { try native.setAccount(account: account.isEmpty ? nil : account) }
+    native.setAccountActive(active: accountActive)
     accountIdentity = account
     pendingAccount = nil
-    concealedPaths = []
-    lastSuccess = nil
-    lastError = nil
-    try owners.activate(opened)
     isReady = true
+    concealAccountDocuments?(concealedPaths, false)
+    concealedPaths = []
+    lastError = nil
     await refresh()
   }
+  private nonisolated static let queue = DispatchQueue(label: "click.dotpop.library", qos: .utility)
   public func connectAccount(_ account: String) async throws {
     try await setAccount(account, external: true)
   }
   public func reportAccountError(_ error: Error, account: String) {
-    guard account == accountIdentity || account == pendingAccount else { return }
     lastError = libraryMessage(error)
     status = "Sync needs attention"
   }
-  private func observeSnapshots(_ library: NativeLibrary, generation current: UInt64) {
+  private func observeSnapshots(_ library: NativeLibrary) {
     let listener = LibrarySnapshotListener { [weak self] in
       Task { @MainActor [weak self] in
-        guard let self, current == self.generation else { return }
-        self.requestRefresh()
+        self?.requestRefresh()
       }
     }
     snapshotListener = listener
@@ -213,6 +168,7 @@ public struct LibrarySyncAttention {
     guard snapshotRefresh == nil else { return }
     snapshotRefresh = Task { [weak self] in
       guard let self else { return }
+      try? await Task.sleep(for: .milliseconds(100))
       while refreshAgain && !Task.isCancelled {
         refreshAgain = false
         await refresh()
@@ -222,18 +178,21 @@ public struct LibrarySyncAttention {
   }
   public func refresh() async {
     guard isReady, let native else { return }
-    let current = generation
     do {
-      let (loaded, accountPaths) = try await PopPreparation.run {
+      let (loaded, accountPaths) = try await PopPreparation.run(on: Self.queue) {
         try native.reconcile()
         return (try native.entries(), try native.accountPaths())
       }
-      guard current == generation else { return }
       accountBoundPaths = Set(accountPaths.map { URL(fileURLWithPath: $0).standardizedFileURL.path })
+      watcher?.refresh()
       entries = loaded
       guestDocumentIDs = Set(loaded.filter { $0.role == .editor && !$0.deleted }.map(\.id))
       issues = Dictionary(uniqueKeysWithValues: loaded.compactMap { entry in entry.problem.map { (entry.id, $0) } })
       pending = loaded.filter { $0.dirty && !$0.localOnly }.count
+      isSyncing = loaded.contains { $0.phase == .syncing }
+      if !isSyncing && pending == 0 && issues.isEmpty && loaded.contains(where: { $0.phase == .synced }) {
+        lastSuccess = Date()
+      }
       hasLoaded = true
       status =
         isSyncing
@@ -266,28 +225,26 @@ public struct LibrarySyncAttention {
       await refresh()
       return
     }
-    let current = generation
     syncAgain = true
     let work = Task {
       isSyncing = true
-      defer { if current == generation { isSyncing = false } }
-      while syncAgain && current == generation && !Task.isCancelled {
+      while syncAgain && !Task.isCancelled {
         syncAgain = false
         var failure: String?
         do {
+          let account = accountIdentity
           let token = try await requiredToken()
-          guard current == generation, !Task.isCancelled else { return }
-          try await PopPreparation.run { try native.sync(token: token) }
+          try Task.checkCancellation()
+          try await PopPreparation.run(on: Self.queue) { try native.sync(account: account, token: token) }
         } catch { failure = libraryMessage(error) }
-        guard current == generation, !Task.isCancelled else { return }
+        guard !Task.isCancelled else { return }
         lastError = failure
-        if failure == nil { lastSuccess = Date() }
       }
       await refresh()
     }
     syncTask = work
     await work.value
-    if current == generation { syncTask = nil }
+    if !work.isCancelled { syncTask = nil }
   }
   public func activated(_ active: Bool) {
     accountActive = active
@@ -302,15 +259,20 @@ public struct LibrarySyncAttention {
   public func create(template: URL, title: String, sync: Bool = false) async throws -> LibraryEntry {
     if native == nil { try await setAccount("") }
     guard let native else { throw PopFailure("The local library is unavailable.") }
-    let entry = try await PopPreparation.run { try native.create(template: template.path, title: title) }
+    let entry = try await PopPreparation.run(on: Self.queue) {
+      try native.create(template: template.path, title: title)
+    }
     await refresh()
     if sync { return try await enableSync(id: entry.id) }
     return entry
   }
   @discardableResult public func enableSync(id: String) async throws -> LibraryEntry {
+    let account = accountIdentity
     let token = try await requiredToken()
     guard let native else { throw PopFailure("The library is unavailable.") }
-    let entry = try await PopPreparation.run { try native.enableSync(id: id, token: token) }
+    let entry = try await PopPreparation.run(on: Self.queue) {
+      try native.enableSync(account: account, id: id, token: token)
+    }
     Task { await syncNow() }
     await refresh()
     return entry
@@ -318,22 +280,22 @@ public struct LibrarySyncAttention {
   public func enableSync(source: URL, title: String) async throws {
     guard !accountIdentity.isEmpty else { throw PopFailure("Sign in with Apple to create a cloud document.") }
     guard let native else { throw PopFailure("Sign in to sync across devices.") }
-    let current = generation
-    let entry = try await PopPreparation.run { try native.adopt(source: source.path, title: title) }
-    guard current == generation else { throw PopFailure("The account changed. Retry.") }
-    try owners.activate(native)
+    let entry = try await PopPreparation.run(on: Self.queue) { try native.adopt(source: source.path, title: title) }
     _ = try await enableSync(id: entry.id)
   }
   public func delete(_ entry: LibraryEntry) async throws {
     guard let native else { return }
     if entry.localOnly {
-      try await PopPreparation.run { try native.deleteLocal(id: entry.id) }
+      try await PopPreparation.run(on: Self.queue) { try native.deleteLocal(id: entry.id) }
     } else {
+      let account = accountIdentity
       let token = try await requiredToken()
       if entry.role == .editor {
-        try await PopPreparation.run { try native.leave(id: entry.id, token: token) }
+        try await PopPreparation.run(on: Self.queue) { try native.leave(account: account, id: entry.id, token: token) }
       } else {
-        try await PopPreparation.run { try native.deleteEverywhere(id: entry.id, token: token) }
+        try await PopPreparation.run(on: Self.queue) {
+          try native.deleteEverywhere(account: account, id: entry.id, token: token)
+        }
       }
     }
     Task { await syncNow() }
@@ -341,46 +303,57 @@ public struct LibrarySyncAttention {
   }
   public func removeDownload(_ entry: LibraryEntry) async throws {
     guard let native else { return }
-    try await PopPreparation.run { try native.removeDownload(id: entry.id) }
+    try await PopPreparation.run(on: Self.queue) { try native.removeDownload(id: entry.id) }
     await refresh()
   }
   public func download(_ entry: LibraryEntry) async throws {
+    let account = accountIdentity
     let token = try await requiredToken()
     guard let native else { return }
-    _ = try await PopPreparation.run { try native.download(id: entry.id, token: token) }
+    _ = try await PopPreparation.run(on: Self.queue) {
+      try native.download(account: account, id: entry.id, token: token)
+    }
     await refresh()
   }
   @discardableResult public func localCopy(_ entry: LibraryEntry) async throws -> LibraryEntry {
     guard let native else { throw PopFailure("The library is unavailable.") }
-    let copy = try await PopPreparation.run { try native.localCopy(id: entry.id, title: entry.title + " copy") }
+    let copy = try await PopPreparation.run(on: Self.queue) {
+      try native.localCopy(id: entry.id, title: entry.title + " copy")
+    }
     await refresh()
     return copy
   }
   public func sharing(id: String, enabled: Bool) async throws -> AccessState {
+    let account = accountIdentity
     let token = try await requiredToken()
     guard let native else { throw PopFailure("The library is unavailable.") }
-    let access = try await PopPreparation.run { try native.sharing(id: id, enabled: enabled, token: token) }
+    let access = try await PopPreparation.run(on: Self.queue) {
+      try native.sharing(account: account, id: id, enabled: enabled, token: token)
+    }
     Task { await syncNow() }
     return access
   }
   public func join(link: String) async throws -> LibraryEntry {
+    let account = accountIdentity
     let token = try await requiredToken()
     guard let native else { throw PopFailure("The library is unavailable.") }
-    let entry = try await PopPreparation.run { try native.join(link: link, token: token) }
+    let entry = try await PopPreparation.run(on: Self.queue) {
+      try native.join(account: account, link: link, token: token)
+    }
     Task { await syncNow() }
     await refresh()
     return entry
   }
   public func access(id: String) async throws -> AccessState {
+    let account = accountIdentity
     let token = try await requiredToken()
     guard let native else { throw PopFailure("The library is unavailable.") }
-    return try await PopPreparation.run { try native.access(id: id, token: token) }
+    return try await PopPreparation.run(on: Self.queue) { try native.access(account: account, id: id, token: token) }
   }
   public func pauseDocument(id: String) async throws {
     guard let native else { return }
-    try await PopPreparation.run { try native.unregisterOwner(id: id) }
+    try await PopPreparation.run(on: Self.queue) { try native.unregisterOwner(id: id) }
   }
-  public func connection(id: String) -> NativeSharing? { native?.connection(id: id) }
   public func entry(at url: URL) -> LibraryEntry? {
     entries.first { URL(fileURLWithPath: $0.path).standardizedFileURL == url.standardizedFileURL }
   }

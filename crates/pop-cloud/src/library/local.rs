@@ -24,17 +24,18 @@ impl Library {
         let store = Store::open(&source, Mode::Snapshot)?;
         let template = store.app().app.metadata().slug.clone();
         store.close()?;
-        let inner = self.inner.lock().unwrap();
+        let inner = pop_core::lock(&self.inner);
         let existing = index::indexed(&inner.db, &self.root, &info.id)?;
         if !existing.is_empty() {
             if existing.iter().any(|(_, path)| path != &source) {
-                return Err(Error {
+                return Err(Error::Library {
                     issue: Issue::AppMismatch,
                     message: "A different local file has this document identity".into(),
                 });
             }
-            index::mark_opened_anywhere(&inner.db, &self.account, &info.id)?;
-            return self.row(&inner, &info.id);
+            index::mark_opened_anywhere(&inner.db, &self.account(), &info.id)?;
+            drop(inner);
+            return self.row(&info.id);
         }
         index::insert_local(
             &inner.db,
@@ -46,34 +47,37 @@ impl Library {
         )?;
         drop(inner);
         self.cache_file(&info.id, Some(&info.version))?;
-        let inner = self.inner.lock().unwrap();
-        self.row(&inner, &info.id)
+        self.row(&info.id)
     }
     pub fn delete_local(&self, id: &str) -> Result<()> {
         let _change = self.changing();
-        let entry = {
-            let inner = self.inner.lock().unwrap();
-            self.row(&inner, id)?
-        };
+        let entry = self.row(id)?;
         if !entry.local_only {
             return Err(failed("Use cloud deletion for synchronized documents"));
         }
         self.unregister(id)?;
         file::delete_document(Path::new(&entry.path))?;
-        index::delete_local(&self.inner.lock().unwrap().db, if entry.account_bound { &self.account } else { "" }, id)?;
+        index::delete_local(
+            &pop_core::lock(&self.inner).db,
+            &if entry.account_bound { self.account() } else { String::new() },
+            id,
+        )?;
         Ok(())
     }
     pub(super) fn cache_file(&self, id: &str, artwork_source: Option<&str>) -> Result<()> {
-        let entry = {
-            let inner = self.inner.lock().unwrap();
-            self.row(&inner, id)?
-        };
+        let generation = self.generation.load(Ordering::Acquire);
+        let entry = self.row(id)?;
         let info = crate::local::inspect(Path::new(&entry.path)).map_err(failed)?;
         let stamp = file_stamp(Path::new(&entry.path))?;
-        let inner = self.inner.lock().unwrap();
+        let inner = pop_core::lock(&self.inner);
+        self.current_operation(generation)?;
+        let current = IndexedDocument::one(&inner.db, &self.account(), id)?;
+        if paths::resolve(&self.root, &current.path)? != Path::new(&entry.path) {
+            return Err(failed("The document location changed"));
+        }
         index::update_cached(
             &inner.db,
-            if entry.account_bound { &self.account } else { "" },
+            &if entry.account_bound { self.account() } else { String::new() },
             id,
             &info.version,
             &info.artwork_digest,
@@ -107,11 +111,8 @@ impl Library {
         let Some(id) = owner.app().document_uuid.as_deref() else {
             return Ok(false);
         };
-        {
-            let inner = self.inner.lock().unwrap();
-            if self.row(&inner, id).is_err() {
-                return Ok(false);
-            }
+        if self.row(id).is_err() {
+            return Ok(false);
         }
         crate::local::request(owner, |owner: &Owner, options, callback| {
             owner.set_artwork(version.into(), preview, icon, options, callback)

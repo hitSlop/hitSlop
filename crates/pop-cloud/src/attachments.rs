@@ -1,6 +1,8 @@
 use crate::{client::*, transport};
 use pop_runtime::owner::Owner;
 use pop_sharing_protocol::resources::{self as resource_types, Resource};
+use reqwest::Method;
+use transport::{Endpoint, HttpOperation, OwnerEffect};
 
 pub(crate) fn inventory(items: Vec<pop_storage::store::Attachment>) -> Vec<Resource> {
     items
@@ -8,71 +10,95 @@ pub(crate) fn inventory(items: Vec<pop_storage::store::Attachment>) -> Vec<Resou
         .map(|item| Resource { key: item.id.clone(), hash: item.id, size: item.bytes, media_type: item.media_type })
         .collect()
 }
-fn local_blobs(owner: &Owner) -> std::result::Result<Vec<Resource>, transport::HttpFailure> {
-    let items = request(owner, Owner::attachments)?;
+async fn local_blobs(
+    owner: &Owner,
+    outcome: &transport::OwnerOutcome,
+) -> std::result::Result<Vec<Resource>, crate::Error> {
+    let items = transport::owner_request(owner, outcome, Owner::attachments, OwnerEffect::Other).await?;
     Ok(inventory(items))
 }
-pub(crate) fn remote_blobs(key: &RoomKey) -> std::result::Result<Vec<Resource>, transport::HttpFailure> {
-    let list = transport::http_typed(key, "GET", "blobs", Some(key.bearer()), &[], &[])?;
-    let items: Vec<Resource> = serde_json::from_slice(&list).map_err(fail)?;
-    resource_types::validate_blobs(&items).map_err(fail)?;
+pub(crate) async fn remote_blobs(key: &RoomKey) -> std::result::Result<Vec<Resource>, crate::Error> {
+    let list = transport::http(&key.origin, &key.bearer(), HttpOperation::new(Method::GET, Endpoint::Blobs(&key.room)))
+        .await?
+        .unwrap_or_default();
+    let items: Vec<Resource> = serde_json::from_slice(&list).map_err(Error::from)?;
+    resource_types::validate_blobs(&items).map_err(Error::from)?;
     Ok(items)
 }
 /// The one attachment upload: every blob in `local` that `uploaded` (what the relay
 /// holds) lacks, read through `read` only when it is sent. Blobs are immutable and named
 /// by hash, so a retry after any failure sends only what is still missing.
-pub(crate) fn upload(
+pub(crate) async fn upload<F, Fut>(
     key: &RoomKey,
     local: &[Resource],
     uploaded: &mut Vec<Resource>,
-    read: impl Fn(&str) -> std::result::Result<Vec<u8>, transport::HttpFailure>,
-) -> std::result::Result<(), transport::HttpFailure> {
-    for item in resource_types::missing_attachments(local, uploaded).map_err(fail)? {
-        let bytes = read(&item.hash)?;
-        transport::http_typed(
-            key,
-            "PUT",
-            &format!("blob/{}", item.hash),
-            Some(key.bearer()),
-            &bytes,
-            &[("Content-Type", &item.media_type)],
-        )?;
+    read: F,
+) -> Result<()>
+where
+    F: Fn(String) -> Fut,
+    Fut: std::future::Future<Output = Result<Vec<u8>>>,
+{
+    for item in resource_types::missing_attachments(local, uploaded)? {
+        let bytes = read(item.hash.clone()).await?;
+        transport::http(
+            &key.origin,
+            &key.bearer(),
+            HttpOperation::new(Method::PUT, Endpoint::Blob(&key.room, &item.hash))
+                .body(&bytes)
+                .headers(&[("Content-Type", &item.media_type)]),
+        )
+        .await?;
         uploaded.push(item);
     }
     Ok(())
 }
-/// A live connection uploads what its owner holds before pushing changes that use it.
-pub(crate) fn upload_blobs(
+pub(crate) async fn upload_blobs(
     owner: &Owner,
+    outcome: &transport::OwnerOutcome,
     key: &RoomKey,
     uploaded: &mut Vec<Resource>,
-) -> std::result::Result<(), transport::HttpFailure> {
-    upload(key, &local_blobs(owner)?, uploaded, |id| {
-        let bytes =
-            request(owner, |owner: &Owner, options, callback| owner.read_attachment(id.into(), options, callback))?;
-        Ok(bytes)
+) -> Result<()> {
+    upload(key, &local_blobs(owner, outcome).await?, uploaded, |id| async move {
+        transport::owner_request(
+            owner,
+            outcome,
+            |owner, options, callback| owner.read_attachment(id, options, callback),
+            OwnerEffect::Other,
+        )
+        .await
     })
+    .await
 }
-pub(crate) fn download_blobs(
+pub(crate) async fn download_blobs(
     owner: &Owner,
+    outcome: &transport::OwnerOutcome,
     key: &RoomKey,
     uploaded: &mut Vec<Resource>,
-) -> std::result::Result<(), transport::HttpFailure> {
-    let remote = remote_blobs(key)?;
-    resource_types::validate(&remote).map_err(fail)?;
-    for item in resource_types::missing_attachments(&remote, &local_blobs(owner)?).map_err(fail)? {
-        let bytes = transport::http_typed(key, "GET", &format!("blob/{}", item.hash), Some(key.bearer()), &[], &[])?;
-        let accepted = pop_storage::store::Attachment::from_bytes(&bytes).map_err(transport::HttpFailure::from)?;
+) -> Result<()> {
+    let remote = remote_blobs(key).await?;
+    resource_types::validate(&remote)?;
+    for item in resource_types::missing_attachments(&remote, &local_blobs(owner, outcome).await?)? {
+        let bytes = transport::http(
+            &key.origin,
+            &key.bearer(),
+            HttpOperation::new(Method::GET, Endpoint::Blob(&key.room, &item.hash)),
+        )
+        .await?
+        .unwrap_or_default();
+        let (accepted, bytes) =
+            transport::blocking(move || Ok((pop_storage::store::Attachment::from_bytes(&bytes)?, bytes))).await?;
         if accepted.id != item.hash || accepted.bytes != item.size || accepted.media_type != item.media_type {
-            return Err(fail("Downloaded attachment failed verification").into());
+            return Err("Downloaded attachment failed verification".into());
         }
         let stored = transport::owner_request(
             owner,
-            |owner: &Owner, options, callback| owner.put_attachment(bytes, options, callback),
-            transport::OwnerEffect::Attachment,
-        )?;
+            outcome,
+            |owner, options, callback| owner.put_attachment(bytes, options, callback),
+            OwnerEffect::Attachment,
+        )
+        .await?;
         if stored.id != item.hash {
-            return Err(fail("Attachment identity changed").into());
+            return Err("Attachment identity changed".into());
         }
     }
     *uploaded = remote;

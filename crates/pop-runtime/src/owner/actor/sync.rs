@@ -46,6 +46,26 @@ impl Reservation {
         a.connection == self.connection && !a.overflow
     }
 }
+/// A socket frame's bytes and its sole decode result, retained through owner admission.
+#[derive(Debug)]
+pub struct ReceivedFrame {
+    bytes: Vec<u8>,
+    frame: std::result::Result<pop_contracts::relay::frame::Frame, pop_contracts::Error>,
+}
+impl ReceivedFrame {
+    /// Decode once, preserving bytes for owner admission and queue accounting.
+    pub fn decode(bytes: Vec<u8>) -> Self {
+        let frame = pop_contracts::relay::envelope::decode(&bytes)
+            .map_err(|reason| pop_contracts::Error::new(pop_contracts::Code::InvalidBytes, reason));
+        Self { bytes, frame }
+    }
+    pub fn frame(&self) -> std::result::Result<&pop_contracts::relay::frame::Frame, &pop_contracts::Error> {
+        self.frame.as_ref()
+    }
+    pub fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+}
 /// A socket's generation and bounded admission handle. Old sockets cannot feed or detach a newer one.
 #[derive(Clone)]
 pub struct SyncConnection {
@@ -72,7 +92,8 @@ impl SyncConnection {
             reply,
         }));
     }
-    pub fn frame(&self, bytes: Vec<u8>) -> bool {
+    pub fn frame(&self, received: ReceivedFrame) -> bool {
+        let bytes = &received.bytes;
         let mut a = crate::lock(&self.admission);
         if a.connection != self.connection || a.overflow {
             return false;
@@ -90,7 +111,7 @@ impl SyncConnection {
         a.frames += 1;
         drop(a);
         let ticket = Reservation { admission: self.admission.clone(), connection: self.connection, size: bytes.len() };
-        self.sender.send(Message::Sync(SyncMessage::Frame { bytes, ticket })).is_ok()
+        self.sender.send(Message::Sync(SyncMessage::Frame { received, ticket })).is_ok()
     }
     /// Export in the owner queue, ordered with local and remote edits.
     pub fn base(
@@ -165,7 +186,7 @@ pub(in crate::owner) enum SyncMessage {
     Base { connection: u64, reply: BaseReply },
     Pause { connection: u64, pause: pop_core::sync::Pause },
     Attach { sink: SyncSink, connection: u64, admission: Arc<std::sync::Mutex<Admission>> },
-    Frame { bytes: Vec<u8>, ticket: Reservation },
+    Frame { received: ReceivedFrame, ticket: Reservation },
     Detach { connection: u64 },
     Overflow { connection: u64 },
 }
@@ -193,7 +214,7 @@ pub(super) struct Link {
     session: Option<Session>,
     sink: Option<SyncSink>,
     reported: Status,
-    held: VecDeque<(Vec<u8>, Reservation)>,
+    held: VecDeque<(ReceivedFrame, Reservation)>,
     connection: u64,
     durable: Option<(u64, String)>,
     synced_reported_this_step: bool,
@@ -338,7 +359,7 @@ impl Actor {
                 self.send(hello);
                 self.reported_status();
             }
-            SyncMessage::Frame { bytes, ticket } => {
+            SyncMessage::Frame { received, ticket } => {
                 if !ticket.current() || ticket.connection != self.link.connection {
                     return;
                 }
@@ -349,7 +370,7 @@ impl Actor {
                 // other replicas wait until it finishes, like a held edit.
                 if self.evaluating {
                     if self.link.held.len() < HELD_FRAMES {
-                        self.link.held.push_back((bytes, ticket));
+                        self.link.held.push_back((received, ticket));
                     } else {
                         self.link.held.clear();
                         if let Some(session) = &mut self.link.session {
@@ -362,7 +383,7 @@ impl Actor {
                     }
                     return;
                 }
-                self.receive(&bytes);
+                self.receive(received);
             }
             SyncMessage::Overflow { connection } => {
                 if connection != self.link.connection {
@@ -394,10 +415,10 @@ impl Actor {
     /// Frames held while a command evaluated, once it has finished.
     pub(super) fn sync_resume(&mut self) {
         while !self.evaluating
-            && let Some((bytes, ticket)) = self.link.held.pop_front()
+            && let Some((received, ticket)) = self.link.held.pop_front()
         {
             if ticket.current() {
-                self.receive(&bytes);
+                self.receive(received);
             }
         }
     }
@@ -409,7 +430,7 @@ impl Actor {
         }
         self.reported_status();
     }
-    fn receive(&mut self, bytes: &[u8]) {
+    fn receive(&mut self, received: ReceivedFrame) {
         // The document takes no change while closing, discarding or after a fault; the
         // relay resends whatever this connection misses after its next Hello.
         if self.lifecycle != Lifecycle::Open || self.discarding || self.invalidated {
@@ -417,7 +438,7 @@ impl Actor {
         }
         let Some(session) = &mut self.link.session else { return };
         let core = &mut self.core;
-        let step = catch_unwind(AssertUnwindSafe(|| session.receive(core, bytes)));
+        let step = catch_unwind(AssertUnwindSafe(|| session.receive_frame(core, received.frame)));
         let Ok(step) = step else {
             self.invalidated = true;
             self.fail(poisoned(), u64::MAX);

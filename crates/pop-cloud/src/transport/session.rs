@@ -1,14 +1,17 @@
-//! Event-driven native driver. Blocking effects have a separate bounded pool;
-//! they never occupy the socket runtime or its DNS blocking threads.
+//! Event-driven native driver with cancellable async effects and bounded socket queues.
 use super::*;
+use crate::library::receipts;
 use pop_contracts::relay::PauseKind;
 use pop_contracts::relay::SyncPhase;
 use pop_contracts::relay::frame::ErrorCode;
+use pop_runtime::owner::ReceivedFrame;
 use pop_sharing_protocol::supervisor::budget::{BudgetDecision, PushBudget};
 use pop_sharing_protocol::supervisor::maintenance::{FullState, MaintenanceAction, Step};
 use pop_sharing_protocol::supervisor::{Action, Event as SupervisorEvent, Schedule, Supervisor, Wake, maintenance};
 use std::sync::atomic::{AtomicBool, Ordering};
-use tokio::sync::{Notify, Semaphore, oneshot, watch};
+#[cfg(test)]
+use std::sync::mpsc;
+use tokio::sync::{Notify, oneshot, watch};
 
 type Identity = watch::Receiver<Option<String>>;
 type Live = Arc<Mutex<LiveState>>;
@@ -17,25 +20,8 @@ struct LiveState {
     stopped: bool,
     connection: Option<SyncConnection>,
 }
-struct BlockingPool {
-    runtime: tokio::runtime::Runtime,
-    slots: Arc<Semaphore>,
-}
-fn blocking_pool() -> TransportResult<&'static BlockingPool> {
-    static POOL: OnceLock<std::result::Result<BlockingPool, String>> = OnceLock::new();
-    POOL.get_or_init(|| {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .max_blocking_threads(2)
-            .thread_name("pop.sharing.effects")
-            .build()
-            .map_err(fail)?;
-        Ok(BlockingPool { runtime, slots: Arc::new(Semaphore::new(2)) })
-    })
-    .as_ref()
-    .map_err(|error| HttpFailure::new(PauseKind::Failed, error.clone()))
-}
-fn stopped() -> HttpFailure {
-    HttpFailure::new(PauseKind::Failed, "Sharing stopped".into())
+fn stopped() -> crate::Error {
+    Error::new(PauseKind::Failed, "Sharing stopped".into())
 }
 async fn cancelled<T>(
     cancel: &CancellationToken,
@@ -46,66 +32,28 @@ async fn cancelled<T>(
         result = work => result,
     }
 }
-/// Runs a synchronous effect on the bounded blocking pool, cancelled with the socket.
-async fn blocking<T: Send + 'static>(
-    cancel: &CancellationToken,
-    identity: Identity,
-    run: impl FnOnce() -> TransportResult<T> + Send + 'static,
-) -> TransportResult<T> {
-    let pool = blocking_pool()?;
-    let permit = cancelled(cancel, async { pool.slots.clone().acquire_owned().await.map_err(|_| stopped()) }).await?;
-    let context = Operation { cancellation: cancel.clone(), identity };
-    let task = pool.runtime.spawn_blocking(move || {
-        let _permit = permit;
-        scoped(context, run)
-    });
-    cancelled(cancel, async { task.await.map_err(|_| unconfirmed_owner())? }).await
-}
-
 #[derive(Clone)]
 struct Operations {
     owner: Arc<Owner>,
     key: RoomKey,
-    journal: Arc<journal::Journal>,
+    receipt: receipts::Receipt,
     cancel: CancellationToken,
     identity: Identity,
+    outcome: OwnerOutcome,
 }
 impl Operations {
     fn current_key(&self) -> RoomKey {
         let mut key = self.key.clone();
-        if let Some(identity) = self.identity.borrow().as_ref() {
-            key.identity = identity.clone();
-        }
+        key.identity_updates = Some(self.identity.clone());
         key
     }
-    async fn call<T: Send + 'static>(
-        &self,
-        run: impl FnOnce(Self) -> TransportResult<T> + Send + 'static,
-    ) -> TransportResult<T> {
+    async fn call<T, Fut: Future<Output = Result<T>>>(&self, run: impl FnOnce(Self) -> Fut) -> Result<T> {
         let mut current = self.clone();
         current.key = self.current_key();
-        blocking(&self.cancel, self.identity.clone(), move || run(current)).await
+        cancelled(&self.cancel, run(current)).await
     }
-    async fn version(&self) -> TransportResult<pop_runtime::owner::Version> {
-        if self.cancel.is_cancelled() {
-            return Err(stopped());
-        }
-        let effect = OwnerEffect::Other;
-        let (send, reply) = oneshot::channel();
-        self.owner.version(
-            CallOptions::default(),
-            Box::new(move |result| {
-                let _ = send.send(result);
-            }),
-        );
-        cancelled(&self.cancel, async {
-            tokio::time::timeout(Duration::from_secs(20), reply)
-                .await
-                .map_err(|_| unconfirmed_owner())?
-                .map_err(|_| unconfirmed_owner())?
-                .map_err(|error| owner_failure(error, effect))
-        })
-        .await
+    async fn version(&self) -> Result<pop_runtime::owner::Version> {
+        cancelled(&self.cancel, owner_request(&self.owner, &self.outcome, Owner::version, OwnerEffect::Other)).await
     }
 }
 
@@ -123,7 +71,7 @@ impl Drop for Running {
     }
 }
 impl Connection {
-    pub fn start(owner: Arc<Owner>, key: RoomKey, notice: Notice, journal: Arc<journal::Journal>) -> Self {
+    pub fn start(owner: Arc<Owner>, key: RoomKey, notice: Notice, receipt: receipts::Receipt) -> Self {
         let cancellation = CancellationToken::new();
         let status = Arc::new(Status {
             value: Mutex::new((SyncPhase::Offline, "Connecting".into(), None)),
@@ -136,7 +84,14 @@ impl Connection {
         let running = Arc::new(AtomicBool::new(false));
         match network() {
             Ok(network) => {
-                let operations = Operations { owner, key, journal, cancel: cancellation.clone(), identity: receive };
+                let operations = Operations {
+                    owner,
+                    key,
+                    receipt,
+                    cancel: cancellation.clone(),
+                    identity: receive,
+                    outcome: OwnerOutcome::default(),
+                };
                 let output = status.clone();
                 let attached = live.clone();
                 running.store(true, Ordering::Release);
@@ -146,7 +101,7 @@ impl Connection {
                     supervise(operations, output, attached).await;
                 });
             }
-            Err(error) => status.paused(PauseKind::Refused, String::from(error)),
+            Err(error) => status.paused(PauseKind::Refused, error.to_string()),
         }
         Self { cancellation, identity, live, status, running }
     }
@@ -187,15 +142,15 @@ async fn supervise(operations: Operations, status: Arc<Status>, live: Live) {
         match attempt {
             Ok(true) => break,
             Ok(false) => status.set(SyncPhase::Offline, "Offline; reconnecting".into()),
-            Err(HttpFailure { kind: PauseKind::Ended, .. }) => {
+            Err(crate::Error::Sharing { kind: PauseKind::Ended, .. }) => {
                 status.set(SyncPhase::Ended, "Ended".into());
                 break;
             }
-            Err(pause) if pause.kind.pauses() => {
-                status.paused(pause.kind, pause.reason);
+            Err(pause) if pause.pause_kind().pauses() => {
+                status.paused(pause.pause_kind(), pause.to_string());
                 break;
             }
-            Err(error) => status.set(SyncPhase::Offline, format!("Offline; reconnecting: {}", String::from(error))),
+            Err(error) => status.set(SyncPhase::Offline, format!("Offline; reconnecting: {error}")),
         }
         let Action::RetryAfter { milliseconds } = supervisor.step(SupervisorEvent::Retry) else {
             break;
@@ -249,8 +204,8 @@ async fn send(socket: &mut AsyncSocket, cancel: &CancellationToken, message: Mes
     cancelled(cancel, async {
         tokio::time::timeout(Duration::from_secs(10), socket.send(message))
             .await
-            .map_err(|_| HttpFailure::from("Socket send timed out"))?
-            .map_err(|_| HttpFailure::from("Socket send failed"))
+            .map_err(|e| Error::caused(PauseKind::Failed, "Socket send timed out".into(), e))?
+            .map_err(|e| Error::caused(PauseKind::Failed, "Socket send failed".into(), e))
     })
     .await
 }
@@ -262,8 +217,8 @@ fn full_state(waiting: bool, retried: bool) -> FullState {
     }
 }
 /// Folding cannot make the room fit: a terminal pause; local edits keep saving.
-fn outgrown() -> HttpFailure {
-    HttpFailure::from(pop_core::sync::Pause { kind: PauseKind::Outgrown, reason: PauseKind::Outgrown.message(413) })
+fn outgrown() -> crate::Error {
+    Error::from(pop_core::sync::Pause { kind: PauseKind::Outgrown, reason: PauseKind::Outgrown.message(413) })
 }
 
 struct AttemptCancellation(CancellationToken);
@@ -275,11 +230,29 @@ impl Drop for AttemptCancellation {
 
 /// While an ordered owner/file/HTTP effect runs, only transport controls can bypass
 /// it. Document frames stay bounded and ordered until resource preparation finishes.
+enum Incoming {
+    Frame(ReceivedFrame),
+    Control(Message),
+}
+impl Incoming {
+    fn decode(message: Message) -> Result<Self> {
+        match message {
+            Message::Binary(bytes) => {
+                let received = ReceivedFrame::decode(bytes.to_vec());
+                received
+                    .frame()
+                    .map_err(|error| Error::caused(PauseKind::Refused, error.to_string(), error.clone()))?;
+                Ok(Self::Frame(received))
+            }
+            control => Ok(Self::Control(control)),
+        }
+    }
+}
 struct SocketPump {
     socket: AsyncSocket,
     cancel: CancellationToken,
     events: Arc<Events>,
-    incoming: VecDeque<Message>,
+    incoming: VecDeque<ReceivedFrame>,
     incoming_bytes: usize,
     heartbeat: tokio::time::Instant,
 }
@@ -302,20 +275,35 @@ impl SocketPump {
         }
         Ok(())
     }
-    async fn next(&mut self) -> Option<std::result::Result<Message, tungstenite::Error>> {
-        if let Some(message) = self.incoming.pop_front() {
-            if let Message::Binary(bytes) = &message {
-                self.incoming_bytes -= bytes.len();
-            }
-            return Some(Ok(message));
+    async fn next(&mut self) -> Option<Result<Incoming>> {
+        if let Some(frame) = self.incoming.pop_front() {
+            self.incoming_bytes -= frame.bytes().len();
+            return Some(Ok(Incoming::Frame(frame)));
         }
-        self.socket.next().await
+        self.socket.next().await.map(|result| {
+            result
+                .map_err(|e| Error::caused(PauseKind::Failed, "Relay socket read failed".into(), e))
+                .and_then(Incoming::decode)
+        })
     }
-    fn interrupt(&self, reason: &'static str) -> HttpFailure {
+    fn interrupt(&self, reason: &'static str) -> crate::Error {
         self.cancel.cancel();
-        HttpFailure::new(PauseKind::Failed, reason.into())
+        Error::new(PauseKind::Failed, reason.into())
     }
     async fn effect<T>(&mut self, work: impl Future<Output = TransportResult<T>>) -> TransportResult<T> {
+        self.effect_until(work, false).await
+    }
+    /// An ordering probe must settle even if the socket closes immediately after a
+    /// frame. Dropping it would make a normal disconnect an unknown owner outcome.
+    async fn owner_effect<T>(&mut self, work: impl Future<Output = TransportResult<T>>) -> TransportResult<T> {
+        self.effect_until(work, true).await
+    }
+    async fn effect_until<T>(
+        &mut self,
+        work: impl Future<Output = TransportResult<T>>,
+        settle_owner: bool,
+    ) -> TransportResult<T> {
+        let mut closed = false;
         tokio::pin!(work);
         loop {
             enum Input<T> {
@@ -326,13 +314,19 @@ impl SocketPump {
             }
             let input = tokio::select! { biased;
                 _ = self.cancel.cancelled() => return Err(stopped()),
-                message = self.socket.next() => Input::Socket(message),
                 result = &mut work => Input::Result(result),
+                message = self.socket.next(), if !closed => Input::Socket(message),
                 _ = self.events.ready.notified() => Input::Owner,
-                _ = tokio::time::sleep_until(self.heartbeat) => Input::Heartbeat,
+                _ = tokio::time::sleep_until(self.heartbeat), if !closed => Input::Heartbeat,
             };
             match input {
-                Input::Result(result) => return result,
+                Input::Result(result) => {
+                    return if closed {
+                        result.and_then(|_| Err(self.interrupt("Relay socket closed")))
+                    } else {
+                        result
+                    };
+                }
                 Input::Heartbeat => self.send(Message::Text("ping".into())).await?,
                 Input::Owner => {
                     if self.events.queue.lock().unwrap().overflow {
@@ -341,26 +335,24 @@ impl SocketPump {
                 }
                 Input::Socket(Some(Ok(Message::Ping(bytes)))) => self.send(Message::Pong(bytes)).await?,
                 Input::Socket(Some(Ok(Message::Binary(bytes)))) => {
-                    let frame = match envelope::decode(&bytes) {
+                    let received = ReceivedFrame::decode(bytes.to_vec());
+                    let frame = match received.frame() {
                         Ok(frame) => frame,
                         Err(error) => {
                             self.cancel.cancel();
-                            return Err(HttpFailure::from(pop_core::sync::Pause {
-                                kind: PauseKind::Refused,
-                                reason: error.to_string(),
-                            }));
+                            return Err(Error::caused(PauseKind::Refused, error.to_string(), error.clone()));
                         }
                     };
                     if let Frame::Error { code, message } = frame {
                         self.cancel.cancel();
-                        return Err(match ErrorCode::try_from(code) {
-                            Ok(ErrorCode::Ended) => HttpFailure::new(PauseKind::Ended, PauseKind::Ended.message(410)),
-                            Ok(ErrorCode::Protocol) => HttpFailure::from(pop_core::sync::Pause {
+                        return Err(match ErrorCode::try_from(*code) {
+                            Ok(ErrorCode::Ended) => Error::new(PauseKind::Ended, PauseKind::Ended.message(410)),
+                            Ok(ErrorCode::Protocol) => Error::from(pop_core::sync::Pause {
                                 kind: PauseKind::NeedsUpdate,
-                                reason: message,
+                                reason: message.clone(),
                             }),
                             Ok(ErrorCode::App | ErrorCode::Malformed) | Err(_) => {
-                                HttpFailure::from(pop_core::sync::Pause { kind: PauseKind::Refused, reason: message })
+                                Error::from(pop_core::sync::Pause { kind: PauseKind::Refused, reason: message.clone() })
                             }
                         });
                     }
@@ -370,13 +362,21 @@ impl SocketPump {
                         return Err(self.interrupt("Deferred socket queue budget exceeded"));
                     }
                     self.incoming_bytes += bytes.len();
-                    self.incoming.push_back(Message::Binary(bytes));
+                    self.incoming.push_back(received);
                 }
                 Input::Socket(Some(Ok(Message::Close(_)))) | Input::Socket(None) => {
-                    return Err(self.interrupt("Relay socket closed"));
+                    if settle_owner {
+                        closed = true;
+                    } else {
+                        return Err(self.interrupt("Relay socket closed"));
+                    }
                 }
                 Input::Socket(Some(Err(_))) => {
-                    return Err(self.interrupt("Relay socket read failed"));
+                    if settle_owner {
+                        closed = true;
+                    } else {
+                        return Err(self.interrupt("Relay socket read failed"));
+                    }
                 }
                 Input::Socket(Some(Ok(_))) => {}
             }
@@ -393,11 +393,15 @@ async fn connected(
 ) -> TransportResult<bool> {
     let mut attempt = operations.clone();
     attempt.cancel = operations.cancel.child_token();
+    attempt.outcome = OwnerOutcome::default();
     let cancel = attempt.cancel.clone();
     let _scope = AttemptCancellation(cancel.clone());
     let result = connected_attempt(&attempt, status, live, supervisor, retried_full).await;
+    if attempt.outcome.unknown() {
+        return Err(unconfirmed_owner());
+    }
     match result {
-        Err(HttpFailure { kind: PauseKind::Failed, .. })
+        Err(crate::Error::Sharing { kind: PauseKind::Failed, .. })
             if cancel.is_cancelled() && !operations.cancel.is_cancelled() =>
         {
             Ok(false)
@@ -417,8 +421,8 @@ async fn connected_attempt(
         Ok(socket) => socket,
         Err(error) => {
             match error {
-                HttpFailure { kind: PauseKind::Ended, .. } => status.set(SyncPhase::Ended, "Ended".into()),
-                pause if pause.kind.pauses() => status.paused(pause.kind, pause.reason),
+                crate::Error::Sharing { kind: PauseKind::Ended, .. } => status.set(SyncPhase::Ended, "Ended".into()),
+                pause if pause.pause_kind().pauses() => status.paused(pause.pause_kind(), pause.to_string()),
                 error => return Err(error),
             }
             return Ok(true);
@@ -441,13 +445,13 @@ async fn connected_attempt(
     if operations.cancel.is_cancelled() {
         return Err(stopped());
     }
-    pump.effect(operations.version()).await?;
+    pump.owner_effect(operations.version()).await?;
     trace("owner_attached");
     let mut uploaded = pump
-        .effect(operations.call(|operation| {
+        .effect(operations.call(|operation| async move {
             trace("inventory_start");
             let mut uploaded = Vec::new();
-            attachments::download_blobs(&operation.owner, &operation.key, &mut uploaded)?;
+            attachments::download_blobs(&operation.owner, &operation.outcome, &operation.key, &mut uploaded).await?;
             trace("inventory_done");
             Ok(uploaded)
         }))
@@ -464,6 +468,7 @@ async fn connected_attempt(
     let result = async {
         loop {
             if operations.cancel.is_cancelled() { return Err(stopped()); }
+            if tokio::time::Instant::now() >= pump.heartbeat { pump.send(Message::Text("ping".into())).await?; }
             let now = milliseconds(start);
             if delayed_push.as_ref().is_some_and(|(at, _)| *at <= now) {
                 let (_, bytes) = delayed_push.take().expect("due push checked above");
@@ -472,12 +477,11 @@ async fn connected_attempt(
             if let Some(wake) = schedule.due(now) {
                 schedule.completed(wake, now);
                 match wake {
-                    Wake::Ping => pump.send(Message::Text("ping".into())).await?,
                     Wake::Probe => {
-                        let info = pump.effect(operations.call(|operation| room_info(&operation.key, None))).await?;
+                        let info = pump.effect(operations.call(|operation| async move { room_info(&operation.key).await })).await?;
                         let full = full_state(waiting, *retried_full);
                         let mut random = [0u8; 2];
-                        pop_core::random(&mut random).map_err(|_| HttpFailure::from("Cannot schedule compaction"))?;
+                        pop_core::random(&mut random).map_err(|_| Error::from("Cannot schedule compaction"))?;
                         match maintenance::decide(full, Step::Probe { compact: info.compact }, u16::from_le_bytes(random)) {
                             MaintenanceAction::Outgrown => return Err(outgrown()),
                             MaintenanceAction::Jitter { milliseconds } => schedule.compact_after(now, milliseconds),
@@ -485,7 +489,7 @@ async fn connected_attempt(
                         }
                     }
                     Wake::Compact => {
-                        let info = pump.effect(operations.call(|operation| room_info(&operation.key, None))).await?;
+                        let info = pump.effect(operations.call(|operation| async move { room_info(&operation.key).await })).await?;
                         let full = full_state(waiting, *retried_full);
                         let action = maintenance::decide(full, Step::Recheck { compact: info.compact }, 0);
                         if action == MaintenanceAction::Reconnect { *retried_full = true; return Ok(false); }
@@ -493,11 +497,10 @@ async fn connected_attempt(
                             let (send, receive) = oneshot::channel();
                             admission.maintenance_base(move |base| { let _ = send.send(base); });
                             let base = pump.effect(cancelled(&operations.cancel, async {
-                                tokio::time::timeout(Duration::from_secs(30), receive).await
-                                    .map_err(|_| unconfirmed_owner())?.map_err(|_| unconfirmed_owner())
+                                completion(&operations.outcome, receive, Duration::from_secs(20)).await
                             })).await?;
                             let base = match base {
-                                Err(pause) => return Err(HttpFailure::from(pause)),
+                                Err(pause) => return Err(Error::from(pause)),
                                 Ok(pop_core::sync::BaseRead::Pending) => {
                                     if let MaintenanceAction::RetryBase { milliseconds } = maintenance::decide(full, Step::BaseUnavailable, 0) {
                                         schedule.compact_after(now, milliseconds);
@@ -513,13 +516,13 @@ async fn connected_attempt(
                                 Ok(pop_core::sync::BaseRead::Ready(base)) => base,
                             };
                             // A 413 is the outgrown pause; a competing fold reconnects to catch up.
-                            match pump.effect(operations.call(move |operation| compact(&operation.key, &base))).await {
+                            match pump.effect(operations.call(move |operation| async move { compact(&operation.key, base).await })).await {
                                 Ok(()) => {
                                     if maintenance::decide(full, Step::Compacted, 0) == MaintenanceAction::Reconnect {
                                         *retried_full = true; return Ok(false);
                                     }
                                 }
-                                Err(HttpFailure { kind: PauseKind::Conflict, .. }) => return Ok(false),
+                                Err(crate::Error::Sharing { kind: PauseKind::Conflict, .. }) => return Ok(false),
                                 Err(error) => return Err(error),
                             }
                         }
@@ -527,18 +530,19 @@ async fn connected_attempt(
                 }
                 continue;
             }
-            enum Input { Owner(Queue), Socket(Option<std::result::Result<Message, tungstenite::Error>>), Timer, Identity }
+            enum Input { Owner(Queue), Socket(Option<Result<Incoming>>), Timer, Identity }
+            let heartbeat = pump.heartbeat;
             let input = tokio::select! { biased;
                 _ = operations.cancel.cancelled() => return Err(stopped()),
                 pending = events.next() => Input::Owner(pending),
                 message = pump.next() => Input::Socket(message),
-                _ = tokio::time::sleep_until(tokio::time::Instant::from_std(start + Duration::from_millis(schedule.next_at_ms().min(delayed_push.as_ref().map_or(u64::MAX, |(at, _)| *at))))) => Input::Timer,
+                _ = tokio::time::sleep_until(tokio::time::Instant::from_std(start + Duration::from_millis(schedule.next_at_ms().min(delayed_push.as_ref().map_or(u64::MAX, |(at, _)| *at)))).min(heartbeat)) => Input::Timer,
                 changed = identity.changed() => { if changed.is_err() { return Err(stopped()); } Input::Identity },
             };
             match input {
                 Input::Timer | Input::Identity => {},
                 Input::Owner(pending) => {
-                    if pending.overflow { return Err(HttpFailure::from("Socket queue budget exceeded")); }
+                    if pending.overflow { return Err(Error::from("Socket queue budget exceeded")); }
                     for event in pending.events {
                         match event {
                             SyncEvent::Reconnect => return Ok(false),
@@ -554,8 +558,8 @@ async fn connected_attempt(
                                 if reported == pop_core::sync::Status::Synced {
                                     supervisor.step(SupervisorEvent::Live);
                                     let connection = admission.clone();
-                                    let confirmed = pump.effect(operations.call(move |operation| {
-                                        journal::confirm(&operation.owner, &connection, &operation.journal)
+                                    let confirmed = pump.owner_effect(operations.call(move |operation| async move {
+                                        receipts::confirm(&operation.owner, &operation.outcome, &connection, operation.receipt).await
                                     })).await?;
                                     if confirmed { *retried_full = false; waiting = false; }
                                 }
@@ -564,7 +568,7 @@ async fn connected_attempt(
                                 if !waiting { status.set(core_status.0, core_status.1.clone()); }
                             }
                             SyncEvent::Send { bytes } => {
-                                let frame = Frame::decode(&bytes).map_err(fail)?;
+                                let frame = Frame::decode(&bytes).map_err(Error::from)?;
                                 let push = if let Frame::Push { id, .. } = &frame { Some(*id) } else { None };
                                 if matches!(frame, Frame::Hello { .. }) {
                                     if hello_sent { return Ok(false); }
@@ -573,11 +577,10 @@ async fn connected_attempt(
                                     sent_push = None;
                                 }
                                 trace_frame(&frame, false);
-                                let message = envelope::encode(frame).map_err(fail)?;
                                 if let Some(id) = push {
-                                    match push_budget.admit(milliseconds(start), message.len()) {
+                                    match push_budget.admit(milliseconds(start), bytes.len()) {
                                         BudgetDecision::Wait { milliseconds: wait } => {
-                                            if delayed_push.is_some() { return Err(HttpFailure::from("Multiple unsent pushes")); }
+                                            if delayed_push.is_some() { return Err(Error::from("Multiple unsent pushes")); }
                                             delayed_push = Some((milliseconds(start).saturating_add(wait), bytes));
                                             continue;
                                         }
@@ -585,24 +588,22 @@ async fn connected_attempt(
                                         BudgetDecision::Ready => sent_push = Some(id),
                                     }
                                     status.set(SyncPhase::Syncing, "Syncing files".into());
-                                    let result = pump.effect(operations.call(move |operation| {
-                                        let result = attachments::upload_blobs(&operation.owner, &operation.key, &mut uploaded);
+                                    let result = pump.effect(operations.call(move |operation| async move {
+                                        let result = attachments::upload_blobs(&operation.owner, &operation.outcome, &operation.key, &mut uploaded).await;
                                         Ok((uploaded, result))
                                     })).await?;
                                     uploaded = result.0;
                                     // Folding never frees attachment space: FilesFull is terminal.
                                     result.1?;
                                 }
-                                pump.send(Message::Binary(message.into())).await?;
+                                pump.send(Message::Binary(bytes.into())).await?;
                             }
                         }
                     }
                 }
-                Input::Socket(Some(Ok(Message::Binary(bytes)))) => {
-                    let frame = envelope::decode(&bytes).map_err(|error| HttpFailure::from(pop_core::sync::Pause {
-                        kind: PauseKind::Refused, reason: fail(error),
-                    }))?;
-                    trace_frame(&frame, true);
+                Input::Socket(Some(Ok(Incoming::Frame(received)))) => {
+                    let frame = received.frame().map_err(|error| Error::caused(PauseKind::Refused, error.to_string(), error.clone()))?;
+                    trace_frame(frame, true);
                     if let Frame::Ack { id, .. } = &frame
                         && sent_push == Some(*id)
                     {
@@ -614,16 +615,17 @@ async fn connected_attempt(
                     }
                     if matches!(frame, Frame::Records(_)) {
                         status.set(SyncPhase::Syncing, "Receiving files".into());
-                        uploaded = pump.effect(operations.call(move |operation| {
-                            attachments::download_blobs(&operation.owner, &operation.key, &mut uploaded)?;
+                        uploaded = pump.effect(operations.call(move |operation| async move {
+                            attachments::download_blobs(&operation.owner, &operation.outcome, &operation.key, &mut uploaded).await?;
                             Ok(uploaded)
                         })).await?;
                     }
-                    if !admission.frame(frame.encode()) { return Ok(false); }
-                    pump.effect(operations.version()).await?;
+                    if !admission.frame(received) { return Ok(false); }
+                    pump.owner_effect(operations.version()).await?;
                     if !waiting { status.set(core_status.0, core_status.1.clone()); }
                 }
-                Input::Socket(Some(Ok(Message::Close(_)))) | Input::Socket(Some(Err(_))) | Input::Socket(None) => return Ok(false),
+                Input::Socket(Some(Ok(Incoming::Control(Message::Close(_))))) | Input::Socket(Some(Err(_))) | Input::Socket(None) => return Ok(false),
+                Input::Socket(Some(Ok(Incoming::Control(Message::Ping(bytes))))) => pump.send(Message::Pong(bytes)).await?,
                 Input::Socket(Some(Ok(_))) => {},
             }
         }
@@ -634,12 +636,12 @@ async fn connected_attempt(
     let _ = tokio::time::timeout(Duration::from_millis(100), pump.socket.close(None)).await;
     trace("socket_detached");
     match result {
-        Err(HttpFailure { kind: PauseKind::Ended, .. }) => {
+        Err(crate::Error::Sharing { kind: PauseKind::Ended, .. }) => {
             status.set(SyncPhase::Ended, "Ended".into());
             Ok(true)
         }
-        Err(pause) if pause.kind.pauses() => {
-            status.paused(pause.kind, pause.reason);
+        Err(pause) if pause.pause_kind().pauses() => {
+            status.paused(pause.pause_kind(), pause.to_string());
             Ok(true)
         }
         result => result,
@@ -652,7 +654,7 @@ pub(super) fn connected_fixture(
     key: &RoomKey,
     status: &Status,
     retried_full: &mut bool,
-    journal: &Arc<journal::Journal>,
+    receipt: &receipts::Receipt,
 ) -> TransportResult<bool> {
     let output = Arc::new(Status {
         value: Mutex::new(status.value.lock().unwrap().clone()),
@@ -665,12 +667,13 @@ pub(super) fn connected_fixture(
     let operation = Operations {
         owner: owner.clone(),
         key: key.clone(),
-        journal: journal.clone(),
+        receipt: receipt.clone(),
         cancel: CancellationToken::new(),
         identity: receive,
+        outcome: OwnerOutcome::default(),
     };
     let mut retried = *retried_full;
-    let result = run_network(async move {
+    let result = block_on(async move {
         let result = connected(&operation, &output, &Live::default(), &mut Supervisor::new(), &mut retried).await;
         Ok((result, retried))
     })?;
@@ -695,6 +698,7 @@ mod tests {
         let key = RoomKey {
             room: owner.app().document_uuid.clone().unwrap(),
             identity: "fixture-identity".into(),
+            identity_updates: None,
             origin: format!("http://{}", listener.local_addr().unwrap()),
         };
         request(&owner, |owner: &Owner, options, callback| {
@@ -724,6 +728,7 @@ mod tests {
                         std::thread::sleep(Duration::from_millis(2));
                         continue;
                     };
+                    stream.set_nonblocking(false).unwrap();
                     stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
                     let mut header = Vec::new();
                     while !header.ends_with(b"\r\n\r\n") {
@@ -798,7 +803,7 @@ mod tests {
             &key,
             &status,
             &mut false,
-            &crate::client::tests::test_journal(&owner, &key, true),
+            &crate::client::tests::test_receipt(&owner, &key, true),
         );
         stop.store(true, Ordering::Release);
         let (next, http) = server.join().unwrap();
@@ -811,7 +816,7 @@ mod tests {
     #[test]
     fn cancellation_returns_while_a_started_effect_finishes_without_late_notices() {
         let cancellation = CancellationToken::new();
-        let cancelled = cancellation.clone();
+        let cancel_effect = cancellation.clone();
         let notices = Arc::new(AtomicUsize::new(0));
         let counted = notices.clone();
         let status = Arc::new(Status {
@@ -824,16 +829,18 @@ mod tests {
         let (entered, started) = mpsc::channel();
         let (release, finish) = mpsc::channel();
         let (finished, completed) = mpsc::channel();
-        let (_identity, identity) = watch::channel(None);
         let caller = std::thread::spawn(move || {
-            run_network(async move {
-                blocking(&cancelled, identity, move || {
-                    entered.send(()).unwrap();
-                    finish.recv().unwrap();
-                    status.set(SyncPhase::Synced, "Late result".into());
-                    finished.send(()).unwrap();
-                    Ok(())
-                })
+            block_on(async move {
+                cancelled(
+                    &cancel_effect,
+                    blocking(move || {
+                        entered.send(()).unwrap();
+                        finish.recv().unwrap();
+                        status.set(SyncPhase::Synced, "Late result".into());
+                        finished.send(()).unwrap();
+                        Ok(())
+                    }),
+                )
                 .await
             })
         });
@@ -860,13 +867,14 @@ mod tests {
         let key = RoomKey {
             room: owner.app().document_uuid.clone().unwrap(),
             identity: "fixture-identity".into(),
+            identity_updates: None,
             origin: format!("http://{}", listener.local_addr().unwrap()),
         };
         request(&owner, |owner: &Owner, options, callback| {
             owner.set_share(Share { endpoint: key.origin.clone() }, options, callback)
         })
         .unwrap();
-        let journal = crate::client::tests::test_journal(&owner, &key, true);
+        let receipt = crate::client::tests::test_receipt(&owner, &key, true);
         let route = format!("GET /v1/documents/{}/blobs ", key.room);
         let (observed, controls) = mpsc::channel();
         let (release, released) = mpsc::channel();
@@ -909,7 +917,14 @@ mod tests {
         let (reply, completed) = mpsc::channel();
         let cancel = CancellationToken::new();
         let (_identity, identity) = watch::channel(Some(key.bearer().to_owned()));
-        let operation = Operations { owner: owner.clone(), key, journal, cancel: cancel.clone(), identity };
+        let operation = Operations {
+            owner: owner.clone(),
+            key,
+            receipt,
+            cancel: cancel.clone(),
+            identity,
+            outcome: OwnerOutcome::default(),
+        };
         network().unwrap().runtime.spawn(async move {
             let status = Status {
                 value: Mutex::new((SyncPhase::Offline, String::new(), None)),

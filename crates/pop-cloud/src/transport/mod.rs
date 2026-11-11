@@ -1,144 +1,141 @@
-//! Single native Rust socket supervisor. Swift only starts/stops it and reads status.
+//! Native sharing tasks share one runtime; synchronous native entry points enter it once.
+use crate::attachments;
 use crate::client::*;
-use crate::{attachments, journal};
+#[cfg(test)]
+use crate::library::receipts;
 use futures_util::{SinkExt, StreamExt};
-use pop_contracts::hex;
-use pop_contracts::relay::PauseKind;
-use pop_contracts::relay::SyncPhase;
-use pop_contracts::relay::envelope;
 use pop_contracts::relay::frame::{Frame, MAX_FRAME};
+use pop_contracts::relay::{PauseKind, SyncPhase};
 use pop_runtime::owner::{CallOptions, Completion, Owner, SyncConnection, SyncEvent};
-use pop_sharing_protocol::failure;
-use pop_sharing_protocol::failure::Route;
-use sha2::{Digest, Sha256};
-use std::cell::RefCell;
+use pop_sharing_protocol::failure::{self, Route};
 use std::collections::VecDeque;
 use std::future::Future;
-use std::sync::{Arc, Mutex, OnceLock, mpsc};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use tokio_tungstenite::tungstenite::Message;
 use tokio_tungstenite::{WebSocketStream, tungstenite};
 use tokio_util::sync::CancellationToken;
 
 pub(crate) mod account;
+mod http;
+pub(crate) use http::{Endpoint, HttpOperation, Reply, http};
 mod session;
 pub(crate) use session::Connection;
-
-type TransportResult<T> = std::result::Result<T, HttpFailure>;
+type TransportResult<T> = Result<T>;
 struct Network {
     runtime: tokio::runtime::Runtime,
     http: reqwest::Client,
 }
-fn network() -> TransportResult<&'static Network> {
-    static NETWORK: OnceLock<std::result::Result<Network, String>> = OnceLock::new();
+fn network() -> Result<&'static Network> {
+    static NETWORK: OnceLock<Result<Network>> = OnceLock::new();
     NETWORK
         .get_or_init(|| {
             let runtime = tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(1)
-                .max_blocking_threads(2)
+                .worker_threads(2)
+                .max_blocking_threads(4)
                 .thread_name("pop.sharing.io")
                 .enable_all()
                 .build()
-                .map_err(fail)?;
-            // Cancellation drops DNS/connect/TLS/body futures. Platform getaddrinfo
-            // work already running can finish later; its shared thread pool is capped.
+                .map_err(Error::from)?;
             let http = reqwest::Client::builder()
                 .http1_only()
                 .redirect(reqwest::redirect::Policy::none())
                 .timeout(Duration::from_secs(30))
                 .build()
-                .map_err(fail)?;
+                .map_err(|e| Error::caused(PauseKind::Failed, e.to_string(), e))?;
             Ok(Network { runtime, http })
         })
         .as_ref()
-        .map_err(|error| HttpFailure::new(PauseKind::Failed, error.clone()))
+        .map_err(Clone::clone)
 }
-thread_local! {
-    // Context for bounded blocking-pool effects. The async supervisor owns
-    // cancellation explicitly; one-shot FFI calls are independent.
-    static OPERATION: RefCell<Option<Operation>> = const { RefCell::new(None) };
+/// Only synchronous native callers and blocking-pool effects enter here. Every socket
+/// task calls the async APIs directly. Tokio rejects block_on in an async task, so a
+/// misplaced synchronous call fails immediately instead of deadlocking a worker.
+pub(crate) fn spawn_library(work: impl FnOnce() + Send + 'static) -> Result<()> {
+    network()?.runtime.spawn_blocking(work);
+    Ok(())
 }
-struct Operation {
-    cancellation: CancellationToken,
-    identity: tokio::sync::watch::Receiver<Option<String>>,
+pub(crate) fn block_on<T>(future: impl Future<Output = Result<T>>) -> Result<T> {
+    network()?.runtime.handle().block_on(future)
 }
-fn cancellation() -> CancellationToken {
-    OPERATION
-        .with(|operation| operation.borrow().as_ref().map(|context| context.cancellation.clone()).unwrap_or_default())
-}
-fn fresh_identity(token: Option<&str>) -> Option<String> {
-    OPERATION
-        .with(|operation| operation.borrow().as_ref().and_then(|context| context.identity.borrow().clone()))
-        .or_else(|| token.map(str::to_owned))
-}
-fn scoped<T>(context: Operation, run: impl FnOnce() -> T) -> T {
-    struct Reset(Option<Operation>);
-    impl Drop for Reset {
-        fn drop(&mut self) {
-            OPERATION.with(|operation| *operation.borrow_mut() = self.0.take());
+/// Temporary staging cleanup must not perform file I/O on a socket task.
+pub(crate) fn discard_files(paths: Vec<std::path::PathBuf>, directory: Option<std::path::PathBuf>) {
+    let cleanup = move || {
+        for path in paths {
+            let _ = std::fs::remove_file(path);
         }
+        if let Some(directory) = directory {
+            let _ = std::fs::remove_dir(directory);
+        }
+    };
+    match network() {
+        Ok(network) => {
+            network.runtime.spawn_blocking(cleanup);
+        }
+        Err(_) => cleanup(),
     }
-    let previous = OPERATION.with(|operation| operation.replace(Some(context)));
-    let _reset = Reset(previous);
-    run()
 }
-// Spawn onto the shared runtime instead of entering it on the caller. Sync APIs
-// therefore also work when their caller is already inside another Tokio runtime.
-fn run_network<T: Send + 'static>(
-    future: impl Future<Output = TransportResult<T>> + Send + 'static,
-) -> TransportResult<T> {
-    let network = network()?;
-    let token = cancellation();
-    let (send, receive) = mpsc::sync_channel(1);
-    network.runtime.spawn(async move {
-        let result = tokio::select! {
-            biased;
-            _ = token.cancelled() => Err("Sharing stopped".into()),
-            result = future => result,
-        };
-        let _ = send.send(result);
-    });
-    receive.recv().map_err(|_| HttpFailure::from("Sharing network stopped"))?
+pub(crate) async fn blocking<T: Send + 'static>(work: impl FnOnce() -> Result<T> + Send + 'static) -> Result<T> {
+    tokio::task::spawn_blocking(work)
+        .await
+        .map_err(|e| Error::caused(PauseKind::Refused, "Sharing work could not be confirmed".into(), e))?
 }
-pub(crate) fn wait_reply<T>(reply: &mpsc::Receiver<T>, timeout: Duration) -> TransportResult<T> {
-    let token = cancellation();
-    let deadline = Instant::now() + timeout;
-    loop {
-        if token.is_cancelled() {
-            return Err("Sharing stopped".into());
-        }
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            return Err(unconfirmed_owner());
-        }
-        match reply.recv_timeout(remaining.min(Duration::from_millis(25))) {
-            Ok(value) => return Ok(value),
-            Err(mpsc::RecvTimeoutError::Timeout) => {}
-            Err(mpsc::RecvTimeoutError::Disconnected) => return Err(unconfirmed_owner()),
+/// Completion timeout and dropped completion both leave an unknown owner outcome.
+#[derive(Clone, Default)]
+pub(crate) struct OwnerOutcome(Arc<std::sync::atomic::AtomicBool>);
+impl OwnerOutcome {
+    fn unknown(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Acquire)
+    }
+}
+struct PendingOwner {
+    outcome: OwnerOutcome,
+    completed: bool,
+}
+impl Drop for PendingOwner {
+    fn drop(&mut self) {
+        if !self.completed {
+            self.outcome.0.store(true, std::sync::atomic::Ordering::Release);
         }
     }
 }
-pub(crate) fn pause(duration: Duration) -> TransportResult<()> {
-    run_network(async move {
-        tokio::time::sleep(duration).await;
-        Ok(())
-    })
+pub(crate) async fn completion<T>(
+    outcome: &OwnerOutcome,
+    reply: tokio::sync::oneshot::Receiver<T>,
+    timeout: Duration,
+) -> Result<T> {
+    let mut pending = PendingOwner { outcome: outcome.clone(), completed: false };
+    let result = tokio::time::timeout(timeout, reply)
+        .await
+        .map_err(unconfirmed_owner_cause)?
+        .map_err(unconfirmed_owner_cause)?;
+    pending.completed = true;
+    Ok(result)
 }
-fn unconfirmed_owner() -> HttpFailure {
-    HttpFailure::from(pop_core::sync::Pause {
+fn unconfirmed_owner_cause(source: impl std::error::Error + Send + Sync + 'static) -> Error {
+    let mut error = unconfirmed_owner();
+    if let Error::Sharing { source: cause, .. } = &mut error {
+        *cause = Some(Arc::new(source));
+    }
+    error
+}
+fn unconfirmed_owner() -> Error {
+    Error::Sharing {
         kind: PauseKind::Refused,
         reason: "The owner result could not be confirmed; sharing is paused".into(),
-    })
+        unknown: true,
+        status: None,
+        code: None,
+        source: None,
+    }
 }
-pub(crate) fn owner_request<T: Send + 'static>(
+pub(crate) async fn owner_request<T: Send + 'static>(
     owner: &Owner,
+    outcome: &OwnerOutcome,
     request: impl FnOnce(&Owner, CallOptions, Completion<T>),
     effect: OwnerEffect,
-) -> TransportResult<T> {
-    if cancellation().is_cancelled() {
-        return Err("Sharing stopped".into());
-    }
-    let (send, reply) = mpsc::channel();
+) -> Result<T> {
+    let (send, reply) = tokio::sync::oneshot::channel();
     request(
         owner,
         CallOptions::default(),
@@ -146,11 +143,33 @@ pub(crate) fn owner_request<T: Send + 'static>(
             let _ = send.send(result);
         }),
     );
-    wait_reply(&reply, Duration::from_secs(20))?.map_err(|failure| owner_failure(failure, effect))
+    completion(outcome, reply, Duration::from_secs(20)).await?.map_err(|e| owner_failure(e, effect))
 }
-async fn response_body(mut response: reqwest::Response, limit: u64) -> TransportResult<Vec<u8>> {
+#[derive(Clone, Copy)]
+pub(crate) enum OwnerEffect {
+    Other,
+    Attachment,
+}
+pub(crate) fn owner_failure(error: pop_runtime::owner::Failure, effect: OwnerEffect) -> Error {
+    use pop_contracts::wire::Code;
+    use pop_runtime::owner::FailureKind;
+    let kind = match error.reason {
+        Some(Code::StaleBase) if error.kind == FailureKind::Rejected => PauseKind::Conflict,
+        Some(Code::RequiresUpdate) => PauseKind::NeedsUpdate,
+        Some(Code::MissingDependencies) => PauseKind::MissingHistory,
+        Some(Code::TooLarge) if matches!(effect, OwnerEffect::Attachment) => PauseKind::FilesFull,
+        Some(_) => PauseKind::Refused,
+        None if error.kind == FailureKind::Busy => PauseKind::Busy,
+        None => PauseKind::Refused,
+    };
+    let reason = if kind == PauseKind::Conflict { kind.message(409) } else { error.message.clone() };
+    Error::caused(kind, reason, error)
+}
+async fn response_body(mut response: reqwest::Response, limit: u64) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(|_| HttpFailure::from("Relay body unavailable"))? {
+    while let Some(chunk) =
+        response.chunk().await.map_err(|e| Error::caused(PauseKind::Failed, "Relay body unavailable".into(), e))?
+    {
         if chunk.len() as u64 > limit.saturating_sub(bytes.len() as u64) {
             return Err("Relay body exceeds its byte limit".into());
         }
@@ -159,36 +178,34 @@ async fn response_body(mut response: reqwest::Response, limit: u64) -> Transport
     Ok(bytes)
 }
 type AsyncSocket = WebSocketStream<reqwest::Upgraded>;
-async fn upgrade_async(key: &RoomKey) -> TransportResult<AsyncSocket> {
-    let url = format!("{}/v1/documents/{}/sync", key.origin, key.room);
-    upgrade_at(&url, key.bearer()).await
+async fn upgrade_async(key: &RoomKey) -> Result<AsyncSocket> {
+    upgrade_at(&key.origin, Endpoint::Sync(&key.room), &key.bearer()).await
 }
-async fn upgrade_at(url: &str, capability: &str) -> TransportResult<AsyncSocket> {
-    let client = network()?.http.clone();
+async fn upgrade_at(origin: &str, endpoint: Endpoint<'_>, identity: &str) -> Result<AsyncSocket> {
     let nonce = tungstenite::handshake::client::generate_key();
-    let response = client
-        .get(url)
+    let response = network()?
+        .http
+        .get(endpoint.url(origin)?)
         .header("Connection", "Upgrade")
         .header("Upgrade", "websocket")
         .header("Sec-WebSocket-Version", "13")
         .header("Sec-WebSocket-Key", &nonce)
-        .bearer_auth(capability)
+        .bearer_auth(identity)
         .timeout(Duration::from_secs(10))
         .send()
         .await
-        // Invalid HTTP headers are network failures: Hyper cannot expose a
-        // trustworthy status. Once headers are accepted, body errors keep status.
-        .map_err(|_| HttpFailure::from("Relay socket unavailable"))?;
+        .map_err(|e| Error::caused(PauseKind::Failed, "Relay socket unavailable".into(), e))?;
     let status = response.status().as_u16();
     if status != 101 {
-        if status == 401 && url.ends_with("/v1/account/library") {
-            return Err(HttpFailure::from(pop_core::sync::Pause {
-                kind: PauseKind::Refused,
-                reason: "Refresh your account identity".into(),
-            }));
-        }
         let bytes = response_body(response, pop_sharing_protocol::CONTROL_BYTES as u64).await.unwrap_or_default();
-        return Err(refusal(status, &bytes, Route::of(url)));
+        let mut error = refusal(status, &bytes, endpoint.classification());
+        if status == 401
+            && matches!(endpoint, Endpoint::Library)
+            && let Error::Sharing { reason, .. } = &mut error
+        {
+            *reason = "Refresh your account identity".into();
+        }
+        return Err(error);
     }
     let headers = response.headers();
     let token = |name: &str, expected: &str| {
@@ -204,15 +221,24 @@ async fn upgrade_at(url: &str, capability: &str) -> TransportResult<AsyncSocket>
     {
         return Err("Invalid relay socket upgrade".into());
     }
-    let upgraded = response.upgrade().await.map_err(|_| HttpFailure::from("Relay socket unavailable"))?;
+    let upgraded =
+        response.upgrade().await.map_err(|e| Error::caused(PauseKind::Failed, "Relay socket unavailable".into(), e))?;
     let mut config = tungstenite::protocol::WebSocketConfig::default();
-    let limit = if url.ends_with("/v1/account/library") { pop_sharing_protocol::CONTROL_BYTES } else { MAX_FRAME };
+    let limit = if matches!(endpoint, Endpoint::Library) { pop_sharing_protocol::CONTROL_BYTES } else { MAX_FRAME };
     config.max_message_size = Some(limit);
     config.max_frame_size = Some(limit);
-    let socket = WebSocketStream::from_raw_socket(upgraded, tungstenite::protocol::Role::Client, Some(config)).await;
-    Ok(socket)
+    Ok(WebSocketStream::from_raw_socket(upgraded, tungstenite::protocol::Role::Client, Some(config)).await)
 }
-
+pub(crate) fn refusal(status: u16, body: &[u8], route: Route) -> Error {
+    let body = serde_json::from_slice::<pop_sharing_protocol::http::ApiFailure>(body).ok();
+    let kind = failure::classify(status, body.as_ref().map(|b| b.code.as_str()), route);
+    let reason = if kind == PauseKind::NeedsUpdate {
+        body.as_ref().map_or_else(|| kind.message(status), |b| b.message.clone())
+    } else {
+        kind.message(status)
+    };
+    Error::Sharing { kind, reason, unknown: false, status: Some(status), code: body.map(|b| b.code), source: None }
+}
 fn trace(event: &str) {
     static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     if *ENABLED.get_or_init(|| std::env::var("POP_SHARING_TRACE").is_ok_and(|v| v == "1")) {
@@ -232,200 +258,6 @@ fn trace_frame(frame: &Frame, incoming: bool) {
         _ => "unexpected_frame",
     };
     trace(event);
-}
-pub(crate) fn http(
-    key: &RoomKey,
-    method: &str,
-    route: &str,
-    token: Option<&str>,
-    body: &[u8],
-    headers: &[(&str, &str)],
-) -> Result<Vec<u8>> {
-    http_typed(key, method, route, token, body, headers).map_err(Into::into)
-}
-pub(crate) fn http_typed(
-    key: &RoomKey,
-    method: &str,
-    route: &str,
-    token: Option<&str>,
-    body: &[u8],
-    headers: &[(&str, &str)],
-) -> std::result::Result<Vec<u8>, HttpFailure> {
-    let limit = if route.split('?').next() == Some("seed") {
-        pop_sharing_protocol::SEED_BYTES as u64
-    } else if route.starts_with("blob/") {
-        pop_contracts::wire::ATTACHMENT_FILE_BYTES as u64
-    } else {
-        pop_sharing_protocol::CONTROL_BYTES as u64
-    };
-    let suffix = if route.is_empty() {
-        String::new()
-    } else if route.starts_with('?') {
-        route.to_owned()
-    } else {
-        format!("/{route}")
-    };
-    http_request_authorized(
-        method,
-        &format!("{}/v1/documents/{}{suffix}", key.origin, key.room),
-        token,
-        body,
-        headers,
-        limit,
-    )
-}
-#[derive(Debug)]
-pub(crate) struct HttpFailure {
-    pub(crate) kind: PauseKind,
-    pub(crate) reason: String,
-}
-impl HttpFailure {
-    pub(crate) fn new(kind: PauseKind, reason: String) -> Self {
-        Self { kind, reason }
-    }
-}
-impl From<pop_core::sync::Pause> for HttpFailure {
-    fn from(pause: pop_core::sync::Pause) -> Self {
-        Self::new(pause.kind, pause.reason)
-    }
-}
-impl From<pop_contracts::Error> for HttpFailure {
-    fn from(error: pop_contracts::Error) -> Self {
-        pop_runtime::owner::Failure::from(error).into()
-    }
-}
-impl From<pop_runtime::owner::Failure> for HttpFailure {
-    fn from(error: pop_runtime::owner::Failure) -> Self {
-        owner_failure(error, OwnerEffect::Other)
-    }
-}
-#[derive(Clone, Copy)]
-pub(crate) enum OwnerEffect {
-    Other,
-    Attachment,
-}
-fn owner_failure(error: pop_runtime::owner::Failure, effect: OwnerEffect) -> HttpFailure {
-    let kind = match error.reason {
-        Some(pop_contracts::wire::Code::StaleBase) if error.kind == pop_runtime::owner::FailureKind::Rejected => {
-            return HttpFailure::new(PauseKind::Conflict, PauseKind::Conflict.message(409));
-        }
-        Some(pop_contracts::wire::Code::RequiresUpdate) => PauseKind::NeedsUpdate,
-        Some(pop_contracts::wire::Code::MissingDependencies) => PauseKind::MissingHistory,
-        Some(pop_contracts::wire::Code::TooLarge) if matches!(effect, OwnerEffect::Attachment) => PauseKind::FilesFull,
-        Some(_) => PauseKind::Refused,
-        None if error.kind == pop_runtime::owner::FailureKind::Busy => {
-            return HttpFailure::new(PauseKind::Busy, error.message);
-        }
-        // Full also represents local disk exhaustion, not just format capacity.
-        // Other local failures can leave accepted work unconfirmed: never replay it.
-        None => PauseKind::Refused,
-    };
-    HttpFailure::from(pop_core::sync::Pause { kind, reason: error.message })
-}
-impl From<pop_storage::store::Error> for HttpFailure {
-    fn from(error: pop_storage::store::Error) -> Self {
-        pop_runtime::owner::Failure::from(error).into()
-    }
-}
-impl From<HttpFailure> for String {
-    fn from(value: HttpFailure) -> Self {
-        value.reason
-    }
-}
-impl From<&str> for HttpFailure {
-    fn from(value: &str) -> Self {
-        Self::new(PauseKind::Failed, value.into())
-    }
-}
-impl From<String> for HttpFailure {
-    fn from(value: String) -> Self {
-        Self::new(PauseKind::Failed, value)
-    }
-}
-/// What a refused response means, for HTTP requests and the socket handshake alike.
-/// `body` is the relay's `ApiFailure` JSON when it sent one.
-pub(crate) fn refusal(status: u16, body: &[u8], route: Route) -> HttpFailure {
-    let body = serde_json::from_slice::<pop_sharing_protocol::http::ApiFailure>(body).ok();
-    let kind = failure::classify(status, body.as_ref().map(|b| b.code.as_str()), route);
-    let reason = if kind == PauseKind::NeedsUpdate {
-        body.map_or_else(|| kind.message(status), |b| b.message)
-    } else {
-        kind.message(status)
-    };
-    HttpFailure::new(kind, reason)
-}
-pub(crate) fn http_request(
-    method: &str,
-    url: &str,
-    token: Option<&str>,
-    body: &[u8],
-    headers: &[(&str, &str)],
-    limit: u64,
-) -> Result<Vec<u8>> {
-    http_request_typed(method, url, token, body, headers, limit).map_err(Into::into)
-}
-pub(crate) fn http_request_typed(
-    method: &str,
-    url: &str,
-    token: Option<&str>,
-    body: &[u8],
-    headers: &[(&str, &str)],
-    limit: u64,
-) -> std::result::Result<Vec<u8>, HttpFailure> {
-    http_request_authorized(method, url, token, body, headers, limit)
-}
-fn http_request_authorized(
-    method: &str,
-    url: &str,
-    token: Option<&str>,
-    body: &[u8],
-    headers: &[(&str, &str)],
-    limit: u64,
-) -> std::result::Result<Vec<u8>, HttpFailure> {
-    let client = network()?.http.clone();
-    let method = reqwest::Method::from_bytes(method.as_bytes()).map_err(fail)?;
-    let url = url.to_owned();
-    let mut request = client.request(method.clone(), &url).body(body.to_vec());
-    if let Some(token) = fresh_identity(token) {
-        request = request.bearer_auth(token);
-    }
-    for (name, value) in headers {
-        request = request.header(*name, *value);
-    }
-    run_network(async move {
-        let response = request.send().await.map_err(|_| HttpFailure::from("Sharing service is unavailable"))?;
-        let status = response.status().as_u16();
-        if !matches!(status, 200 | 204) {
-            let bytes = response_body(response, pop_sharing_protocol::CONTROL_BYTES as u64).await.unwrap_or_default();
-            return match refusal(status, &bytes, Route::of(&url)) {
-                HttpFailure { kind: PauseKind::Ended, .. } if method == reqwest::Method::DELETE => Ok(Vec::new()),
-                failure => Err(failure),
-            };
-        }
-        response_body(response, limit).await
-    })
-}
-
-/// An access lookup keeps HTTP status until deciding whether access was denied.
-/// Bad requests, missing routes and expired credentials cannot authorize local removal.
-pub(crate) fn access_request(url: &str, identity: &str) -> TransportResult<Option<Vec<u8>>> {
-    lookup(url, identity, &[403, 410])
-}
-/// A GET whose `absent` statuses are the answer `None`; any other refusal is an error.
-pub(crate) fn lookup(url: &str, identity: &str, absent: &[u16]) -> TransportResult<Option<Vec<u8>>> {
-    let client = network()?.http.clone();
-    let request = client.get(url).bearer_auth(fresh_identity(Some(identity)).unwrap_or_else(|| identity.to_owned()));
-    let absent = absent.to_vec();
-    run_network(async move {
-        let response = request.send().await.map_err(|_| HttpFailure::from("Sharing service is unavailable"))?;
-        let status = response.status().as_u16();
-        let bytes = response_body(response, pop_sharing_protocol::CONTROL_BYTES as u64).await?;
-        match status {
-            200 => Ok(Some(bytes)),
-            status if absent.contains(&status) => Ok(None),
-            _ => Err(refusal(status, &bytes, Route::Other)),
-        }
-    })
 }
 #[derive(Default)]
 struct Queue {
@@ -494,7 +326,7 @@ impl Status {
 #[cfg(test)]
 fn upgrade(key: &RoomKey) -> TransportResult<AsyncSocket> {
     let key = key.clone();
-    run_network(async move { upgrade_async(&key).await })
+    block_on(async move { upgrade_async(&key).await })
 }
 #[cfg(test)]
 fn connected(
@@ -503,30 +335,35 @@ fn connected(
     _stop: &AtomicBool,
     status: &Status,
     retried_full: &mut bool,
-    journal: &Arc<journal::Journal>,
+    receipt: &receipts::Receipt,
 ) -> TransportResult<bool> {
-    session::connected_fixture(owner, key, status, retried_full, journal)
+    session::connected_fixture(owner, key, status, retried_full, receipt)
 }
 
 /// Versions use the seed route's canonical peer encoding.
-pub(crate) fn compact(key: &RoomKey, base: &pop_core::sync::Base) -> std::result::Result<(), HttpFailure> {
-    let version =
-        |vv: &loro::VersionVector| pop_contracts::relay::frame::version_json(vv.iter().map(|(&p, &n)| (p, n as u32)));
-    http_typed(
-        key,
-        "POST",
-        "compact",
-        Some(key.bearer()),
-        &base.bytes,
-        &[
+pub(crate) async fn compact(key: &RoomKey, base: pop_core::sync::Base) -> Result<()> {
+    let (bytes, hash, version) = blocking(move || {
+        use sha2::{Digest, Sha256};
+        let hash = pop_contracts::hex(&Sha256::digest(&base.bytes));
+        let version = pop_contracts::relay::frame::version_json(base.frontier.iter().map(|(&p, &n)| (p, n as u32)));
+        Ok((base.bytes, hash, version))
+    })
+    .await?;
+    http(
+        &key.origin,
+        &key.bearer(),
+        HttpOperation::new(reqwest::Method::POST, Endpoint::Compact(&key.room)).body(&bytes).headers(&[
             ("Content-Type", "application/octet-stream"),
-            ("X-Sharing-SHA256", &hex(&Sha256::digest(&base.bytes))),
-            ("X-Sharing-Version", &version(&base.frontier)),
-        ],
-    )?;
+            ("X-Sharing-SHA256", &hash),
+            ("X-Sharing-Version", &version),
+        ]),
+    )
+    .await?;
     Ok(())
 }
 
+#[cfg(test)]
+use pop_contracts::relay::envelope;
 #[cfg(test)]
 use std::{
     sync::atomic::{AtomicBool, Ordering},
@@ -544,7 +381,7 @@ mod tests {
     fn access_lookup_requires_an_explicit_permission_denial() {
         for status in [200, 400, 401, 403, 404, 410, 422, 429, 503] {
             let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-            let url = format!("http://{}/sharing", listener.local_addr().unwrap());
+            let origin = format!("http://{}", listener.local_addr().unwrap());
             let server = thread::spawn(move || {
                 let (mut stream, _) = listener.accept().unwrap();
                 stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
@@ -559,13 +396,48 @@ mod tests {
                 write!(stream, "HTTP/1.1 {status} Result\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}")
                     .unwrap();
             });
-            let result = access_request(&url, "identity");
+            let result = block_on(http(
+                &origin,
+                "identity",
+                HttpOperation::new(reqwest::Method::GET, Endpoint::Sharing("fixture"))
+                    .reply(Reply::Optional(&[403, 410])),
+            ));
             server.join().unwrap();
             match status {
                 200 => assert_eq!(result.unwrap(), Some(b"{}".to_vec())),
                 403 | 410 => assert_eq!(result.unwrap(), None),
                 _ => assert!(result.is_err(), "HTTP {status} cannot authorize removal: {result:?}"),
             }
+        }
+    }
+    #[test]
+    fn incomplete_access_lookups_cannot_authorize_removal_or_creation() {
+        for status in [403, 410, 404] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let origin = format!("http://{}", listener.local_addr().unwrap());
+            let server = thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                let mut request = Vec::new();
+                while !request.ends_with(b"\r\n\r\n") {
+                    let mut byte = [0];
+                    stream.read_exact(&mut byte).unwrap();
+                    request.push(byte[0]);
+                }
+                write!(stream, "HTTP/1.1 {status} Reply\r\nContent-Length: 20\r\nConnection: close\r\n\r\nshort")
+                    .unwrap();
+            });
+            let result = block_on(http(
+                &origin,
+                "identity",
+                HttpOperation::new(
+                    reqwest::Method::GET,
+                    if status == 404 { Endpoint::Document("fixture") } else { Endpoint::Sharing("fixture") },
+                )
+                .reply(Reply::Optional(if status == 404 { &[404] } else { &[403, 410] })),
+            ));
+            server.join().unwrap();
+            assert!(result.is_err(), "an incomplete {status} reply cannot establish absence: {result:?}");
         }
     }
     use tungstenite::protocol::{CloseFrame, frame::coding::CloseCode};
@@ -591,26 +463,26 @@ mod tests {
         ] {
             let message = format!("local failure {kind:?} {reason:?}");
             let failure = Failure { kind, reason, message: message.clone(), op_index: None, path: vec![] };
-            match (HttpFailure::from(failure), expected) {
-                (pause, Some(expected)) if pause.kind.pauses() => {
-                    assert_eq!(pause.kind, expected, "{kind:?} {reason:?}");
-                    assert_eq!(pause.reason, message);
+            match (Error::from(failure), expected) {
+                (pause, Some(expected)) if pause.pause_kind().pauses() => {
+                    assert_eq!(pause.pause_kind(), expected, "{kind:?} {reason:?}");
+                    assert_eq!(pause.to_string(), message);
                 }
-                (HttpFailure { kind: PauseKind::Busy, .. }, None) => {}
+                (crate::Error::Sharing { kind: PauseKind::Busy, .. }, None) => {}
                 (actual, expected) => panic!("{kind:?} {reason:?}: expected {expected:?}, received {actual:?}"),
             }
         }
-        let (_send, reply) = mpsc::channel::<()>();
         for disconnected in [false, true] {
             let failure = if disconnected {
-                let (send, reply) = mpsc::channel::<()>();
+                let (send, reply) = tokio::sync::oneshot::channel::<()>();
                 drop(send);
-                wait_reply(&reply, Duration::from_secs(1)).unwrap_err()
+                block_on(completion(&OwnerOutcome::default(), reply, Duration::from_secs(1))).unwrap_err()
             } else {
-                wait_reply(&reply, Duration::ZERO).unwrap_err()
+                let (_send, reply) = tokio::sync::oneshot::channel::<()>();
+                block_on(completion(&OwnerOutcome::default(), reply, Duration::ZERO)).unwrap_err()
             };
             assert!(
-                matches!(failure, HttpFailure { kind: PauseKind::Refused, .. }),
+                matches!(failure, crate::Error::Sharing { kind: PauseKind::Refused, .. }),
                 "an unconfirmed owner result must not be automatically replayed: {failure:?}"
             );
         }
@@ -623,7 +495,7 @@ mod tests {
         };
         assert!(matches!(
             owner_failure(attachment, OwnerEffect::Attachment),
-            HttpFailure { kind: PauseKind::FilesFull, .. }
+            crate::Error::Sharing { kind: PauseKind::FilesFull, .. }
         ));
         let stale = Failure {
             kind: FailureKind::Rejected,
@@ -632,14 +504,15 @@ mod tests {
             op_index: None,
             path: vec![],
         };
-        assert!(matches!(HttpFailure::from(stale), HttpFailure { kind: PauseKind::Conflict, .. }));
+        assert!(matches!(Error::from(stale), crate::Error::Sharing { kind: PauseKind::Conflict, .. }));
     }
 
-    fn upgrade_refusal(headers: &str, body: &[u8], status: u16) -> HttpFailure {
+    fn upgrade_refusal(headers: &str, body: &[u8], status: u16) -> crate::Error {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let key = RoomKey {
             room: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".to_owned(),
             identity: "memory-only-test-token".into(),
+            identity_updates: None,
             origin: format!("http://{}", listener.local_addr().unwrap()),
         };
         let headers = headers.to_owned();
@@ -683,9 +556,9 @@ mod tests {
             ("Transfer-Encoding: chunked\r\n".into(), chunked.as_bytes()),
         ] {
             let pause = upgrade_refusal(&headers, bytes, 400);
-            assert!(pause.kind.pauses());
-            assert_eq!(pause.kind, PauseKind::NeedsUpdate);
-            assert_eq!(pause.reason, "Update pop to keep sharing");
+            assert!(pause.pause_kind().pauses());
+            assert_eq!(pause.pause_kind(), PauseKind::NeedsUpdate);
+            assert_eq!(pause.to_string(), "Update pop to keep sharing");
         }
     }
 
@@ -703,13 +576,13 @@ mod tests {
             ("Transfer-Encoding: chunked\r\n".into(), b"0\r\n".to_vec()),
         ] {
             let pause = upgrade_refusal(&headers, &body, 400);
-            assert!(pause.kind.pauses());
-            assert_eq!(pause.kind, PauseKind::Refused, "{headers}");
+            assert!(pause.pause_kind().pauses());
+            assert_eq!(pause.pause_kind(), PauseKind::Refused, "{headers}");
         }
         for status in [429, 503] {
             assert!(matches!(
                 upgrade_refusal("Content-Length: 20\r\n", b"short", status),
-                HttpFailure { kind: PauseKind::Failed, .. }
+                crate::Error::Sharing { kind: PauseKind::Failed, .. }
             ));
         }
     }
@@ -751,6 +624,7 @@ mod tests {
         let key = RoomKey {
             room: owner.app().document_uuid.clone().unwrap(),
             identity: "memory-only-test-token".into(),
+            identity_updates: None,
             origin: format!("http://{}", listener.local_addr().unwrap()),
         };
         let stop = Arc::new(AtomicBool::new(false));
@@ -873,13 +747,13 @@ mod tests {
             &stop,
             &status,
             &mut false,
-            &crate::client::tests::test_journal(&owner, &key, true),
+            &crate::client::tests::test_receipt(&owner, &key, true),
         );
         stop.store(true, Ordering::Relaxed);
         serving.join().unwrap();
         request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap();
         let (phase, _, kind) = status.value.into_inner().unwrap();
-        (result.unwrap_or_else(|e| panic!("{}", String::from(e))), phase, kind)
+        (result.unwrap_or_else(|e| panic!("{}", e.to_string())), phase, kind)
     }
     #[test]
     fn keepalive_pong_and_transient_closes_reconnect_without_pausing() {
@@ -894,12 +768,13 @@ mod tests {
     /// Answer the socket upgrade with `answer` (or hang up) and report what `connected` made of it.
     fn handshake(
         answer: Option<(u16, &'static str)>,
-    ) -> (std::result::Result<bool, HttpFailure>, SyncPhase, Option<PauseKind>) {
+    ) -> (std::result::Result<bool, Error>, SyncPhase, Option<PauseKind>) {
         let (_dir, owner) = crate::client::tests::fixture();
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let key = RoomKey {
             room: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa".to_owned(),
             identity: "identity-token".into(),
+            identity_updates: None,
             origin: format!("http://{}", listener.local_addr().unwrap()),
         };
         let serving = thread::spawn(move || {
@@ -934,7 +809,7 @@ mod tests {
             &AtomicBool::new(false),
             &status,
             &mut false,
-            &crate::client::tests::test_journal(&owner, &key, true),
+            &crate::client::tests::test_receipt(&owner, &key, true),
         );
         // The relay saw one upgrade: a terminal answer does not loop back for another.
         serving.join().unwrap();
@@ -962,7 +837,7 @@ mod tests {
         for answer in [Some((503, "")), Some((429, "")), None] {
             let (result, phase, paused) = handshake(answer);
             assert!(
-                matches!(result, Err(HttpFailure { kind: PauseKind::Failed, .. })),
+                matches!(result, Err(crate::Error::Sharing { kind: PauseKind::Failed, .. })),
                 "{answer:?} retries: {result:?}"
             );
             assert_ne!(phase, SyncPhase::Paused);

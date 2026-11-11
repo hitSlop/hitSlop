@@ -45,14 +45,15 @@ or refreshing the local index.
 Standalone guest documents use their accepted document UUID and a matching valid
 credential. Rust interprets the opaque credential, including its ended state; filenames
 do not establish sharing. Native code caches this projection off the main thread at
-startup, foreground and credential changes. Account-generation checks fence late work.
+startup, foreground and credential changes. The long-lived Rust library fences account changes and reattaches registered live owners.
 
 ## Sync and accounts
 
 Cloud transport is event driven, with no polling of the service: one Rust account connection
-delivers the person's library metadata and each owner's connection reports its sync status. The
-native library also re-reads its local index every two seconds, with no network request,
-to notice changes made by another process. The Mac and iPhone use one default
+delivers the person's library metadata. Entries carry each document's sync phase, pause reason and detail; one library callback invalidates their snapshots. Native
+refreshes follow that callback, document save notifications and one managed-folder watcher
+using vnode notifications, including writes made by another process. Bursts are coalesced.
+Library work has its own queue, separate from document opening. The Mac and iPhone use one default
 Firebase app (Authentication, Analytics, Crashlytics); telemetry collection is
 on only in Release builds. Cloud documents are described in [cloud documents](cloud-documents.md).
 

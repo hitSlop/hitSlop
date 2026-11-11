@@ -155,7 +155,7 @@ pub fn file_application_id() -> u32 {
 /// A saved document's identity, without taking ownership.
 #[uniffi::export]
 pub fn file_document_id(path: String) -> Result<Option<String>, crate::sharing::SharingError> {
-    pop_cloud::local_document(Path::new(&path)).map_err(|message| crate::sharing::SharingError::Failed { message })
+    pop_cloud::local_document(Path::new(&path)).map_err(crate::sharing::failure)
 }
 /// Cheap display metadata. This is not a validity certificate for the embedded app.
 #[uniffi::export]

@@ -8,19 +8,6 @@ pub enum Route {
     Compact,
     Blob,
 }
-impl Route {
-    /// The route a room URL addresses.
-    pub fn of(url: &str) -> Self {
-        let path = url.split(['?', '#']).next().unwrap_or_default();
-        if path.ends_with("/compact") {
-            Self::Compact
-        } else if path.contains("/blob/") {
-            Self::Blob
-        } else {
-            Self::Other
-        }
-    }
-}
 /// `code` is the relay's `ApiFailure` code, when the body carried one.
 pub fn classify(status: u16, code: Option<&str>, route: Route) -> PauseKind {
     if code == Some("requires_update") {
@@ -67,15 +54,6 @@ mod tests {
             (500, None, Blob, Failed),
         ] {
             assert_eq!(classify(status, code, route), expected, "{status} {code:?} {route:?}");
-        }
-    }
-    #[test]
-    fn routes_follow_the_room_url() {
-        let room = "https://share.dotpop.click/v1/documents/00000000-0000-4000-8000-000000000001";
-        assert_eq!(Route::of(&format!("{room}/compact")), Route::Compact);
-        assert_eq!(Route::of(&format!("{room}/blob/{}", "b".repeat(64))), Route::Blob);
-        for other in ["", "/seed", "/blobs", "/resources", "/sync"] {
-            assert_eq!(Route::of(&format!("{room}{other}")), Route::Other, "{other}");
         }
     }
     #[test]

@@ -59,28 +59,24 @@ impl Supervisor {
 /// Independent timers are serviced in this order when deadlines coincide.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Wake {
-    Ping,
     Probe,
     Compact,
 }
 /// Driver-local monotonic millisecond deadlines; no polling interval is required.
 #[derive(Debug)]
 pub struct Schedule {
-    ping_at: u64,
     probe_at: u64,
     compact_at: Option<u64>,
 }
 impl Schedule {
     pub fn new(now_ms: u64) -> Self {
-        Self { ping_at: now_ms.saturating_add(limits::PING_MS), probe_at: now_ms, compact_at: None }
+        Self { probe_at: now_ms, compact_at: None }
     }
     pub fn next_at_ms(&self) -> u64 {
-        self.ping_at.min(self.probe_at).min(self.compact_at.unwrap_or(u64::MAX))
+        self.probe_at.min(self.compact_at.unwrap_or(u64::MAX))
     }
     pub fn due(&self, now_ms: u64) -> Option<Wake> {
-        if self.ping_at <= now_ms {
-            Some(Wake::Ping)
-        } else if self.probe_at <= now_ms {
+        if self.probe_at <= now_ms {
             Some(Wake::Probe)
         } else if self.compact_at.is_some_and(|at| at <= now_ms) {
             Some(Wake::Compact)
@@ -90,7 +86,6 @@ impl Schedule {
     }
     pub fn completed(&mut self, wake: Wake, now_ms: u64) {
         match wake {
-            Wake::Ping => self.ping_at = now_ms.saturating_add(limits::PING_MS),
             Wake::Probe => self.probe_at = now_ms.saturating_add(limits::ROOM_RECHECK_MS),
             Wake::Compact => self.compact_at = None,
         }
@@ -113,7 +108,7 @@ mod tests {
         assert_eq!(schedule.due(100), Some(Wake::Probe));
         schedule.completed(Wake::Probe, 100);
         assert_eq!(schedule.due(101), None);
-        assert_eq!(schedule.next_at_ms(), 100 + limits::PING_MS);
+        assert_eq!(schedule.next_at_ms(), 100 + limits::ROOM_RECHECK_MS);
         schedule.probe_now(101);
         assert_eq!(schedule.next_at_ms(), 101);
         schedule.completed(Wake::Probe, 101);

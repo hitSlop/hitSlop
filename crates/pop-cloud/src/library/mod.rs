@@ -1,22 +1,24 @@
 //! Device-local document index and account-scoped cloud cache. Bytes synchronize
 //! through the existing owner and persistent cloud protocol, never through catalog assets.
-mod changes;
+pub(crate) mod changes;
 mod cloud;
 mod error;
 mod feed;
-mod index;
+pub(crate) mod index;
 mod local;
 mod paths;
 mod projection;
+pub(crate) mod receipts;
 mod recovery;
 mod session;
 
+use crate::error::Result;
+use crate::{Error, Issue};
 use crate::{client::Client, transport::account::Account};
-pub use error::{Error, Issue};
-use error::{Result, failed};
+use error::failed;
 use index::IndexedDocument;
 use pop_contracts::hex;
-use pop_runtime::owner::{Failure, FailureKind, Owner};
+use pop_runtime::owner::{FailureKind, Owner};
 use pop_sharing_protocol::document::{AccessState, DocumentRole, JoinedDocument};
 use pop_storage::file;
 use pop_storage::store::{Mode, Store};
@@ -46,6 +48,9 @@ pub struct Entry {
     pub revision: u64,
     pub sharing_enabled: Option<bool>,
     pub inbox: bool,
+    pub phase: pop_contracts::relay::SyncPhase,
+    pub pause_kind: Option<pop_contracts::relay::PauseKind>,
+    pub detail: String,
 }
 struct Inner {
     db: Connection,
@@ -53,18 +58,19 @@ struct Inner {
     clients: HashMap<String, Arc<Client>>,
     retained: HashMap<String, Arc<Owner>>,
     token: Option<String>,
+    syncing: bool,
+    switching: bool,
 }
 pub struct Library {
     root: PathBuf,
-    account: String,
-    scope: String,
+    account: Mutex<String>,
+    weak: Weak<Self>,
     inner: Mutex<Inner>,
     active: AtomicBool,
     generation: AtomicU64,
-    projections: Mutex<()>,
     notice: changes::Notice,
     feed: Mutex<Option<Arc<Account>>>,
-    departing: Mutex<std::collections::HashSet<String>>,
+    departing: Mutex<std::collections::HashSet<(u64, String)>>,
     feed_active: AtomicBool,
 }
 impl Library {
@@ -75,20 +81,21 @@ impl Library {
         let scope = hex(&Sha256::digest(account.as_bytes()));
         std::fs::create_dir_all(root.join("documents"))?;
         std::fs::create_dir_all(root.join("accounts").join(&scope).join("documents"))?;
-        let library = Arc::new(Self {
+        let library = Arc::new_cyclic(|weak| Self {
             root,
-            account: account.into(),
-            scope,
+            account: Mutex::new(account.into()),
+            weak: weak.clone(),
             inner: Mutex::new(Inner {
                 db,
                 live: HashMap::new(),
                 clients: HashMap::new(),
                 retained: HashMap::new(),
                 token: None,
+                syncing: false,
+                switching: false,
             }),
             active: AtomicBool::new(true),
             generation: AtomicU64::new(1),
-            projections: Mutex::new(()),
             notice: Arc::new(Mutex::new(None)),
             feed: Mutex::new(None),
             departing: Mutex::new(std::collections::HashSet::new()),
@@ -99,15 +106,15 @@ impl Library {
     }
     fn check(&self) -> Result<()> {
         if !self.active.load(Ordering::Acquire) {
-            Err(Error { issue: Issue::AccountChanged, message: "The cloud account changed".into() })
+            Err(Error::Library { issue: Issue::AccountChanged, message: "The cloud account changed".into() })
         } else {
             Ok(())
         }
     }
     fn cloud(&self) -> Result<()> {
         self.check()?;
-        if self.account.is_empty() {
-            Err(Error { issue: Issue::AccountChanged, message: "Sign in to enable cloud sync".into() })
+        if self.account().is_empty() {
+            Err(Error::Library { issue: Issue::AccountChanged, message: "Sign in to enable cloud sync".into() })
         } else {
             Ok(())
         }
@@ -119,17 +126,48 @@ impl Library {
         self.cloud()?;
         Ok(self.generation.load(Ordering::Acquire))
     }
+    fn operation_for(&self, account: &str) -> Result<u64> {
+        let inner = pop_core::lock(&self.inner);
+        let generation = self.operation()?;
+        if self.account() != account {
+            return Err(Error::Library { issue: Issue::AccountChanged, message: "The cloud account changed".into() });
+        }
+        drop(inner);
+        Ok(generation)
+    }
     fn current_operation(&self, generation: u64) -> Result<()> {
         self.check()?;
         if generation != self.generation.load(Ordering::Acquire) {
-            return Err(Error { issue: Issue::AccountChanged, message: "The cloud account changed".into() });
+            return Err(Error::Library { issue: Issue::AccountChanged, message: "The cloud account changed".into() });
         }
         Ok(())
     }
+    fn account(&self) -> String {
+        pop_core::lock(&self.account).clone()
+    }
+    fn scope(&self) -> String {
+        hex(&Sha256::digest(self.account().as_bytes()))
+    }
+    fn receipt(&self, id: &str, generation: u64) -> Result<receipts::Receipt> {
+        self.current_operation(generation)?;
+        let account = self.account();
+        let id = id.to_owned();
+        let weak = self.weak.clone();
+        Ok(Arc::new(move |version| {
+            let library = weak.upgrade().ok_or_else(|| failed("Library closed"))?;
+            {
+                let mut inner = pop_core::lock(&library.inner);
+                library.current_operation(generation)?;
+                index::confirm(&mut inner.db, &account, &id, &version)?;
+            }
+            library.notify();
+            Ok(())
+        }))
+    }
     fn state_dir(&self) -> PathBuf {
-        self.root.join("accounts").join(&self.scope).join("relay-state")
+        self.root.join("accounts").join(self.scope()).join("relay-state")
     }
     fn cached_path(&self, id: &str) -> PathBuf {
-        self.root.join("accounts").join(&self.scope).join("documents").join(format!("{id}.pop"))
+        self.root.join("accounts").join(self.scope()).join("documents").join(format!("{id}.pop"))
     }
 }

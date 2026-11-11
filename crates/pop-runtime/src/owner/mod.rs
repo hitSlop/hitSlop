@@ -5,7 +5,7 @@ mod actor;
 mod admission;
 mod failure;
 use actor::Message;
-pub use actor::{SyncConnection, SyncEvent, SyncSink};
+pub use actor::{ReceivedFrame, SyncConnection, SyncEvent, SyncSink};
 pub(crate) use admission::{Permit, serialized_size};
 pub use failure::{Failure, FailureKind};
 use pop_core::{Origin, theme};

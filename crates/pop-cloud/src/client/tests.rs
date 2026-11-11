@@ -1,7 +1,6 @@
 use super::*;
 use crate::resolution;
 use crate::resolution::ResolvedRoom;
-use pop_contracts::relay::PauseKind;
 use pop_sharing_protocol::http::RoomPhase;
 pub(crate) fn fixture_source() -> std::path::PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/checklist/document")
@@ -20,17 +19,14 @@ pub(crate) fn document(dir: tempfile::TempDir, input: &str, source: &Path) -> (t
     let owner = Arc::new(Owner::open(&path, Mode::Document, Arc::new(|_| {})).unwrap());
     (dir, owner)
 }
-pub(crate) fn test_journal(owner: &Owner, key: &RoomKey, confirmed: bool) -> Arc<journal::Journal> {
-    let document = owner.app().document_uuid.as_deref().unwrap();
-    let journal =
-        journal::Journal::new(&owner.path().parent().unwrap().join("relay-state"), &key.origin, document).unwrap();
-    if confirmed {
-        let store = Store::open(owner.path(), Mode::Snapshot).unwrap();
-        let receipt = journal.receipt(store.document().unwrap().version());
-        journal.transaction().unwrap().confirm(&receipt).unwrap();
-        store.close().unwrap();
-    }
-    Arc::new(journal)
+pub(crate) fn receipt_at(root: &Path) -> receipts::Receipt {
+    std::fs::create_dir_all(root).unwrap();
+    let db = crate::library::index::open(root).unwrap();
+    let db = Mutex::new(db);
+    Arc::new(move |version| crate::library::index::confirm(&mut pop_core::lock(&db), "test", "test", &version))
+}
+pub(crate) fn test_receipt(owner: &Owner, _key: &RoomKey, _confirmed: bool) -> receipts::Receipt {
+    receipt_at(&owner.path().parent().unwrap().join("index"))
 }
 
 #[test]
@@ -40,123 +36,6 @@ fn invitations_are_validated_without_treating_the_capability_as_an_identity() {
     assert_eq!(invitation_document(&link).unwrap(), "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
     assert!(invitation_document("https://attacker.example/join#secret").is_err());
     assert!(invitation_document("identity-token").is_err());
-}
-
-#[test]
-fn journal_contention_is_retryable_instead_of_a_terminal_refusal() {
-    let (_directory, owner) = fixture();
-    let document = owner.app().document_uuid.as_deref().unwrap();
-    let key = RoomKey::identity(document, "test-token").unwrap();
-    let journal = test_journal(&owner, &key, true);
-    let _held = journal.transaction().unwrap();
-    let error = journal.transaction().err().expect("another transaction holds the journal");
-    assert!(matches!(journal::local(error), transport::HttpFailure { kind: PauseKind::Busy, .. }));
-}
-
-#[test]
-fn failed_receipt_confirmation_keeps_the_previous_receipt() {
-    let (_directory, owner) = fixture();
-    let document = owner.app().document_uuid.as_deref().unwrap();
-    let key = RoomKey::identity(document, "test-token").unwrap();
-    request(&owner, |owner: &Owner, options, callback| {
-        owner.set_share(pop_storage::store::Share { endpoint: key.origin.clone() }, options, callback)
-    })
-    .unwrap();
-    let journal = test_journal(&owner, &key, true);
-    let previous = journal.transaction().unwrap().current().unwrap().unwrap().owner_version;
-    request(&owner, |owner: &Owner, options, callback| {
-        owner.apply(
-            serde_json::from_value(serde_json::json!({"intents":[{"type":"increment","path":["hits"],"by":1}]}))
-                .unwrap(),
-            pop_core::Origin::Page,
-            options,
-            callback,
-        )
-    })
-    .unwrap();
-    request(&owner, Owner::flush).unwrap();
-    let saved = Store::open(owner.path(), Mode::Snapshot).unwrap();
-    let heads = saved.document().unwrap().wire_history();
-    saved.close().unwrap();
-    let version = heads.iter().map(|(peer, end)| (u64::from_str_radix(peer, 16).unwrap(), *end)).collect();
-    let connection = owner.sync_connection(Arc::new(|_| {}));
-    connection.frame(
-        pop_contracts::relay::frame::Frame::Welcome {
-            permission: pop_contracts::relay::frame::Permission::Write,
-            version,
-        }
-        .encode(),
-    );
-    connection.frame(pop_contracts::relay::frame::Frame::CaughtUp.encode());
-    // A version probe orders after the handshake messages.
-    request(&owner, Owner::version).unwrap();
-    let receipt_path = std::fs::read_dir(owner.path().parent().unwrap().join("relay-state"))
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .find(|path| path.extension().is_some_and(|ext| ext == "json"))
-        .unwrap();
-    // A directory at the temporary receipt path deterministically refuses the write.
-    std::fs::create_dir(receipt_path.with_extension("tmp")).unwrap();
-    assert!(journal::confirm(&owner, &connection, &journal).is_err());
-    assert_eq!(journal.transaction().unwrap().current().unwrap().unwrap().owner_version, previous);
-    connection.detach();
-}
-
-#[test]
-fn connection_snapshot_observer_does_not_replace_the_ui_listener_or_hold_callback_locks() {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-    let primary: Notice = Arc::new(Mutex::new(None));
-    let observer: Notice = Arc::new(Mutex::new(None));
-    let calls = Arc::new(AtomicUsize::new(0));
-    let observed = calls.clone();
-    let slot = Arc::downgrade(&observer);
-    *observer.lock().unwrap() = Some(Arc::new(move || {
-        if slot.upgrade().unwrap().try_lock().is_ok() {
-            observed.fetch_add(1, Ordering::Relaxed);
-        }
-    }));
-    let output = connection_notices(&primary, &observer);
-    let observed = calls.clone();
-    let slot = Arc::downgrade(&primary);
-    *primary.lock().unwrap() = Some(Arc::new(move || {
-        if slot.upgrade().unwrap().try_lock().is_ok() {
-            observed.fetch_add(1, Ordering::Relaxed);
-        }
-    }));
-    let callback = output.lock().unwrap().clone().unwrap();
-    callback();
-    assert_eq!(calls.load(Ordering::Relaxed), 2);
-}
-
-#[test]
-fn inspecting_a_missing_receipt_does_not_create_relay_state() {
-    let directory = tempfile::tempdir().unwrap();
-    let missing = directory.path().join("not-connected");
-    let document = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-    assert!(confirmed_saved_version(&missing, document).unwrap().is_none());
-    assert!(!missing.exists(), "reading a missing receipt must not create a relay directory or lock");
-}
-
-#[test]
-fn receipt_inspections_share_reads_but_fence_writers() {
-    let (directory, owner) = fixture();
-    let document = owner.app().document_uuid.as_deref().unwrap();
-    let key = RoomKey::identity(document, "test-token").unwrap();
-    let journal = test_journal(&owner, &key, true);
-    let first = journal.inspection().unwrap().unwrap();
-    let second = journal.inspection().unwrap().unwrap();
-    let current = first.current().unwrap().unwrap();
-    assert_eq!(second.current().unwrap().unwrap().owner_version, current.owner_version);
-    assert!(matches!(journal.transaction(), Err(journal::Error::Busy)));
-    drop(second);
-    drop(first);
-    let writer = journal.transaction().unwrap();
-    assert!(matches!(journal.inspection(), Err(journal::Error::Busy)));
-    writer.confirm(&journal.receipt("next-frontier".into())).unwrap();
-    drop(writer);
-    let state = directory.path().join("relay-state");
-    assert_eq!(confirmed_saved_version(&state, document).unwrap().as_deref(), Some("next-frontier"));
-    request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback)).unwrap();
 }
 
 #[test]
@@ -229,6 +108,7 @@ fn initial_download_hydrates_without_records_and_failed_download_never_publishes
     let key = RoomKey {
         room: owner.app().document_uuid.clone().unwrap(),
         identity: "test-token".into(),
+        identity_updates: None,
         origin: format!("http://{}", listener.local_addr().unwrap()),
     };
     let stop = Arc::new(AtomicBool::new(false));
@@ -282,21 +162,13 @@ fn initial_download_hydrates_without_records_and_failed_download_never_publishes
         key,
         seed: resolution::PrivateSeed { path: seed.path.clone() },
     };
-    let interrupted = resolved.install_if_current(&destination, &state, || Ok(()));
+    let interrupted = resolved.install_if_current(&destination, receipt_at(&state), || Ok(()));
     assert!(interrupted.is_err(), "a missing blob must refuse initial publication");
     assert!(!destination.exists(), "a failed initial download must not publish a partial document");
-    assert!(
-        journal::Journal::inspect(&state, &resolved.key.origin, resolved.document())
-            .unwrap()
-            .inspection()
-            .unwrap()
-            .and_then(|tx| tx.current().unwrap())
-            .is_none()
-    );
     refuse.store(false, Ordering::Relaxed);
-    assert!(resolved.install_if_current(&destination, &state, || Err("account detached".into())).is_err());
+    assert!(resolved.install_if_current(&destination, receipt_at(&state), || Err("account detached".into())).is_err());
     assert!(!destination.exists(), "an account changed during hydration must fence publication");
-    resolved.install_if_current(&destination, &state, || Ok(())).unwrap();
+    resolved.install_if_current(&destination, receipt_at(&state), || Ok(())).unwrap();
     stop.store(true, Ordering::Relaxed);
     server.join().unwrap();
     let downloaded = Store::open(&destination, Mode::Snapshot).unwrap();

@@ -57,7 +57,8 @@ fn account_projection_uses_current_sdk_metadata_and_hides_on_signout_without_del
     let root = dir.path().join("library");
     let local = Library::open(&root, "").unwrap();
     let local_entry = local.create(&template, "Local").unwrap();
-    let account = Library::open(&root, "account-a").unwrap();
+    let account = local.clone();
+    account.set_account(Some("account-a".into())).unwrap();
     let remote = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
     account.apply(LibraryUpdate::Upsert(catalog(remote, 3, "Current"))).unwrap();
     account.apply(LibraryUpdate::Upsert(catalog(remote, 2, "Stale"))).unwrap();
@@ -65,7 +66,10 @@ fn account_projection_uses_current_sdk_metadata_and_hides_on_signout_without_del
     assert!(!account.entries().unwrap().iter().find(|entry| entry.id == remote).unwrap().downloaded);
     let other = Library::open(&root, "account-b").unwrap();
     assert!(other.entries().unwrap().iter().all(|entry| entry.id != remote));
-    account.detach().unwrap();
+    account.set_account(Some("account-b".into())).unwrap();
+    assert!(account.entries().unwrap().iter().all(|entry| entry.id != remote));
+    account.set_account(None).unwrap();
+    assert_eq!(account.entries().unwrap().len(), 1);
     assert!(Path::new(&local_entry.path).exists());
     assert_eq!(Library::open(&root, "").unwrap().entries().unwrap().len(), 1);
 }
@@ -174,7 +178,7 @@ fn failed_initial_enable_keeps_selected_document_and_path_pending_after_restart(
     let root = dir.path().join("library");
     let account = Library::open(&root, "account-a").unwrap();
     let entry = account.create(&template, "Selected").unwrap();
-    assert!(account.enable_sync(&entry.id, "").is_err());
+    assert!(account.enable_sync("account-a", &entry.id, "").is_err());
     drop(account);
     let reopened = Library::open(&root, "account-a").unwrap();
     let entries = reopened.entries().unwrap();
@@ -293,9 +297,9 @@ fn joining_requires_an_account_and_credentials_before_resolving_the_invitation()
     let dir = tempfile::tempdir().unwrap();
     for (account, token) in [("", "token"), ("account-a", ""), ("", "")] {
         let library = Library::open(&dir.path().join("library"), account).unwrap();
-        let error = library.join("invalid invitation", token).unwrap_err();
-        assert_eq!(error.issue, pop_cloud::Issue::SignInRequired);
-        assert_eq!(error.message, "Sign in to join");
+        let error = library.join(account, "invalid invitation", token).unwrap_err();
+        assert_eq!(error.kind(), pop_cloud::ErrorKind::SignInRequired);
+        assert_eq!(error.to_string(), "Sign in to join");
         assert!(library.entries().unwrap().is_empty());
     }
 }

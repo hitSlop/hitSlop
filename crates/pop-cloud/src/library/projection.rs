@@ -3,9 +3,16 @@ use super::*;
 use pop_contracts::relay::SyncPhase;
 
 impl Library {
-    pub(super) fn row(&self, inner: &Inner, id: &str) -> Result<Entry> {
+    pub(super) fn row(&self, id: &str) -> Result<Entry> {
+        let generation = self.generation.load(Ordering::Acquire);
         Self::valid(id)?;
-        self.project(IndexedDocument::one(&inner.db, &self.account, id)?, inner.clients.get(id).map(Arc::as_ref))
+        let (row, client) = {
+            let inner = pop_core::lock(&self.inner);
+            (IndexedDocument::one(&inner.db, &self.account(), id)?, inner.clients.get(id).cloned())
+        };
+        let entry = self.project(row, client.as_deref())?;
+        self.current_operation(generation)?;
+        Ok(entry)
     }
     pub(super) fn project(&self, row: IndexedDocument, client: Option<&Client>) -> Result<Entry> {
         let id = row.id.as_str();
@@ -18,15 +25,9 @@ impl Library {
         };
         let mut version = row.version;
         let stamp = if downloaded { file_stamp(&resolved_path).ok() } else { None };
-        let (confirmed, receipt_problem) = if role.is_some() {
-            match crate::client::confirmed_saved_version(&self.state_dir(), id) {
-                Ok(version) => (version, None),
-                Err(error) => (None, Some(error)),
-            }
-        } else {
-            (None, None)
-        };
-        let client_phase = client.map(|client| client.status().phase);
+        let confirmed = row.confirmed;
+        let mut status = client.map(Client::status);
+        let client_phase = status.as_ref().map(|status| status.phase);
         let client_synced = client_phase == Some(SyncPhase::Synced);
         if client_synced && let Some(confirmed) = &confirmed {
             version = confirmed.clone();
@@ -37,6 +38,17 @@ impl Library {
                     && (confirmed.as_deref() != Some(&version)
                         || (!client_synced && stamp.as_deref() != Some(&row.file_stamp))
                         || client_phase.is_some_and(|phase| phase != SyncPhase::Synced)));
+        if status.is_none() && role.is_some() {
+            let feed = pop_core::lock(&self.feed).clone();
+            status = feed.map(|feed| feed.status()).filter(|status| status.phase != SyncPhase::Synced);
+        }
+        if status.is_none() && role.is_some() && row.pending {
+            status = Some(crate::client::ClientStatus {
+                phase: if row.problem.is_some() { SyncPhase::Paused } else { SyncPhase::Syncing },
+                pause_kind: row.problem.as_ref().map(|_| pop_contracts::relay::PauseKind::Failed),
+                detail: row.problem.clone().unwrap_or_else(|| "Syncing…".into()),
+            });
+        }
         let asset_revision = crate::local::asset_revision(&version, &row.artwork_version, &row.artwork_digest);
         let artwork_version = if row.artwork_version == version { row.artwork_version } else { String::new() };
         Ok(Entry {
@@ -54,26 +66,33 @@ impl Library {
             downloaded,
             sharing_enabled: row.sharing_enabled,
             inbox: !row.opened && !row.account.is_empty() && role.is_some() && !row.deleted,
-            problem: row.problem.or(receipt_problem),
+            problem: row.problem,
             role,
-            revision: u64::try_from(row.revision).map_err(failed)?,
+            phase: status.as_ref().map_or(SyncPhase::Offline, |status| status.phase),
+            pause_kind: status.as_ref().and_then(|status| status.pause_kind),
+            detail: status.map_or_else(|| "Offline".into(), |status| status.detail),
+            revision: u64::try_from(row.revision).map_err(|e| failed(e.to_string()))?,
         })
     }
     pub fn entries(&self) -> Result<Vec<Entry>> {
+        let generation = self.generation.load(Ordering::Acquire);
         self.check()?;
         let (rows, clients) = {
-            let inner = self.inner.lock().unwrap();
-            (IndexedDocument::all(&inner.db, &self.account)?, inner.clients.clone())
+            let inner = pop_core::lock(&self.inner);
+            (IndexedDocument::all(&inner.db, &self.account())?, inner.clients.clone())
         };
-        rows.into_iter()
+        let entries = rows
+            .into_iter()
             .map(|row| {
                 let client = clients.get(&row.id).map(Arc::as_ref);
                 self.project(row, client)
             })
-            .collect()
+            .collect::<Result<Vec<_>>>()?;
+        self.current_operation(generation)?;
+        Ok(entries)
     }
     pub fn account_paths(&self) -> Result<Vec<String>> {
-        let stored = index::account_paths(&self.inner.lock().unwrap().db)?;
+        let stored = index::account_paths(&pop_core::lock(&self.inner).db)?;
         stored.into_iter().map(|path| Ok(paths::resolve(&self.root, &path)?.to_string_lossy().into_owned())).collect()
     }
 }
