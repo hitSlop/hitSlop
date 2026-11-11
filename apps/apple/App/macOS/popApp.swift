@@ -90,14 +90,7 @@ private struct AppSettingsView: View {
       }
     }
     PopWidgetPublisher.shared.start(
-      activeSelections: {
-        let configurations: [WidgetInfo] = await withCheckedContinuation { continuation in
-          WidgetCenter.shared.getCurrentConfigurations { continuation.resume(returning: (try? $0.get()) ?? []) }
-        }
-        return Set(
-          configurations.filter { $0.kind == WidgetCache.kind }
-            .compactMap { $0.widgetConfigurationIntent(of: PopWidgetIntent.self)?.pop?.id })
-      },
+      activeSelections: { await PopWidgetIntent.placedDocumentIDs() },
       openSession: { [weak self] identity in
         self?.coordinator.documentControllers.first { $0.widgetFileIdentity == identity && !$0.isHiddenForClose }?
           .session

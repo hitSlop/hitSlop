@@ -1,6 +1,7 @@
 import AppIntents
 import Foundation
 import PopWidgets
+import WidgetKit
 
 public struct PopWidgetEntity: AppEntity {
   public static let typeDisplayRepresentation: TypeDisplayRepresentation = "Document"
@@ -62,4 +63,20 @@ public struct PopWidgetIntent: WidgetConfigurationIntent {
   #endif
   @Parameter(title: "Document") public var pop: PopWidgetEntity?
   public init() {}
+}
+
+extension PopWidgetIntent {
+  @MainActor public static func placedDocumentIDs() async -> Set<String> {
+    do {
+      let configurations: [WidgetInfo] = try await withCheckedThrowingContinuation { continuation in
+        WidgetCenter.shared.getCurrentConfigurations { continuation.resume(with: $0) }
+      }
+      return Set(
+        configurations.filter { $0.kind == WidgetCache.kind }
+          .compactMap { $0.widgetConfigurationIntent(of: Self.self)?.pop?.id })
+    } catch {
+      NSLog("pop widget configurations unavailable: %@", error.localizedDescription)
+      return []
+    }
+  }
 }
