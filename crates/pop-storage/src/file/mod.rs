@@ -6,69 +6,49 @@
 
 mod artwork;
 mod assets;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod build;
-#[cfg(not(target_arch = "wasm32"))]
 mod catalog;
 mod category;
 mod check;
 mod connection;
-#[cfg(not(target_arch = "wasm32"))]
 mod copy;
 mod open;
-#[cfg(not(target_arch = "wasm32"))]
 mod pack;
-#[cfg(not(target_arch = "wasm32"))]
 mod places;
-#[cfg(target_os = "macos")]
-mod relocate;
 pub(crate) mod rows;
+mod stamp;
 
 pub use artwork::Artwork;
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) use artwork::{check_artwork, optimize_png, pack_artwork};
-#[cfg(target_arch = "wasm32")]
-pub(crate) use assets::ResourceCache;
-pub use assets::{
-    ResourceInfo, ResourceReader, ResourceRoute, ResourceSpan, ResponsePlan, content_type, resource_response,
-    valid_asset_path,
-};
-#[cfg(not(target_arch = "wasm32"))]
-pub use catalog::{Catalog, Folder, Template, find_template, list_templates, open_template, template_source};
-#[cfg(not(target_arch = "wasm32"))]
+pub use assets::{ResourceReader, content_type, valid_asset_path};
+pub use catalog::{find_template, list_templates, open_template, template_source};
 pub(crate) use copy::{Staged, copy};
-#[cfg(not(target_arch = "wasm32"))]
 pub use copy::{copy_replica, create_document, new_output, publish_output};
-#[cfg(not(target_arch = "wasm32"))]
 pub use pack::{APP_INPUT_BYTES, RenderArtwork, pack, validate_app};
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) use places::document_destination;
-#[cfg(not(target_arch = "wasm32"))]
-pub use places::{TemplateSource, template_roots};
-#[cfg(target_os = "macos")]
-pub use relocate::{RelocatedDocument, relocate_document};
+pub use places::{application, template_roots};
+pub use stamp::FileStamp;
 
 /// Refuses a document opened for writing where documents may not live.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn document_location(path: &std::path::Path) -> crate::store::Result<()> {
     places::document_location(path)
 }
 
 /// Deletes a closed document while holding its writer lease. Templates stay immutable.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn delete_document(path: &std::path::Path) -> crate::store::Result<()> {
     document_location(path)?;
     let lease = crate::registry::Lease::acquire(path)?;
     if kind(path)? != Kind::Document {
-        return Err(crate::error::rejected(crate::Code::IsTemplate, "A template cannot be deleted as a document"));
+        return Err(crate::error::rejected(
+            pop_contracts::wire::Code::IsTemplate,
+            "A template cannot be deleted as a document",
+        ));
     }
     lease.check()?;
     std::fs::remove_file(path).map_err(crate::error::failed)
 }
 
-// A product lineage is distinct from the schema version. Old files with the same
-// schema must never be accepted as new-lineage documents or rewritten on open.
-pub(crate) const APPLICATION_ID: i64 = 0x504F_5000 | pop_contracts::lineage::DOCUMENT_LINEAGE as i64;
+pub(crate) const APPLICATION_ID: i64 = pop_contracts::format::APPLICATION_ID as i64;
 /// These tables. A compatibility requirement, not a release number: a build refuses a
 /// newer one with `requires_update`.
 pub(crate) const STORAGE_VERSION: i64 = 1;
@@ -93,19 +73,11 @@ pub enum Kind {
 }
 
 pub(crate) use check::{attachments_fit, check};
-#[cfg(not(target_arch = "wasm32"))]
 pub use connection::existing;
-#[cfg(not(target_arch = "wasm32"))]
 pub use connection::resolve;
 pub(crate) use connection::{begin_write, configure_writer};
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) use connection::{initialize, reader, writer};
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) use open::checked;
 pub(crate) use open::opened;
 pub use open::{OpenedApp, Summary};
-#[cfg(not(target_arch = "wasm32"))]
 pub use open::{artwork, descriptor, export_artwork, inspect, kind, open, summary};
-
-#[cfg(target_arch = "wasm32")]
-pub(crate) use connection::configure_connection;

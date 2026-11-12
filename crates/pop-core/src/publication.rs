@@ -18,7 +18,7 @@ pub(crate) enum Slot {
     Value(LoroValue),
     Container(ContainerID),
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) enum Change {
     Map(Vec<(String, Option<Slot>)>),
     /// A list's elements changed; the list is read again.
@@ -28,7 +28,7 @@ pub(crate) enum Change {
     Counter,
     Other,
 }
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(crate) struct Event {
     target: ContainerID,
     path: Vec<(ContainerID, Index)>,
@@ -181,14 +181,14 @@ fn index(doc: &LoroDoc, node: &Node, value: &ValueOrContainer, lists: &mut Lists
         return;
     }
     match (unwrap_optional(node), value) {
-        (Node::Object { properties }, ValueOrContainer::Container(Container::Map(map))) => {
+        (Node::Object { properties, .. }, ValueOrContainer::Container(Container::Map(map))) => {
             for (key, child) in properties {
                 if let Some(value) = map.get(key) {
                     index(doc, child, &value, lists);
                 }
             }
         }
-        (Node::Record { value: entry }, ValueOrContainer::Container(Container::Map(map))) => {
+        (Node::Record { value: entry, .. }, ValueOrContainer::Container(Container::Map(map))) => {
             map.for_each(|_, value| {
                 if layout::slotted(entry, true) {
                     if let Some(value) = layout::slot_value(&value) {
@@ -199,7 +199,7 @@ fn index(doc: &LoroDoc, node: &Node, value: &ValueOrContainer, lists: &mut Lists
                 }
             });
         }
-        (Node::List { item }, value) if !is_scalar(item) => {
+        (Node::List { item, .. }, value) if !is_scalar(item) => {
             if let Ok(list) = RowList::of(value) {
                 let ids = list.ids();
                 for id in &ids {
@@ -263,8 +263,8 @@ fn place<'s>(doc: &LoroDoc, schema: &'s Node, path: &[(ContainerID, Index)]) -> 
             In::Field => {
                 let entry = matches!(unwrap_optional(node), Node::Record { .. });
                 node = match unwrap_optional(node) {
-                    Node::Object { properties } => properties.get(key.as_str())?,
-                    Node::Record { value } => value,
+                    Node::Object { properties, .. } => properties.get(key.as_str())?,
+                    Node::Record { value, .. } => value,
                     _ => return None,
                 };
                 out.push(Segment::Key(key.to_string()));
@@ -272,7 +272,7 @@ fn place<'s>(doc: &LoroDoc, schema: &'s Node, path: &[(ContainerID, Index)]) -> 
                     In::Slot(child.clone())
                 } else {
                     match unwrap_optional(node) {
-                        Node::List { item } if !is_scalar(item) => In::ListMap(child.clone()),
+                        Node::List { item, .. } if !is_scalar(item) => In::ListMap(child.clone()),
                         _ => In::Field,
                     }
                 }
@@ -295,7 +295,7 @@ fn place<'s>(doc: &LoroDoc, schema: &'s Node, path: &[(ContainerID, Index)]) -> 
                     return Some(Place::Hidden);
                 }
                 node = match unwrap_optional(node) {
-                    Node::List { item } => item,
+                    Node::List { item, .. } => item,
                     _ => return None,
                 };
                 out.push(Segment::Id { id });
@@ -326,8 +326,8 @@ fn map_slot(doc: &LoroDoc, map: &ContainerID, key: &str, previous: Option<&Previ
 fn selected_payload(doc: &LoroDoc, value: Option<Slot>, previous: Option<&PreviousMaps>) -> Option<Slot> {
     let Slot::Container(map) = value? else { return None };
     let generation = match map_slot(doc, &map, layout::CURRENT, previous) {
-        Some(Slot::Value(LoroValue::String(current))) => current.to_string(),
-        None => layout::INITIAL.to_owned(),
+        Some(Slot::Value(LoroValue::String(current))) => layout::current_generation(Some(&current)).to_owned(),
+        None => layout::current_generation(None).to_owned(),
         _ => return None,
     };
     map_slot(doc, &map, &generation, previous)
@@ -397,8 +397,8 @@ pub(super) fn affects_view(
                 }
                 Some(Place::Field { node, .. }) => {
                     let (properties, entry) = match unwrap_optional(node) {
-                        Node::Object { properties } => (Some(properties), None),
-                        Node::Record { value } => (None, Some(&**value)),
+                        Node::Object { properties, .. } => (Some(properties), None),
+                        Node::Record { value, .. } => (None, Some(&**value)),
                         _ => return Ok(true),
                     };
                     updates.iter().any(|(key, _)| {
@@ -558,8 +558,8 @@ pub(super) fn publish(
             (Place::Field { path, node }, Change::Map(updates)) => {
                 // Object fields are declared by name; every record key has the record's kind.
                 let (properties, entries) = match unwrap_optional(node) {
-                    Node::Object { properties } => (Some(properties), None),
-                    Node::Record { value } => (None, Some(&**value)),
+                    Node::Object { properties, .. } => (Some(properties), None),
+                    Node::Record { value, .. } => (None, Some(&**value)),
                     _ => return Ok(Some(everything(doc, schema, lists))),
                 };
                 let mut sorted: Vec<_> = updates.iter().collect();
@@ -614,7 +614,7 @@ pub(super) fn publish(
         let Some(rows) = container(doc, &list).and_then(|value| RowList::of(&value).ok()) else {
             return Ok(Some(everything(doc, schema, lists)));
         };
-        let Node::List { item } = unwrap_optional(node) else {
+        let Node::List { item, .. } = unwrap_optional(node) else {
             return Ok(Some(everything(doc, schema, lists)));
         };
         let new = rows.ids();

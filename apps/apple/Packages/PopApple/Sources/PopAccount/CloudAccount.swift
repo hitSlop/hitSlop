@@ -6,7 +6,7 @@ import PopCore
   static func connect(auth: Auth, user: User?) async {
     guard auth.currentUser?.uid == user?.uid else { return }
     do {
-      try await PopLibrary.shared.connectAccount(user?.uid ?? "", anonymous: user?.isAnonymous ?? true)
+      try await PopLibrary.shared.connectAccount(user.flatMap { $0.isAnonymous ? nil : $0.uid } ?? "")
     } catch {
       guard auth.currentUser?.uid == user?.uid else { return }
       PopLibrary.shared.reportAccountError(error, account: user?.uid ?? "")

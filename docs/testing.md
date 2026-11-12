@@ -18,15 +18,15 @@ openable, so its frozen entries never change.
 |---|---|---|
 | Rust semantics | `crates/pop-core/tests`, `bun run verify rust` | Descriptors, validation, atomic batches, row identity, publications equal a fresh snapshot, counters, text merges, byte export/import |
 | Rust storage | `crates/pop-storage/tests/{store,file}.rs` | The file: packing, hostile layouts and rows refused before a value is read, stored values bounded as writes bound them, newer markers, templates never opened as documents, copies never overwriting, the registry lock and discovery, renames and hard links (and saving and reloading once moved back), attachments, artwork written by the writer, ranged asset reads, crash recovery. Saving: storage identity, limits before blob reads, busy and full saves, a failed write never advancing the saved version, snapshots that never write, free-page reclamation, theme overrides, a history that does not start with a snapshot refused. Faults are real and deterministic: another connection holding the database, a moved file, a child process killed mid-commit, after each kind of save and while a save waits, and a save retried after a lost reply |
-| Rust capture | `crates/pop-capture/tests` | Saved-source rendering, independent output failures, image budgets and exclusive export publication |
-| Private library | `crates/pop-library/tests` | Replica installation, identity, merge, receipts and cleanup through the same owner |
+| Rust capture | `crates/pop-runtime/tests/capture.rs` | Saved-source rendering, independent output failures, image budgets and exclusive export publication |
+| Device library | `crates/pop-cloud/tests` | Replica installation, identity, merge, receipts and cleanup through the same owner |
 | File engine | `crates/pop-engine/tests` | `pack` (with the artwork it renders), `inspect` and `schema` as the CLI runs them; a refused build publishes nothing; a closed export that never replaces a file, and `open` refusals |
 | Shell over WASM | `packages/pop/tests/shell`, `bun run verify bun` | Async write timing, snapshot identity, collectors, bindings, barriers, attachments, the shared fixture replay (`fixtures.test.ts`) |
-| Author SDK | `packages/pop/tests/sdk` | Descriptor types, cross-bundle errors, framework-neutral helpers and `EditableText` browser behavior |
+| Author SDK | `packages/pop/tests/sdk` | Descriptor types, cross-bundle errors, framework-neutral helpers and `EditableText` WebKit behavior |
 | Rust owner and commands | `crates/pop-runtime/tests/{owner,command}.rs` | Ordered admission and publications, autosave, edits during slow persistence, failed-close retention, discard fencing, data/theme undo, live socket routing, deadlines and unknown outcomes |
 | Swift integration | `apps/apple/Packages/PopApple/Tests`, `bun run verify swift` | Native event delivery, save/reopen, failure UI, CLI live and closed paths, WebView bridge, saved-state capture, window lifecycle |
-| Browser | `*.browser.test.ts`, `verify browser` (macOS qualification) | Chrome durable copies and WebKit native-owner preview, without building Swift |
-| Sharing service | `scripts/sharing/check-accounts.ts` and `check-compaction.ts`, `verify sharing` (explicit qualification; a pull request runs it when sharing code changes) | Real Rust WASM with SQLite Durable Objects/R2: verified identities, persistent UUID/private identity, anonymous links, generation-bound members, owner-preserving revocation and leave, registry repair, deletion tombstones and the relay's fold; local certificate substitution only |
+| WebKit | `*.webkit.test.ts` in `packages/pop/tests` and `tests/webkit/`, `verify webkit` (macOS qualification) | The `pop dev` native-owner preview and `EditableText` in Playwright WebKit, without building Swift |
+| Sharing service | `scripts/sharing/check-accounts.ts` and `check-compaction.ts`, `verify sharing` (explicit qualification; a pull request runs it when sharing code changes) | Real Rust WASM with SQLite Durable Objects/R2: verified identities, persistent UUID/private identity, link joins by signed-in identities, signed-in members, owner-preserving revocation and leave, revisioned outbox delivery, deletion tombstones and the relay's fold; local certificate substitution only |
 | Engine renders | `tests/native/{render,landing}.native.test.ts`, `packages/pop/tests/cli/build.native.test.ts`, `bun run verify render` | Engine artwork and PNG/PDF exports on macOS and Linux, without Swift |
 | Native tools | Remaining `tests/native`, `bun run verify native` | Engine or host killed mid-edit and corpus replay on macOS |
 | Packed packages | `tests/packed`, `bun run verify packed` | The published npm tarballs installed outside the checkout without Node: SDK types, init, check, build, preview and the getting-started tutorial |
@@ -48,7 +48,7 @@ capture must preserve live page eligibility; retiring the page cancels transcrip
 Runner budget tests accept either the child interrupt or parent watchdog winning, then
 verify a fresh job succeeds. The budgets themselves remain fixed by job kind.
 The CLI preview test decodes captured PNG pixels with `pngjs`; required PR jobs
-need no Playwright browsers. Browser and release qualification install their browsers.
+need no Playwright browsers. WebKit and release qualification install WebKit.
 
 `tests/fixtures/*` are small host apps (`document/`, a build stage, with `expected.json` and
 `scenario.json`) replayed by both the Bun fast tier and the Swift host-path test, which
@@ -85,7 +85,7 @@ tier whose inputs changed since that tier last passed on this machine (recorded 
 bun run verify                 # the tiers this change touches
 bun run verify --native        # the same, with the native (macOS) tiers
 bun run verify --all           # all ordinary tiers (add --native for macOS tiers)
-bun run verify browser         # optional browser qualification (macOS)
+bun run verify webkit          # optional WebKit qualification (macOS)
 bun run verify sharing         # optional Cloudflare account/room qualification; worker-build required
 bun run verify rust store::    # one tier, with its own arguments (here a nextest filter)
 bun run verify --list          # what would run, and why
@@ -98,16 +98,16 @@ bun run release:check          # release acceptance, shipped builds, and a retai
 | `compat`, `contracts`, `types` | Frozen corpus integrity; generated Rust contracts; Prettier for `packages/pop/src` (excluding generated files), Oxlint for `packages/pop/src` and `scripts`, TypeScript (the `*.types.ts` type tests in their own project, without the unused-declaration rules), Svelte types for the templates and the SDK's components, and `scripts/ci/hygiene.ts` (no placeholder invitation link in any tracked file, one iPhone download address in the site, README and Swift links, and a landing template catalog that matches the active templates; regenerate it with `bun run build:templates && bun apps/landing/scripts/templates.ts`). Together, concurrently |
 | `tooling` | Verification runner and CI policy tests, without Rust, WASM or native builds |
 | `bun` | SDK, shell and release tests over SDK WASM; up to four isolated file workers |
-| `cli` | CLI integration tests with engine/evaluator and shell; one file worker, 120-second default test deadline |
-| `render` | Engine-only artwork and export tests with engine/evaluator and shell, on macOS or Linux; one file worker, 120-second default test deadline |
+| `cli` | CLI integration tests with engine and shell; one file worker, 120-second default test deadline |
+| `render` | Engine-only artwork and export tests with engine and shell, on macOS or Linux; one file worker, 120-second default test deadline |
 | `rust` | `cargo fmt --all -- --check`, Clippy with warnings denied (the workspace, plus the WASM adapter on Linux or release runs), then the Rust suite with cargo-nextest, one process per test; a test running two minutes is a named hang. A filtered run (`verify rust store::`) runs only the tests |
 | `landing` | The site's type check; `website.yml` builds and deploys separately |
-| `packed` | Engine/evaluator, shell, durable-browser WASM and skills, then `tests/packed` (120-second default deadline), when what the npm package ships changes (its sources, starter, skills, page shell or packing) |
+| `packed` | Engine, shell and skills, then `tests/packed` (120-second default deadline), when what the npm package ships changes (its sources, starter, skills, page shell or packing) |
 | `swift` | Swift formatting, native bindings, shell and fixtures, then one serial `swift test` invocation after compilation, with an isolated temporary directory and registry. Requires at least one executed test. Filtered runs (`verify swift --filter X`) pass Swift’s filters through, including `name\(` patterns |
 | `app` | Complete macOS app build and bundle acceptance; selected explicitly or by `release:check` |
-| `browser` | `*.browser.test.ts` in Playwright WebKit and Google Chrome, with the Rust engine/evaluator, browser WASM and shell; no Swift build. Runs when named (`verify browser`), with `POP_NIGHTLY=1 --native`, and during release acceptance; nightly/manual qualification in CI, never a required PR check |
-| `sharing` | Builds the browser and Rust Worker, then runs the account/document boundary in pinned Miniflare with SQLite DOs and R2, including the account library feed, membership and account isolation. Requires `worker-build 0.8.7` in `generated/core-tools` (see `apps/sharing/README.md`). Selected explicitly or in a full nightly/release run. A pull request runs it (the `sharing` job) when it changes any of the tier's own inputs (`apps/sharing`, `scripts/sharing`, any crate or Cargo build input) or `packages/pop/src/{sharing,browser}`; `sharing.yml` runs it on master pushes and release tags |
-| `native` | Remaining native tests with engine/evaluator and shell; no Swift preparation |
+| `webkit` | `*.webkit.test.ts` in Playwright WebKit, with the Rust engine and shell; no Swift build. Runs when named (`verify webkit`), with `POP_NIGHTLY=1 --native`, and during release acceptance; nightly/manual qualification in CI, never a required PR check |
+| `sharing` | Builds the Rust Worker, then runs the account/document boundary in pinned Miniflare with SQLite DOs and R2, including the account library feed, membership and account isolation. Requires `worker-build 0.8.7` in `generated/core-tools` (see `apps/sharing/README.md`). Selected explicitly or in a full nightly/release run. A pull request runs it (the `sharing` job) when it changes any of the tier's own inputs (`apps/sharing`, `scripts/sharing`, any crate or Cargo build input); `sharing.yml` runs it on master pushes and release tags |
+| `native` | Remaining native tests with engine and shell; no Swift preparation |
 
 Oxlint (`.oxlintrc.json`, `bun run lint`) adds type-aware promise rules to its correctness
 rules: a promise must be awaited, returned, handled or `void`-prefixed, and never used as a
@@ -116,8 +116,7 @@ type-aware rules skip `.svelte` files, so `svelte-check` stays the Svelte type c
 out of scope: Bun's types declare `expect(...).rejects` matchers as returning `void`.
 
 Each tier prepares only its prerequisites: SDK WASM for `bun`, native bindings and
-shell for `swift`, engine/evaluator and shell for CLI/render/native, and durable-browser
-WASM for browser/package consumers. Actual shared outputs are prepared once per run. A
+shell for `swift`, and engine and shell for CLI/render/native. Actual shared outputs are prepared once per run. A
 build whose inputs did not change rewrites nothing, so nothing downstream recompiles: a
 repeated `bun run build` takes seconds. Each invocation retains commands, logs, inventory, toolchain identity and outcomes in
 `.pop/evidence/runs/<run-id>/`. The latest report is also written to
@@ -150,7 +149,7 @@ equivalently. Historical-writer randomized differential tests run nightly and fo
 | Large live/closed replies over 48 MiB with near-limit batches | `DocumentOwnerTests.largeDocumentsReadTheSameLiveAndClosed` |
 | The type fixtures' fresh native render (their saved documents are replayed every time) | `tests/native/render.native.test.ts` |
 | Landing generation, skills install, update notice, help wording, documentation examples, the tutorial build | `test.if(nightly)` in those files |
-| The `browser` tier (Playwright WebKit and Chrome) | the tier's `nightly` flag; `verify browser` runs it on demand |
+| The `webkit` tier (Playwright WebKit) | the tier's `nightly` flag; `verify webkit` runs it on demand |
 
 Full compatibility is independent of nightly checks. Every selected corpus-consuming
 tier replays all entries; native replay exports every saved document to PNG and PDF.
@@ -296,9 +295,9 @@ embedded app, edit it, save it, and reopen the result without losing data or att
 Native page replay uses the actual WKWebView host, not Playwright. Keep these checks in
 the required Rust, Swift and native tiers whenever their inputs change.
 
-Capture a separate frozen collection for **each released version**, starting with the first public document-lineage-2 release.
+Capture a separate frozen collection for **each released version**, starting with 3.0.0, the first public release of this format.
 Before that first publication the pin file `scripts/compat/dotpop-required-history.json` is `{}`: ordinary development permits empty history, and release checks require the frozen candidate. After publication, its corpus hash is permanently pinned there; missing
-or changed public history fails even on a fresh machine. Published releases of an earlier lineage are skipped by discovery, and one of a newer lineage needs newer tooling. There is no fallback corpus.
+or changed public history fails even on a fresh machine. Published releases with another application ID are skipped by discovery; a higher application ID needs newer tooling. There is no fallback corpus.
 Later builds replay every collection; never
 rebuild old samples with current tools. These artifacts are immutable GitHub release assets, downloaded and verified for testing. The format markers can remain at 1 across
 many releases; release versions and format requirements are different things.
@@ -393,7 +392,7 @@ older file intact.
 The `compat` tier verifies every resolved corpus's content hashes, immutable storage SQL,
 required case inventory and versioned command prelude. `scripts/compat/corpora.ts` discovers
 all public immutable releases, checks history closure, and verifies each archive.
-It extracts once into `~/.cache/pop/compat-corpora/lineage-2/trees/<sha>/`, verifies extracted
+It extracts once into `~/.cache/pop/compat-corpora/application-1347375107/trees/<sha>/`, verifies extracted
 files again on reuse and makes them read-only, then atomically activates a snapshot of version links at
 `.pop/compat/current`. Candidate entries live in a separate snapshot. Editing tests explicitly make only
 their disposable document copies writable; templates are read directly from the cache. Preparation
@@ -434,8 +433,8 @@ without changing file bytes. See [releasing](guides/releasing.md).
 | `linux-smoke` (Ubuntu 24.04) | When Rust inputs change: full workspace tests/lints, WASM lint, no-storage configuration and bundled-SQLite engine coverage |
 | `Gitleaks` (Ubuntu) | Introduced commits on PRs/master; full history weekly, manually, or when scanner rules change |
 | `Attribution` (Ubuntu) | Every incoming commit's identities and attribution lines, plus PR title/description; trusted default-branch policy, including fork PRs |
-| `sharing` (macOS 15 ARM64) | `verify sharing` on a pull request that changes the relay, any Rust crate or Cargo build input, or the sharing and browser hosts (Miniflare qualification is proven on macOS only); master pushes and release tags run it in `sharing.yml` |
-| `qualification` (nightly/manual) | Playwright browser integration and the macOS portable CLI/package matrix; not required for merging |
+| `sharing` (macOS 15 ARM64) | `verify sharing` on a pull request that changes the relay, any Rust crate or Cargo build input, or the sharing Worker (Miniflare qualification is proven on macOS only); master pushes and release tags run it in `sharing.yml` |
+| `qualification` (nightly/manual) | Playwright WebKit integration and the macOS portable CLI/package matrix; not required for merging |
 | `release-templates` (Ubuntu, nightly/manual) | Builds, caches and renders the full template corpus with the engine and shell, without Swift/Xcode or WASM tools |
 | Release (`workflow_dispatch`) | Candidate builds/tests/signs/notarizes once; environment approval publishes the retained app/npm/corpus bytes; website deployment is independent |
 
@@ -446,7 +445,7 @@ hotfix-branch pushes, nightly and manual runs select **all required tiers**, reg
 of changed paths. Required PR jobs do not install Playwright browsers. Portable CLI/package suites run once on Linux; their macOS repeat lives in
 nightly/manual qualification. Rust runs on both operating systems because SQLite,
 locking, sandboxing and the historical macOS writers have platform-specific behavior.
-The full release gate, including the app bundle and browser acceptance, remains separate.
+The full release gate, including the app bundle and WebKit acceptance, remains separate.
 
 `app`, `native`, `native-rust` and `linux-smoke` skip at job level when none of their tiers
 are affected, so an unrelated change allocates no Mac runner. On a pull request into
@@ -462,7 +461,7 @@ selector, verifier implementation and shared toolchain/dependency inputs select 
 Policy workflows and verification tests select tooling; they do not invalidate the product.
 Native-cache changes select the render/Swift/native tiers and app build. Example source changes select authoring/type checks and app packaging;
 example Markdown changes select no product tiers. Test fixture changes select their
-consumers, and packaged starter changes still select CLI/browser/packed acceptance.
+consumers, and packaged starter changes still select CLI/WebKit/packed acceptance.
 Other product and build dependencies remain conservatively selected. For example, PR #5's attribution policy changes select
 only tooling and types, allocating no macOS runner. Documentation and repository-settings
 edits select no product tiers. The compatibility integrity tier runs when corpus files,
@@ -493,7 +492,7 @@ that PR, and saving each one evicted the default branch's caches from the reposi
 cover native fixtures only. Template caches fingerprint Rust and renderer inputs,
 without Swift or Xcode. This prevents a smaller concurrent job
 from filling an immutable cache key before the full suite finishes.
-Playwright WebKit and Chrome are installed only for nightly/manual qualification and
+Playwright WebKit is installed only for nightly/manual qualification and
 release verification; required PR jobs do not download browsers.
 
 The attribution workflow covers PRs into `master` and `hotfix/*`, uses
@@ -534,10 +533,9 @@ hit/miss behavior is covered by the template-cache tests.
 ### Packaging and native preview
 
 The two-build Vite fixture covers imported component CSS, CSS fonts/images, unrendered
-skins, export-only assets and command stripping. Browser integration uses a native Rust
+skins, export-only assets and command stripping. WebKit integration uses a native Rust
 owner, exercises HMR and command calls, checks attachment URL ranges/types, and kills an
-owner to prove the page fences further edits. The local `pop open --browser` host uses the durable WASM build; `pop dev`
-continues to use the native owner. The SDK tests use a separate WASM adapter.
+owner to prove the page fences further edits. `pop dev` uses the native owner. The SDK tests use a separate WASM adapter.
 
 Rust package tests cover the exact table layout, app-row seal and replacement bypasses,
 marker-first refusals, streaming PNG checks, descriptor argument validation, the JSON
@@ -546,7 +544,7 @@ authorizer proves `summary` never reads definition or asset/attachment payloads.
 page-policy probe proves path-scoped CSP blocks attachment scripts while canvas and
 ranges still work. The owner command tests cover stale-base retry and lifecycle fences.
 
-SDK browser tests exercise `EditableText` composition, focus, caret placement and
+SDK WebKit tests exercise `EditableText` composition, focus, caret placement and
 autosizing with real document handles. Native export tests use controlled content to
 check saved-state capture, color, selectable text and editor isolation. App acceptance
 launches the actual app with no `POP_EVALUATOR`, executes the document fixture's
@@ -583,24 +581,18 @@ and source-image scaling ([qualification evidence](evidence/native-fullscreen-20
   builds retain module resolution, registration and emitted-artifact cases.
 - Native tests own real window, catalog, WebView, save/close and export integration.
   Controlled native-client doubles test coordination, not document semantics.
-- Package/release tests own installed artifacts, evaluator discovery and relocation.
+- Package/release tests own installed artifacts and bundled engine discovery.
   Generic template smoke checks have no template-specific selectors or actions.
 - Frozen compatibility cases retain their original artifacts and expectations.
 
 No example test directory is accepted by discovery. Shared component contracts live
 in the SDK fixture; no test quota is associated with a pop.
 
-Performance samples in browser correctness scenarios are opt-in:
-`POP_BENCH_PREVIEW=1 bun run verify browser large-preview`. Ordinary runs still check
+Performance samples in WebKit correctness scenarios are opt-in:
+`POP_BENCH_PREVIEW=1 bun run verify webkit large-preview`. Ordinary runs still check
 large-list identity without repeated timing samples.
 `POP_BENCH_EDITS=1` enables repeated page-edit latency samples in
-`verify browser dev.browser`. Native `cliCommandsPublishToTheNativeWindow` covers
+`verify webkit dev.webkit`. Native `cliCommandsPublishToTheNativeWindow` covers
 agent command acceptance, refusal, publication and undo/redo.
 
-The `browser` tier includes the local Chrome host boundary in
-`tests/browser/local-host.browser.test.ts`: real WASM edits, OPFS save/reload,
-independent origins and document identities, exclusive tab ownership, bounded resource
-streams, wake-lock state, container-marker refusal, Save As cancellation and cleanup,
-Rust flush-before-export (including save failure), and native reopening. Run it with `bun run verify browser local-host`. It launches installed
-Google Chrome with an isolated persistent profile; Safari qualification is deferred.
-The Rust tier also compiles the durable-browser WASM feature set.
+The Rust tier also compiles the WASM SDK adapter.

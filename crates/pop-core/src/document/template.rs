@@ -7,20 +7,20 @@ const TEMPLATE_PEER: u64 = 1;
 /// Gives every row in `value` that has no `$id` one derived from its place (`at`).
 fn name_rows(node: &Node, value: &mut Value, at: &str) {
     match (node, value) {
-        (Node::Optional { inner }, value) => name_rows(inner, value, at),
-        (Node::Object { properties }, Value::Object(fields)) => {
+        (Node::Optional { inner, .. }, value) => name_rows(inner, value, at),
+        (Node::Object { properties, .. }, Value::Object(fields)) => {
             for (key, child) in properties {
                 if let Some(field) = fields.get_mut(key) {
                     name_rows(child, field, &format!("{at}/{key}"));
                 }
             }
         }
-        (Node::Record { value: entry }, Value::Object(entries)) => {
+        (Node::Record { value: entry, .. }, Value::Object(entries)) => {
             for (key, field) in entries.iter_mut() {
                 name_rows(entry, field, &format!("{at}/{key}"));
             }
         }
-        (Node::List { item }, Value::Array(rows)) if matches!(**item, Node::Object { .. }) => {
+        (Node::List { item, .. }, Value::Array(rows)) if matches!(**item, Node::Object { .. }) => {
             for (index, row) in rows.iter_mut().enumerate() {
                 let place = format!("{at}/{index}");
                 if let Value::Object(fields) = row {

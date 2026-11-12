@@ -67,6 +67,10 @@ pub const SHAPE_ARC_MIN_CHORD: f64 = 1e-100;
 pub const SHAPE_ARC_TOLERANCE: f64 = 0.1;
 pub const SHAPE_VIEW_BOX_MIN: f64 = 1.0;
 pub const COMMAND_NAME_BYTES: usize = 80;
+/// Maximum author URL length in Unicode scalars.
+pub const AUTHOR_URL_CHARACTERS: usize = 2048;
+/// Maximum command path length in Unicode scalars.
+pub const FILE_PATH_CHARACTERS: usize = 4096;
 pub const COMMANDS: usize = 64;
 /// Stored format-1 window bounds; authoring may use a narrower range.
 pub const OPEN_WINDOW_MIN_WIDTH: u32 = 240;
@@ -152,9 +156,6 @@ pub fn host_limits() -> HostLimits {
         engine_protocol: ENGINE_PROTOCOL,
     }
 }
-/// Attachments share the origin for canvas use, but are never script sources.
-pub const NATIVE_RESOURCE_POLICY: &str = "default-src 'none'; script-src pop://app/__shell__/ pop://app/assets/ 'wasm-unsafe-eval'; connect-src pop: https: blob:; media-src pop: https: blob:; frame-src https:; style-src pop://app/__shell__/ pop://app/assets/ 'unsafe-inline'; img-src pop: data: https: blob:; font-src pop://app/assets/ data:";
-
 /// A released bound's direction: maximums may rise, minimums may fall, exact values stay.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LimitKind {
@@ -199,6 +200,8 @@ pub const RETIRED_LIMITS: &[&str] = &[];
 /// are not stored-data acceptance limits. Format/ABI markers are recorded separately.
 #[cfg(test)]
 const NOT_PERSISTED: &[&str] = &[
+    "AUTHOR_URL_CHARACTERS",
+    "FILE_PATH_CHARACTERS",
     "WINDOW_MIN_WIDTH",
     "WINDOW_MIN_HEIGHT",
     "WINDOW_MAX",
@@ -218,16 +221,9 @@ const NOT_PERSISTED: &[&str] = &[
     "SPEECH_LOCALE_BYTES",
     "SPEECH_TEXT_BYTES",
     "SPEECH_LOCALE_PATTERN",
-    "NATIVE_RESOURCE_POLICY",
     "NOT_PERSISTED",
     "RETIRED_LIMITS",
 ];
-
-/// An exact fingerprint for nonnumeric acceptance rules (alphabets, reserved prefix,
-/// default radius). Their behavior is also exercised by vectors and document replay.
-fn spelling(value: &str) -> u64 {
-    value.bytes().fold(0xcbf29ce484222325, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3))
-}
 
 /// All bounds that govern opening, reading or saving stored app/resource/state data.
 /// A release records this table; every later build checks its bounds against that release.
@@ -262,7 +258,7 @@ pub fn open_limits() -> Vec<Limit> {
     bound!(ATTACHMENT_NAME_BYTES, Max);
     bound!(SHAPE_PATH, Max);
     bound!(SHAPE_RADIUS, Max);
-    bound!(SHAPE_VIEW_BOX, Max);
+    limits.push(Limit { name: "SHAPE_VIEW_BOX".into(), value: SHAPE_VIEW_BOX.to_bits(), kind: LimitKind::Max });
     bound!(DESCRIPTOR_DEPTH, Max);
     bound!(DESCRIPTOR_FIELDS, Max);
     bound!(ENUM_VALUES, Max);
@@ -280,24 +276,28 @@ pub fn open_limits() -> Vec<Limit> {
     bound!(WEBM_HEADER_BYTES, Max);
     bound!(OPEN_WINDOW_MIN_WIDTH, Min);
     bound!(OPEN_WINDOW_MIN_HEIGHT, Min);
-    bound!(SHAPE_VIEW_BOX_MIN, Min);
+    limits.push(Limit { name: "SHAPE_VIEW_BOX_MIN".into(), value: SHAPE_VIEW_BOX_MIN.to_bits(), kind: LimitKind::Min });
     bound!(CATEGORIES_MIN, Min);
     bound!(STORAGE_ROW_OVERHEAD, Min);
     bound!(ATTACHMENT_ID_LENGTH, Exact);
-    limits.push(Limit { name: "ROW_ID_CHARACTERS".into(), value: spelling(ROW_ID_CHARACTERS), kind: LimitKind::Exact });
+    limits.push(Limit {
+        name: "ROW_ID_CHARACTERS".into(),
+        value: crate::fnv(ROW_ID_CHARACTERS),
+        kind: LimitKind::Exact,
+    });
     limits.push(Limit {
         name: "ATTACHMENT_ID_CHARACTERS".into(),
-        value: spelling(ATTACHMENT_ID_CHARACTERS),
+        value: crate::fnv(ATTACHMENT_ID_CHARACTERS),
         kind: LimitKind::Exact,
     });
     limits.push(Limit {
         name: "DEFAULT_WINDOW_RADIUS".into(),
-        value: spelling(DEFAULT_WINDOW_RADIUS),
+        value: crate::fnv(DEFAULT_WINDOW_RADIUS),
         kind: LimitKind::Exact,
     });
     limits.push(Limit {
         name: "THEME_RESERVED_PREFIXES".into(),
-        value: spelling(&THEME_RESERVED_PREFIXES.join(",")),
+        value: crate::fnv(&THEME_RESERVED_PREFIXES.join(",")),
         kind: LimitKind::Exact,
     });
     // Positive IEEE-754 encodings preserve order, including these fractional minima.
@@ -324,6 +324,21 @@ pub fn open_limits() -> Vec<Limit> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn floating_open_limits_round_trip_without_losing_precision() {
+        let limits = open_limits();
+        for (name, value) in [
+            ("SHAPE_VIEW_BOX", SHAPE_VIEW_BOX),
+            ("SHAPE_VIEW_BOX_MIN", SHAPE_VIEW_BOX_MIN),
+            ("SHAPE_ARC_MIN_RADIUS", SHAPE_ARC_MIN_RADIUS),
+            ("SHAPE_ARC_MIN_CHORD", SHAPE_ARC_MIN_CHORD),
+            ("SHAPE_ARC_TOLERANCE", SHAPE_ARC_TOLERANCE),
+        ] {
+            let recorded = limits.iter().find(|limit| limit.name == name).unwrap();
+            assert_eq!(f64::from_bits(recorded.value), value, "{name}");
+        }
+    }
 
     #[test]
     fn limit_directions_and_u64_recording_are_lossless() {

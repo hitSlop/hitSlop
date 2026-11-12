@@ -4,7 +4,7 @@ use layout::RowList;
 /// Initializes an object from a fully validated value. Canonical scalar defaults write
 /// nothing, so concurrent creation cannot overwrite another writer's explicit fields.
 pub(super) fn fill(map: &LoroMap, node: &Node, value: &Value) -> Result<()> {
-    let Node::Object { properties } = node else {
+    let Node::Object { properties, .. } = node else {
         return Err(err(Code::TypeMismatch, "Expected object"));
     };
     for (key, child) in properties {
@@ -28,22 +28,22 @@ pub(super) fn fill(map: &LoroMap, node: &Node, value: &Value) -> Result<()> {
 /// lists. Present children keep their identity while their content is replaced.
 pub(super) fn put(map: &LoroMap, key: &str, node: &Node, value: &Value) -> Result<()> {
     match node {
-        Node::Optional { inner } if !is_scalar(inner) => {
+        Node::Optional { inner, .. } if !is_scalar(inner) => {
             let (slot, current) = layout::slot_parent(map, key)?;
             put(&slot, &current, inner, value)
         }
-        Node::Optional { inner } => put(map, key, inner, value),
+        Node::Optional { inner, .. } => put(map, key, inner, value),
         scalar if is_scalar(scalar) => map.insert(key, loro_scalar(scalar, value)).map_err(engine),
-        Node::Counter {} => {
+        Node::Counter { .. } => {
             let counter = layout::ensure_child(map, key)?;
             layout::set_counter(&counter, value.as_i64().expect("validated counter"))
         }
-        Node::Text {} => {
+        Node::Text { .. } => {
             let text = layout::ensure_child(map, key)?;
             layout::set_text(&text, value.as_str().expect("validated text"))
         }
         Node::Object { .. } => fill(&layout::ensure_child(map, key)?, node, value),
-        Node::Record { value: entry } => {
+        Node::Record { value: entry, .. } => {
             let record: LoroMap = layout::ensure_child(map, key)?;
             let wanted = value.as_object().expect("validated record");
             let gone: Vec<String> = record.keys().map(|k| k.to_string()).filter(|k| !wanted.contains_key(k)).collect();
@@ -55,11 +55,11 @@ pub(super) fn put(map: &LoroMap, key: &str, node: &Node, value: &Value) -> Resul
             }
             Ok(())
         }
-        Node::List { item } if is_scalar(item) => {
+        Node::List { item, .. } if is_scalar(item) => {
             let list = layout::ensure_child(map, key)?;
             rewrite_list(&list, item, value.as_array().expect("validated list"))
         }
-        Node::List { item } => {
+        Node::List { item, .. } => {
             let list = RowList::ensure(map, key)?;
             list.clear()?;
             for (index, row) in value.as_array().expect("validated list").iter().enumerate() {
@@ -112,7 +112,7 @@ pub(super) fn resolve<'a>(doc: &LoroDoc, schema: &'a Node, path: &[Segment]) -> 
         // A set optional behaves as its inner kind when a path continues through it.
         let current = if index == 0 { node } else { unwrap_optional(node) };
         match (segment, current, &value) {
-            (Segment::Key(key), Node::Object { properties }, ValueOrContainer::Container(Container::Map(map))) => {
+            (Segment::Key(key), Node::Object { properties, .. }, ValueOrContainer::Container(Container::Map(map))) => {
                 let next = properties.get(key).ok_or_else(|| err(Code::PathNotFound, "Unknown field"))?;
                 let child = match layout::field(map, key, next, false) {
                     Some(child) => child,
@@ -129,7 +129,7 @@ pub(super) fn resolve<'a>(doc: &LoroDoc, schema: &'a Node, path: &[Segment]) -> 
                 node = next;
                 value = child;
             }
-            (Segment::Key(key), Node::Record { value: next }, ValueOrContainer::Container(Container::Map(map))) => {
+            (Segment::Key(key), Node::Record { value: next, .. }, ValueOrContainer::Container(Container::Map(map))) => {
                 if !valid_key(key) {
                     return Err(err(Code::InvalidKey, "Record keys are 1–256 characters and not reserved"));
                 }
@@ -147,7 +147,7 @@ pub(super) fn resolve<'a>(doc: &LoroDoc, schema: &'a Node, path: &[Segment]) -> 
             }
             (
                 Segment::Index { index },
-                Node::List { item },
+                Node::List { item, .. },
                 ValueOrContainer::Container(Container::MovableList(list)),
             ) if is_scalar(item) => {
                 let child = list.get(*index).ok_or_else(|| err(Code::PathNotFound, "No element at that index"))?;
@@ -156,7 +156,7 @@ pub(super) fn resolve<'a>(doc: &LoroDoc, schema: &'a Node, path: &[Segment]) -> 
                 value = child;
                 parent = None;
             }
-            (Segment::Id { id }, Node::List { item }, list) if !is_scalar(item) => {
+            (Segment::Id { id }, Node::List { item, .. }, list) if !is_scalar(item) => {
                 let row = RowList::of(list)?.row(id).ok_or_else(|| err(Code::PathNotFound, "Row is absent"))?;
                 node = item;
                 value = ValueOrContainer::Container(Container::Map(row));
@@ -190,7 +190,7 @@ pub(super) fn execute(
             let at = resolve(doc, schema, op.path())?;
             let kind = unwrap_optional(at.node);
             // A text set from what the writer saw merges with what changed since.
-            if matches!(kind, Node::Text {}) && at.element.is_none() && (from.is_some() || selection.is_some()) {
+            if matches!(kind, Node::Text { .. }) && at.element.is_none() && (from.is_some() || selection.is_some()) {
                 return text::set(op.path(), at, value, from.as_deref(), *selection, typed);
             }
             if from.is_some() || selection.is_some() {
@@ -204,12 +204,12 @@ pub(super) fn execute(
             }
             // Whole-field text replaces the text as it is at execution. The script exists
             // before the first mutation, so a slow diff never leaves a batch half applied.
-            if let (Node::Text {}, ValueOrContainer::Container(Container::Text(text))) = (kind, &at.value) {
+            if let (Node::Text { .. }, ValueOrContainer::Container(Container::Text(text))) = (kind, &at.value) {
                 let to = value.as_str().ok_or_else(|| err(Code::TypeMismatch, "Expected text"))?;
                 return layout::set_text(text, to);
             }
             // A whole scalar list: rewrite it, keeping unchanged positions.
-            if let Node::List { item } = kind {
+            if let Node::List { item, .. } = kind {
                 if !is_scalar(item) {
                     return Err(err(Code::TypeMismatch, "Rows are edited with insert, remove and move"));
                 }
@@ -222,7 +222,7 @@ pub(super) fn execute(
             // Optional fields and record entries can be absent, created and replaced.
             let optional = matches!(at.node, Node::Optional { .. }) || at.entry;
             let replaces_object = matches!(kind, Node::Object { .. }) && optional;
-            let creates_text = matches!(kind, Node::Text {}) && optional && at.absent;
+            let creates_text = matches!(kind, Node::Text { .. }) && optional && at.absent;
             if !is_scalar(kind) && !replaces_object && !creates_text {
                 return Err(err(Code::TypeMismatch, "set accepts text, scalars, optional values and record entries"));
             }
@@ -262,7 +262,7 @@ pub(super) fn execute(
         }
         Intent::Insert { id, value, at: anchor, index, .. } => {
             let at = resolve(doc, schema, op.path())?;
-            let Node::List { item } = unwrap_optional(at.node) else {
+            let Node::List { item, .. } = unwrap_optional(at.node) else {
                 return Err(err(Code::TypeMismatch, "Expected list"));
             };
             if is_scalar(item) {
@@ -302,7 +302,8 @@ pub(super) fn execute(
         }
         Intent::Increment { by, .. } => {
             let at = resolve(doc, schema, op.path())?;
-            let (Node::Counter {}, ValueOrContainer::Container(Container::Counter(counter))) = (&at.node, &at.value)
+            let (Node::Counter { .. }, ValueOrContainer::Container(Container::Counter(counter))) =
+                (&at.node, &at.value)
             else {
                 return Err(err(Code::TypeMismatch, "Expected counter"));
             };
@@ -317,7 +318,7 @@ pub(super) fn execute(
         }
         Intent::Remove { id, index, count, .. } => {
             let at = resolve(doc, schema, op.path())?;
-            let Node::List { item } = unwrap_optional(at.node) else {
+            let Node::List { item, .. } = unwrap_optional(at.node) else {
                 return Err(err(Code::TypeMismatch, "Expected list"));
             };
             if is_scalar(item) {
@@ -346,7 +347,7 @@ pub(super) fn execute(
         }
         Intent::Move { id, at: anchor, .. } => {
             let at = resolve(doc, schema, op.path())?;
-            let Node::List { item } = unwrap_optional(at.node) else {
+            let Node::List { item, .. } = unwrap_optional(at.node) else {
                 return Err(err(Code::TypeMismatch, "Expected list"));
             };
             if is_scalar(item) {

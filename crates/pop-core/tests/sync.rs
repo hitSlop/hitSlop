@@ -1,156 +1,18 @@
 //! Sync through a relay (plans/sync-simplification.md §7). Replicas run the real session
 //! and every frame crosses the binary codec; the relay (`support::relay`) keeps the
-//! Durable Object's rules over memory. The relay's own codec is tested against `sync-frames.json`.
+//! Durable Object's rules over memory. The relay codec and its golden frames are tested in pop-contracts.
 use crate::support;
 use loro::{ExportMode, LoroDoc, VersionVector};
-use pop_contracts::hex;
-use pop_core::Document;
-use pop_core::Origin;
-use pop_core::sync::{Ack, Frame, Permission, Record, Session, Span, Status, Version};
-use serde_json::{Value, json};
+use pop_contracts::relay::frame::{Ack, Frame, Permission, Record, Span};
+use pop_core::sync::{Base, BaseRead, Session, Status};
+use pop_core::{Document, Origin};
+use serde_json::json;
 use std::collections::VecDeque;
 use support::generate::intent;
 use support::relay::Relay;
 use support::{ApplyJson, View, app, fixture, next, workload};
 
-const APP: [u8; 32] = [7; 32];
-
-// --- The relay wire ---------------------------------------------------------------------
-
-fn unhex(text: &str) -> Vec<u8> {
-    (0..text.len()).step_by(2).map(|i| u8::from_str_radix(&text[i..i + 2], 16).unwrap()).collect()
-}
-/// A frame as the relay's tests read it: peers as decimal strings, bytes as hex.
-fn frame_json(frame: &Frame) -> Value {
-    let version = |v: &Version| json!(v.iter().map(|(peer, end)| json!([peer.to_string(), end])).collect::<Vec<_>>());
-    let records = |records: &[Record]| {
-        json!(
-            records
-                .iter()
-                .map(|r| json!({
-                    "spans": r.spans.iter().map(|s| json!([s.peer.to_string(), s.start, s.end])).collect::<Vec<_>>(),
-                    "bytes": hex(&r.bytes),
-                }))
-                .collect::<Vec<_>>()
-        )
-    };
-    match frame {
-        Frame::Hello { protocol, app_digest, version: v } => {
-            json!({"type": "hello", "protocol": protocol, "appDigest": hex(app_digest), "version": version(v)})
-        }
-        Frame::Welcome { permission, version: v } => json!({
-            "type": "welcome",
-            "permission": if *permission == Permission::Write { "write" } else { "read" },
-            "version": version(v),
-        }),
-        Frame::Records(r) => json!({"type": "records", "records": records(r)}),
-        Frame::CaughtUp => json!({"type": "caughtUp"}),
-        Frame::Push { id, records: r } => json!({"type": "push", "id": id.to_string(), "records": records(r)}),
-        Frame::Ack { id, status } => json!({"type": "ack", "id": id.to_string(), "status": format!("{status:?}")}),
-        Frame::Error { code, message } => json!({"type": "error", "code": code, "message": message}),
-    }
-}
-/// One frame of every type, at the edges the codec must agree on with the relay's.
-fn golden() -> Vec<(&'static str, Frame)> {
-    let span = |peer, start, end| Span { peer, start, end };
-    vec![
-        (
-            "hello",
-            Frame::Hello {
-                protocol: 1,
-                app_digest: std::array::from_fn(|i| i as u8),
-                version: [(1, 5), (300, 128), (u64::MAX, i32::MAX as u32)].into(),
-            },
-        ),
-        ("welcome to write", Frame::Welcome { permission: Permission::Write, version: [(7, 1)].into() }),
-        ("welcome to read", Frame::Welcome { permission: Permission::Read, version: Version::new() }),
-        (
-            "records",
-            Frame::Records(vec![
-                Record { spans: vec![span(1, 0, 3), span(u64::MAX, 127, 129)], bytes: vec![0x6c, 0x6f, 0x72, 0x6f] },
-                Record { spans: vec![span(2, 16_384, 16_385)], bytes: vec![0; 130] },
-            ]),
-        ),
-        ("caught up", Frame::CaughtUp),
-        ("push", Frame::Push { id: 42, records: vec![Record { spans: vec![span(9, 0, 1)], bytes: vec![1, 2, 3] }] }),
-        ("ack stored", Frame::Ack { id: 1, status: Ack::Stored }),
-        ("ack gap", Frame::Ack { id: u64::MAX, status: Ack::Gap }),
-        ("ack too large", Frame::Ack { id: 2, status: Ack::TooLarge }),
-        ("ack denied", Frame::Ack { id: 3, status: Ack::Denied }),
-        ("ack quota", Frame::Ack { id: 4, status: Ack::Quota }),
-        ("error", Frame::Error { code: 1, message: "Different app ✓".into() }),
-    ]
-}
-const FRAMES: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/sync-frames.json");
-
-/// The golden frames are the wire's contract with the relay, which tests its codec against
-/// the same file. Changing the wire changes them: `POP_WRITE_SYNC_FRAMES=1` rewrites the
-/// file, and the relay's tests must pass against it.
-#[test]
-fn frames_encode_as_their_golden_bytes() {
-    let expected: Vec<Value> = golden()
-        .into_iter()
-        .map(|(name, frame)| json!({"name": name, "hex": hex(&frame.encode()), "frame": frame_json(&frame)}))
-        .collect();
-    if std::env::var_os("POP_WRITE_SYNC_FRAMES").is_some() {
-        std::fs::write(FRAMES, serde_json::to_string_pretty(&expected).unwrap() + "\n").unwrap();
-    }
-    let stored: Vec<Value> = serde_json::from_str(&std::fs::read_to_string(FRAMES).unwrap()).unwrap();
-    assert_eq!(stored, expected, "the wire changed; see this test's comment");
-    for ((name, frame), entry) in golden().into_iter().zip(&stored) {
-        let bytes = unhex(entry["hex"].as_str().unwrap());
-        assert_eq!(Frame::decode(&bytes).unwrap(), frame, "{name}");
-    }
-}
-
-#[test]
-fn malformed_frames_are_refused() {
-    let push = Frame::Push {
-        id: 1,
-        records: vec![Record { spans: vec![Span { peer: 1, start: 0, end: 2 }], bytes: vec![9] }],
-    };
-    let bytes = push.encode();
-    let mut cases: Vec<(&str, Vec<u8>)> = vec![
-        ("empty", vec![]),
-        ("an unknown type", vec![0x7f]),
-        ("truncated", bytes[..bytes.len() - 1].to_vec()),
-        ("trailing bytes", [bytes.clone(), vec![0]].concat()),
-        ("an unknown acknowledgement", [&[6][..], &[0; 8], &[9]].concat()),
-        ("an unknown permission", vec![2, 2, 0]),
-        // A count claiming more items than the frame could hold.
-        ("an impossible count", [&[3][..], &[0xff, 0xff, 0xff, 0x0f]].concat()),
-        ("an overlong integer", [&[3][..], &[0x80; 11]].concat()),
-        ("oversized", vec![4; pop_core::sync::MAX_FRAME + 1]),
-    ];
-    let edit = |f: &dyn Fn(&mut Frame)| {
-        let mut frame = push.clone();
-        f(&mut frame);
-        frame.encode()
-    };
-    cases.push((
-        "an empty span",
-        edit(&|f| {
-            if let Frame::Push { records, .. } = f {
-                records[0].spans[0].end = 0
-            }
-        }),
-    ));
-    cases.push((
-        "a record without spans",
-        edit(&|f| {
-            if let Frame::Push { records, .. } = f {
-                records[0].spans.clear()
-            }
-        }),
-    ));
-    // Version peers are sorted and unique.
-    let mut unsorted = Frame::Welcome { permission: Permission::Read, version: [(1, 1), (2, 1)].into() }.encode();
-    unsorted.swap(10, 19);
-    cases.push(("unsorted peers", unsorted));
-    for (case, bytes) in cases {
-        assert!(Frame::decode(&bytes).is_err(), "{case} was accepted");
-    }
-}
+const APP: pop_contracts::AppDigest = pop_contracts::AppDigest::from_bytes([7; 32]);
 
 // --- Replicas through the relay, with faults ---------------------------------------------
 
@@ -204,6 +66,14 @@ impl Replica {
         self.up.extend(step.send);
     }
 }
+fn base_of(session: &Session, doc: &Document) -> Option<Base> {
+    match session.maintenance_base(doc).unwrap() {
+        BaseRead::Pending => None,
+        BaseRead::Ready(base) => Some(base),
+        BaseRead::TooLarge => panic!("base is too large"),
+    }
+}
+
 fn version(doc: &Document) -> VersionVector {
     let loro = LoroDoc::new();
     loro.import(&doc.checkpoint().unwrap()).unwrap();
@@ -286,7 +156,7 @@ fn replicas_converge_through_the_relay_despite_faults() {
                     }
                 }
                 96 => {
-                    if let Some(base) = r.session.base(&r.doc).unwrap() {
+                    if let Some(base) = base_of(&r.session, &r.doc) {
                         relay.compact(base);
                     }
                 }
@@ -496,12 +366,12 @@ fn quota_waits_for_compaction() {
     let Frame::Push { id, .. } = Frame::decode(&session.push(&doc).unwrap()).unwrap() else { panic!() };
     session.receive(&mut doc, &Frame::Ack { id, status: Ack::Quota }.encode());
     assert!(
-        matches!(session.status(), Status::Paused { kind: pop_core::sync::PauseKind::RoomFull, .. }),
+        matches!(session.status(), Status::Paused { kind: pop_contracts::relay::PauseKind::RoomFull, .. }),
         "{:?}",
         session.status()
     );
     assert_eq!(support::value(&doc)["done"], true);
-    relay.compact(session.base(&doc).unwrap().unwrap());
+    relay.compact(base_of(&session, &doc).unwrap());
     let (replies, _) = relay.reply(&session.connect(&doc));
     for reply in replies {
         for push in session.receive(&mut doc, &reply.encode()).send {
@@ -560,8 +430,8 @@ fn room_compaction_measurements() {
         let raw = LoroDoc::new();
         raw.import(&doc.checkpoint().unwrap()).unwrap();
         let base = raw.export(ExportMode::updates(&doc.base_start())).unwrap();
-        if base.len() > pop_sharing_protocol::BASE_BYTES {
-            assert_eq!(doc.base(&version(&doc)).unwrap_err().code, pop_core::Code::TooLarge);
+        if base.len() > pop_contracts::relay::limits::BASE_BYTES {
+            assert_eq!(doc.base(&version(&doc)).unwrap_err().code, pop_contracts::wire::Code::TooLarge);
         } else {
             assert_eq!(doc.base(&version(&doc)).unwrap(), base);
         }
@@ -578,19 +448,19 @@ fn base_is_updates_and_excludes_unsent_edits() {
     let original = Document::create(&app(SCHEMA), r#"{"title":"Seed","done":false}"#).unwrap();
     let seed = original.checkpoint().unwrap();
     let (mut doc, mut session) = admitted(&seed, &version(&original));
-    assert!(session.base(&doc).unwrap().is_none(), "not caught up");
+    assert!(base_of(&session, &doc).is_none(), "not caught up");
     session.receive(&mut doc, &Frame::CaughtUp.encode());
     let frontier = version(&doc);
-    let base = session.base(&doc).unwrap().unwrap();
+    let base = base_of(&session, &doc).unwrap();
     let meta = LoroDoc::decode_import_blob_meta(&base.bytes, false).unwrap();
     assert_eq!(meta.mode, loro::EncodedBlobMode::Updates);
     assert_eq!(meta.partial_end_vv, frontier);
     doc.apply_json(r#"{"intents":[{"type":"set","path":["done"],"value":true}]}"#, Origin::Page).unwrap();
-    assert!(session.base(&doc).unwrap().is_none(), "local edits unpushed");
+    assert!(base_of(&session, &doc).is_none(), "local edits unpushed");
     let Frame::Push { id, .. } = Frame::decode(&session.push(&doc).unwrap()).unwrap() else { panic!() };
-    assert!(session.base(&doc).unwrap().is_none(), "push in flight");
+    assert!(base_of(&session, &doc).is_none(), "push in flight");
     session.receive(&mut doc, &Frame::Ack { id, status: Ack::Quota }.encode());
-    assert_eq!(session.base(&doc).unwrap().unwrap().frontier, frontier);
+    assert_eq!(base_of(&session, &doc).unwrap().frontier, frontier);
     assert_eq!(
         LoroDoc::decode_import_blob_meta(&doc.base(&frontier).unwrap(), false).unwrap().partial_end_vv,
         frontier
@@ -614,14 +484,15 @@ fn shallow_seed_base_is_applied_by_a_joiner() {
 
 #[test]
 fn relay_error_codes_choose_recovery_actions() {
-    use pop_core::sync::PauseKind;
-    use pop_sharing_protocol::frame::*;
+    use pop_contracts::relay::PauseKind;
+    use pop_contracts::relay::frame::ErrorCode;
     let origin = Document::create(&app(SCHEMA), r#"{"title":"Seed","done":false}"#).unwrap();
     for (code, kind) in [
-        (ERROR_PROTOCOL, PauseKind::NeedsUpdate),
-        (ERROR_APP, PauseKind::Refused),
-        (ERROR_MALFORMED, PauseKind::Refused),
-        (ERROR_ENDED, PauseKind::Ended),
+        (ErrorCode::Protocol.into(), PauseKind::NeedsUpdate),
+        (ErrorCode::App.into(), PauseKind::Refused),
+        (ErrorCode::Malformed.into(), PauseKind::Refused),
+        (ErrorCode::Ended.into(), PauseKind::Ended),
+        (255, PauseKind::Refused),
     ] {
         let (mut doc, mut session) = admitted(&origin.checkpoint().unwrap(), &version(&origin));
         session.receive(&mut doc, &Frame::Error { code, message: "reason".into() }.encode());
@@ -679,20 +550,22 @@ fn compacted_backfill_merges_with_unsent_local_edits_and_later_records() {
 fn read_only_offline_and_terminally_paused_sessions_cannot_compact() {
     let mut doc = Document::create(&app(SCHEMA), r#"{"title":"Seed","done":false}"#).unwrap();
     let mut session = Session::new(APP);
-    assert!(session.base(&doc).unwrap().is_none());
+    assert!(base_of(&session, &doc).is_none());
     session.connect(&doc);
     let vv = version(&doc).iter().map(|(&p, &n)| (p, n as u32)).collect();
     session.receive(&mut doc, &Frame::Welcome { permission: Permission::Read, version: vv }.encode());
     session.receive(&mut doc, &Frame::CaughtUp.encode());
-    assert!(session.base(&doc).unwrap().is_none());
-    session.pause(pop_core::sync::PauseKind::Refused, "refused".into());
-    assert!(session.base(&doc).unwrap().is_none());
+    assert!(base_of(&session, &doc).is_none());
+    session.pause(pop_contracts::relay::PauseKind::Refused, "refused".into());
+    assert!(base_of(&session, &doc).is_none());
 }
 
 // Hosts route on the phase and the pause, never on the status's debug text.
 #[test]
 fn status_gives_hosts_a_phase_and_a_pause() {
-    use pop_core::sync::{Pause, PauseKind, SyncPhase};
+    use pop_contracts::relay::PauseKind;
+    use pop_contracts::relay::SyncPhase;
+    use pop_core::sync::Pause;
     let phases = [
         (Status::Offline, SyncPhase::Offline),
         (Status::Syncing, SyncPhase::Syncing),
@@ -786,7 +659,7 @@ fn unrelayable_retained_history_pauses_outgrown_and_keeps_local_editing() {
         version: version(&origin).iter().map(|(&p, &n)| (p, n as u32)).collect(),
     };
     assert!(session.receive(&mut source, &welcome.encode()).send.is_empty());
-    assert!(matches!(session.status(), Status::Paused { kind: pop_core::sync::PauseKind::Outgrown, .. }));
+    assert!(matches!(session.status(), Status::Paused { kind: pop_contracts::relay::PauseKind::Outgrown, .. }));
     source.apply_json(r#"{"intents":[{"type":"set","path":["done"],"value":true}]}"#, Origin::Page).unwrap();
     assert_eq!(support::value(&source)["done"], true, "an outgrown copy keeps editing locally");
     assert!(session.push(&source).is_none(), "an outgrown copy pushes nothing");

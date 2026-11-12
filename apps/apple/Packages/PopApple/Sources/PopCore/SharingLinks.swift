@@ -18,11 +18,15 @@ public enum SharingLinks {
   /// Preserve the full URL, including its capability fragment, through the Rust parser.
   /// A non-sharing URL is left to the caller's existing routing.
   public static func incomingLink(_ url: URL) throws -> String? {
-    guard url.scheme == "https", url.host == "share.dotpop.click", url.path == "/join" else { return nil }
+    let custom =
+      url.scheme == "dotpop" && url.host == "join" && url.path.isEmpty
+      && url.query == nil && url.user == nil && url.password == nil && url.port == nil
+    let universal = url.scheme == "https" && url.host == "share.dotpop.click" && url.path == "/join"
+    guard custom || universal else { return nil }
     guard let fragment = url.fragment, !fragment.isEmpty else {
       throw PopFailure("Open the link in pop again")
     }
-    let link = url.absoluteString
+    let link = custom ? "https://share.dotpop.click/join#" + fragment : url.absoluteString
     _ = try sharingDocument(link: link)
     return link
   }

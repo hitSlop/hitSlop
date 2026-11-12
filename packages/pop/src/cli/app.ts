@@ -307,19 +307,11 @@ export const app = new Crust("pop", {
     ),
   )
   .add(
-    defineCommand("open", { description: "Open a document in pop, or a local browser copy" }, (c) =>
+    defineCommand("open", { description: "Open a document in pop" }, (c) =>
       c
         .args({ name: "document", type: "string", description: "Path to a .pop document" })
-        .flags({
-          name: "browser",
-          type: "boolean",
-          description:
-            "Open an independent browser copy with local autosave; omit the file to list copies",
-        })
-        .action(async ({ args, flags }) => {
-          if (flags.browser) return (await import("./browser")).openBrowser(args.document);
-          if (!args.document)
-            throw new Error("Provide a .pop document, or use --browser to open browser copies");
+        .action(async ({ args }) => {
+          if (!args.document) throw new Error("Provide a .pop document");
           console.log(
             (await (await engine()).execute({ method: "open", documentPath: args.document }))
               .documentPath,

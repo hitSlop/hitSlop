@@ -26,7 +26,7 @@ helpers compiled into the app, without separate host APIs.
 `layout`) and `subscribe(listener)` with idempotent disposal. `getEnvironment()` adapts
 it to each Svelte editor mount. Native identity comes from the typed `host.environment`
 host action, not the Rust owner's process or a user agent; `pop dev` supplies its selected
-preset instead. Browser identity is unknown; the shell computes layout from the document
+preset instead. The preview's Browser preset reports unknown identity; the shell computes layout from the document
 viewport using Rust's 640 CSS-pixel breakpoint. Every host supplies `ctx.environment` and
 `ctx.haptics`; neither adds document fields. A failed `host.environment` reply fails the
 page's boot rather than guessing an identity.
@@ -60,8 +60,7 @@ The Mac catalog combines immutable bundled starters, `~/.pop/templates`, and Rec
 
 ## File layout
 
-A `.pop` file is one SQLite database. Its application ID is `0x504F5002`
-(`0x504F5000 | 2`, document lineage 2); its storage version is in `user_version`.
+A `.pop` file is one SQLite database. Its application ID is `0x504F5003`; its storage version is in `user_version`.
 Rust defines internal wires and package-format acceptance. `pop.ts`
 declares identity, window, ordered theme, capabilities and optional artwork. `schema.ts`
 supplies the descriptor and initial values; fixed root component and command files
@@ -86,7 +85,7 @@ and atomically adds its identity. A template is immutable (`is_template` refuses
 document), and bundled starters are also read-only on disk. Initial values seed only
 a new document. Schema changes require new documents.
 
-The page shell is served at `pop://app/__shell__/`, from the one shell bundled with the app. The document's assets are served at `pop://app/assets/`, whole or as byte ranges; the resource reader refuses private commands.js, widget.js, icon.js and export.js programs. Attachments use /attachments/<id> with nosniff, sandbox and first-touch hash checks, and the page receives the descriptor with its config. App bundles must not embed Loro or the document implementation. Preview serves the same shell over a session-scoped bridge to a native Rust owner of a temporary document. The local Chrome browser host uses the same Rust owner compiled to WASM, with SQLite in OPFS. Its app frame has a separate origin per copy and receives assets through a client-bound Service Worker channel. Runtime code is bundled with the CLI and served locally.
+The page shell is served at `pop://app/__shell__/`, from the one shell bundled with the app. The document's assets are served at `pop://app/assets/`, whole or as byte ranges; the resource reader refuses private commands.js, widget.js, icon.js and export.js programs. Attachments use /attachments/<id> with nosniff, sandbox and first-touch hash checks, and the page receives the descriptor with its config. App bundles must not embed Loro or the document implementation. Preview serves the same shell over a session-scoped bridge to a native Rust owner of a temporary document.
 
 Both readers check the application/storage markers, then package-format and runtime-ABI requirements, then the exact SQLite layout. `summary` reads only safe catalog fields and artwork, never the definition, app assets, attachments or Loro payloads. It is not a validity certificate. Full acceptance checks the definition with its frozen package-format module, resource inventory and budgets, streaming PNGs and optionally SQLite integrity; owners also validate Loro state. A newer marker returns `requires_update` without writes. Reads never migrate. SQLite may roll back a hot journal from an interrupted transaction to restore committed bytes.
 
@@ -95,7 +94,7 @@ Assets are inserted first and the single app row last. The app row seals assets:
 
 ## Persistence and ownership
 
-The Rust store (`pop-storage`, on the platform SQLite) owns a document's saved state: the `document`, `history` and `attachments` tables, DELETE journaling, synchronous EXTRA and macOS fullfsync, a 2-second busy timeout, full auto-vacuum, and opaque Loro bytes. Replacing the history with a checkpoint and freeing the pages it covered are atomic. File access goes through `pop-storage`, so one SQLite library holds its locks. Every connection is defensive: no symbolic links, no trusted schema, cell-size checks, no memory mapping, and values no longer than the largest stored one. Readers beside the writer open read-write with `query_only`.
+The Rust store (`pop-storage`, on the platform SQLite) owns a document's saved state: the `document`, `history` and `attachments` tables, DELETE journaling, synchronous EXTRA and macOS fullfsync, a 2-second writer busy timeout, full auto-vacuum, and opaque Loro bytes. Replacing the history with a checkpoint and freeing the pages it covered are atomic. File access goes through `pop-storage`, so one SQLite library holds its locks. Every connection is defensive: no symbolic links, no trusted schema, cell-size checks, no memory mapping, and values no longer than the largest stored one. Readers beside the writer open read-write with `query_only`.
 
 One OS flock, taken by the store, owns each document: on a lock file in the account's registry (`~/.pop/live/<device>-<inode>.lock`), never on the database. Lock files are never removed; never bypass a busy writer. The holder's discovery file beside it names its socket; an owner removes a crashed session's as soon as it takes the lock. A busy writer with unreachable discovery is an error, never permission for another writer. A document with a second hard link is refused, because SQLite names its journal after the path. A rename or replacement while open stops saving (`Moved`); moved back, the store reconnects and saves.
 
@@ -120,8 +119,8 @@ document can exceed it, which pauses sharing without stopping local saves. Dupli
 Share Pop File carry only referenced attachments, fresh accepted state and artwork
 rendered for the copy (`Store::copy_clean`). Initial cloud upload instead preserves the
 document UUID and retained history. It uses one immutable staged snapshot for the seed
-and for every attachment the seed references, all uploaded before Open, which checks only
-the seed's hash. The transmitted SQLite seed keeps the complete embedded app and history;
+and for every attachment the seed references, all uploaded before Open, which verifies the named seed and attachment blobs
+against recorded sizes and available R2 checksums. The transmitted SQLite seed keeps the complete embedded app and history;
 attachments and artwork are not part of it, and downloads fetch and verify attachments
 before becoming ready. Its 16 MiB bound covers the embedded app, history and SQLite
 overhead, separately from the attachment budget, and is checked before the cloud document
@@ -145,13 +144,13 @@ Authored code can change or damage its own document. Runtime operation validatio
 
 The page shell synthesizes the page. The resource scheme exposes the app's page assets (`/assets/`, never its private `commands.js`, `widget.js`, `icon.js`, `preview.js` or `export.js`), the document's attachments (`/attachments/<id>`, served with `nosniff` and CSP `sandbox`) and the bundled page shell; saved state, artwork and the app's other columns are not resources. Decoded resource paths reject empty, dot and parent segments before anything else. An asset is read from the file through its own connection, opened read-write with `query_only` as every reader beside the writer is, whole or as a range. Packing stores text (HTML, JavaScript, CSS, JSON, SVG) and WebAssembly Brotli-compressed when that is smaller, and is decoded whole to serve; everything else is stored as it is and read by range without loading the rest. Limits count decoded bytes: each asset is at most 25 MiB, and an app at most 256 assets and 50 MiB. Responses carry `Content-Length` and answer single byte ranges with 206, which WebKit's media loader requires for audio and video assets.
 
-The native, browser and development-preview CSPs are defined in Rust
-(`crates/pop-contracts/src/wire/limits.rs` and `wire/browser.rs`, projected through
+The native and development-preview CSPs are defined in Rust
+(`crates/pop-contracts`, projected through
 `pop-core`'s bindings) and re-exported by `packages/pop/src/schema/policy.ts`; only local origins and the development HMR connection differ. CSP permits local scripts and WebAssembly compiled at runtime (`'wasm-unsafe-eval'`), local and HTTPS connections/media, HTTPS frames, inline styles, and local/data/HTTPS/blob images. CORS remains enforced. Remote scripts and JavaScript eval remain blocked; fonts stay local/data. Native navigation cancels external navigation of the main frame; explicit HTTP(S) links in the app itself open in the system browser, while HTTPS sub-frames may load and navigate on their own and a click inside one never opens the browser.
 
 | Capability | Boundary | Availability |
 | --- | --- | --- |
-| `camera`, `microphone` | Web APIs, admitted by the native WebKit delegate or browser permission policy. | Interactive documents with the declared devices and OS/browser permission. |
+| `camera`, `microphone` | Web APIs, admitted by the native WebKit delegate or the preview's browser permission policy. | Interactive documents with the declared devices and OS permission. |
 | `speech` | Typed `speech.transcribe` host request carrying an attachment ID and optional locale, never audio bytes. | Owned native document page with on-device recognition support and speech permission. |
 
 Omitting `capabilities` declares none. Changing declarations requires a rebuilt template
@@ -161,7 +160,7 @@ it is not consent. Code-bound permissions remain a [proposal](../ideas.md#permis
 
 The iPhone app denies camera and microphone capture even when declared; its Files picker and HTTPS embed navigation use the shared native policies.
 
-Camera and microphone use the web APIs (`getUserMedia`, `MediaRecorder`), never a `ctx` wrapper. An app lists what it uses in `capabilities` (`camera`, `microphone`, `speech`). Rust stores them sorted and unique in the definition and exposes only the ones this build implements; authoring refuses any other value, while opening ignores a saved value it does not know, so a later build can add one without a new package format and an older host simply never grants it. The Mac host's WebKit media delegate grants a request only for the current, ready, owned document page, from the main frame at `pop://app`, in a visible window, when the declaration covers every requested device; a replaced or closed page's capture is stopped. macOS still asks the person once for pop (`NSCameraUsageDescription`, `NSMicrophoneUsageDescription` and the hardened-runtime device entitlements); there is no per-pop prompt yet. WebKit exposes `navigator.mediaDevices` at `pop://app` only because the app's Info.plist carries those usage descriptions. The development preview sends `Permissions-Policy` and an iframe `allow` for the declared devices only, and the local browser host delegates `camera`/`microphone` to a copy's frame only when its app declared them.
+Camera and microphone use the web APIs (`getUserMedia`, `MediaRecorder`), never a `ctx` wrapper. An app lists what it uses in `capabilities` (`camera`, `microphone`, `speech`). Rust stores them sorted and unique in the definition and exposes only the ones this build implements; authoring refuses any other value, while opening ignores a saved value it does not know, so a later build can add one without a new package format and an older host simply never grants it. The Mac host's WebKit media delegate grants a request only for the current, ready, owned document page, from the main frame at `pop://app`, in a visible window, when the declaration covers every requested device; a replaced or closed page's capture is stopped. macOS still asks the person once for pop (`NSCameraUsageDescription`, `NSMicrophoneUsageDescription` and the hardened-runtime device entitlements); there is no per-pop prompt yet. WebKit exposes `navigator.mediaDevices` at `pop://app` only because the app's Info.plist carries those usage descriptions. The development preview sends `Permissions-Policy` and an iframe `allow` for the declared devices only.
 
 Speech is a typed host service, not a web API. The page sends `speech.transcribe` with a stored recording's attachment ID and an optional locale identifier (at most 35 ASCII letters, digits, `-` and `_`), never the recording's bytes, so a clip near the 10 MiB attachment limit is not sent through the page request a second time. Rust decodes and bounds the request, normalizes locale separators from `_` to `-`, answers `unavailable` itself when the stored app did not declare `speech` (`notDeclared`), and otherwise delivers a `HostAction` to the host through the same view fence as other page work. The native host serves it only for the ready page of an owned document, reads and verifies the recording through the owner's resource reader, checks the provider's format support, and transcribes it with `SFSpeechRecognizer` with `requiresOnDeviceRecognition` on every supported macOS. The Mac provider accepts m4a, mp3, wav, flac, mp4 and mov; other formats return `unavailable` (`format`). Missing or damaged attachments return `failed`. Format and on-device locale support are checked before asking for permission, so a locale the Mac recognizes only through Apple's servers is `unavailable` (`locale`) without a prompt; `NSSpeechRecognitionUsageDescription` covers the one system prompt, and a declined or restricted permission is `unavailable` (`permission`). Each transcription belongs to the page that asked: close preparation, page replacement, interface reload, renderer loss or teardown cancels it, and the page receives `cancelled` when its transport remains available. Saved-source exports, copies and widget refreshes do not cancel transcription. Rust serializes the outcome, shortening messages to the diagnostic limit and refusing a transcript over 1 MiB. The iPhone app, `pop dev`, the browser host and the WASM core answer `unavailable` (`host`).
 
@@ -181,7 +180,7 @@ An export never replaces the document it renders. Closed and live exports share 
 
 Pop-initiated blob/data downloads require a native save confirmation. Download bytes receive quarantine metadata before atomic installation, including replacement of existing files; a quarantine write failure leaves the destination unchanged.
 
-Rust resolves window defaults, frame capabilities and silhouettes once for the native host, page shell, development preview and browser host. Viewport fitting and drawing stay in each host. Bridge resize requests respect the window's resizable setting, including fixed-size skin windows. The native silhouette supplies layer clipping and hit testing; authors' rules for shapes are in [manifest and windows](../../apps/landing/src/content/docs/docs/guides/manifest-and-windows.mdx).
+Rust resolves window defaults, frame capabilities and silhouettes once for the native host, page shell and development preview. Viewport fitting and drawing stay in each host. Bridge resize requests respect the window's resizable setting, including fixed-size skin windows. The native silhouette supplies layer clipping and hit testing; authors' rules for shapes are in [manifest and windows](../../apps/landing/src/content/docs/docs/guides/manifest-and-windows.mdx).
 
 ## Command evaluation and execution providers
 
@@ -206,15 +205,9 @@ validated render replies. `pop-runner::Evaluator` selects its provider explicitl
 | --- | --- | --- |
 | Fresh restricted process | Mac/Linux commands and captures | One child per job, QuickJS limits, process watchdog and OS resource restrictions. Only returned intents reach the owner. |
 | In-process capture | iPhone artwork and widget PNGs | Same Rust QuickJS/renderer pipeline on a background thread, with heap/stack limits and cooperative deadlines. No child-process crash isolation; named commands and PDF raster are refused. |
-| Unavailable | Hosts without a supported configured driver | Explicit refusal; no fallback to another engine or implicit privilege increase. |
 
-Browser copies accept page edits through their Rust owner; named command execution
-is unavailable there. The portable evaluator is exercised in disposable browser workers
-by shared tests, which does not enable that feature in the browser host.
-
-Enabling Cargo features cannot silently change a configured provider. `pop-capture`
-acquires accepted saved sources and orchestrates capture; `pop-renderer` owns Takumi,
-fonts and raster/PDF output without authored JavaScript or owner access. The stored
+Enabling Cargo features cannot silently change a configured provider. See the
+[crate map](../../crates/README.md) for capture and rendering ownership. The stored
 runtime ABI still chooses the command/capture prelude and reply interpretation.
 
 ## Capture and Finder integration
@@ -373,9 +366,9 @@ reader; compressed assets reuse a bounded decoded cache. A damaged ordinary reso
 preventing document state from opening. A damaged command program or skin still refuses
 at open under its existing checks.
 
-Rust supplies resource response status, headers and byte spans to native, browser-copy
+Rust supplies resource response status, headers and byte spans to native
 and preview attachment transports. Single closed, open-ended and suffix ranges are
 supported; malformed, unsupported-unit or multiple ranges are ignored. Unsatisfiable
 ranges return 416 with `Content-Range: bytes */size`. Responses carry `nosniff`, `no-store`
 and `Accept-Ranges: bytes`; attachments also carry sandbox CSP. HEAD has the same response
-metadata without a body. Browser delivery keeps bounded chunks and cancellation.
+metadata without a body.

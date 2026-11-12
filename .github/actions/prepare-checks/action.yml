@@ -17,7 +17,7 @@ inputs:
     description: Install workspace dependencies
     default: "true"
   webkit:
-    description: Install Playwright WebKit and Google Chrome for browser tests
+    description: Install Playwright WebKit for the `pop dev` and SDK tests
     default: "false"
   save-build-cache:
     description: Save Rust and binding caches at job completion; disable when the caller checkpoints them explicitly
@@ -133,9 +133,9 @@ runs:
     - run: bun install --frozen-lockfile
       if: inputs.dependencies == 'true'
       shell: bash
-    - name: Install browser test engines
+    - name: Install Playwright WebKit
       if: inputs.webkit == 'true'
-      run: bun node_modules/playwright/cli.js install webkit chrome
+      run: bun node_modules/playwright/cli.js install webkit
       shell: bash
     - uses: taiki-e/install-action@183e4297cca2404691e9380e1307288dced5c82a # v2.87.25
       if: inputs.rust == 'true' && inputs.nextest == 'true'
@@ -157,18 +157,13 @@ runs:
         NEXTEST: ${{ inputs.nextest }}
       run: |
         rustup show active-toolchain
+        if [ "$RUNNER_OS" = macOS ] && [ "$NEXTEST" = true ]; then
+          rustup target add aarch64-apple-ios
+        fi
         if [ "$WASM_C" = true ] || { [ "$NEXTEST" = true ] && [ "$RUNNER_OS" = Linux ]; }; then
           rustup target add wasm32-unknown-unknown
         fi
-        # Apple's clang has no WebAssembly backend; durable-browser WASM uses LLVM.
-        if [ "${{ runner.os }}" = macOS ]; then
-          if [ "$WASM_C" = true ]; then brew install llvm; fi
-        elif [ "$WASM_C" = true ] || [ "$NEXTEST" = true ]; then
-          sudo apt-get update
-          sudo apt-get install -y clang llvm
-        fi
         if [ "$WASM_C" = true ]; then
-          bash scripts/build/install-binaryen.sh
           echo "POP_WASM_BINDGEN=$(command -v wasm-bindgen)" >> "$GITHUB_ENV"
         fi
         if { [ "$BINDINGS" = native ] || [ "$BINDINGS" = full ]; } && [ "$RUNNER_OS" = macOS ]; then

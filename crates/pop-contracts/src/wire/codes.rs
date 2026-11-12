@@ -42,27 +42,10 @@ pub enum Code {
 
 impl Code {
     pub fn as_str(self) -> &'static str {
-        match self {
-            Self::TypeMismatch => "type_mismatch",
-            Self::OutOfRange => "out_of_range",
-            Self::PathNotFound => "path_not_found",
-            Self::InvalidKey => "invalid_key",
-            Self::Exists => "exists",
-            Self::DuplicateId => "duplicate_id",
-            Self::InvalidRequest => "invalid_request",
-            Self::InvalidId => "invalid_id",
-            Self::InvalidPath => "invalid_path",
-            Self::InvalidSchema => "invalid_schema",
-            Self::TooLarge => "too_large",
-            Self::StaleBase => "stale_base",
-            Self::InvalidBytes => "invalid_bytes",
-            Self::MissingDependencies => "missing_dependencies",
-            Self::EngineError => "engine_error",
-            Self::InvalidShape => "invalid_shape",
-            Self::RequiresUpdate => "requires_update",
-            Self::IsTemplate => "is_template",
-            Self::Refused => "refused",
-        }
+        static NAMES: std::sync::LazyLock<Vec<String>> =
+            std::sync::LazyLock::new(|| Code::ALL.iter().map(crate::enum_name).collect());
+        let index = Self::ALL.iter().position(|code| *code == self).expect("all codes listed");
+        &NAMES[index]
     }
 }
 impl std::fmt::Display for Code {
@@ -71,7 +54,6 @@ impl std::fmt::Display for Code {
     }
 }
 
-#[cfg(feature = "ts")]
 impl Code {
     pub const ALL: &[Self] = &[
         Self::TypeMismatch,
@@ -118,6 +100,6 @@ impl OutcomeCode {
         serde_json::from_value(serde_json::Value::String(name.into())).ok()
     }
     pub fn name(self) -> String {
-        serde_json::to_value(self).expect("outcome name").as_str().expect("string code").into()
+        crate::enum_name(self)
     }
 }

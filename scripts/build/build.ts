@@ -4,7 +4,6 @@ import { buildCoreNative, buildCoreWasm, buildEngine } from "./core";
 import { buildSkills } from "../../packages/pop/src/cli/skills-build";
 import { generateContracts } from "./generate";
 import { buildShell } from "./shell";
-import { buildBrowser } from "./browser";
 import { prerequisites, type Build } from "./preparation";
 
 /** One output only; callers prepare its prerequisites through the shared graph. */
@@ -14,7 +13,6 @@ export async function prepareOutput(name: Build) {
     case "shell": return buildShell();
     case "native": return buildCoreNative();
     case "sdk": return buildCoreWasm();
-    case "browser": return buildBrowser();
     case "sharing": return (await import("./sharing")).buildSharing();
     case "templates": return (await import("../templates/build")).buildTemplates();
     case "packages": return (await import("./packages")).packPackages(true);

@@ -2,9 +2,8 @@
 //! document file. Faults are real ones: another connection holding the database, damage
 //! written from outside, a moved file.
 use crate::support;
-use pop_core::Document;
-use pop_core::Origin;
-use pop_core::{STORAGE_BYTES, STORAGE_ROWS};
+use pop_contracts::wire::{STORAGE_BYTES, STORAGE_ROWS};
+use pop_core::{Document, Origin};
 use pop_storage::file;
 use pop_storage::registry::Lease;
 use pop_storage::store::{Error, Mode, Share, Store};
@@ -12,8 +11,7 @@ use rusqlite::Connection;
 use serde_json::{Value, json};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use support::ApplyJson;
-use support::{App, isolate_registry, type_text, write_app};
+use support::{App, ApplyJson, isolate_registry, type_text, write_app};
 
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"string"},"rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"string"}}}}}}"#;
 const INITIAL: &str = r#"{"title":"Saved","rows":[]}"#;
@@ -54,7 +52,7 @@ fn document() -> (tempfile::TempDir, PathBuf) {
 }
 fn open(path: &Path) -> (Store, Document) {
     let store = Store::open(path, Mode::Document).unwrap();
-    let doc = store.document().unwrap();
+    let doc = store.open_document().unwrap();
     (store, doc)
 }
 fn sql(path: &Path) -> Connection {
@@ -150,7 +148,7 @@ fn damaged_history_is_refused_with_its_code_without_writing() {
             let before = std::fs::read(&path).unwrap();
             let error = Store::open(&path, mode).and_then(|store| store.document().map(drop)).unwrap_err();
             assert!(
-                matches!(&error, Error::Rejected(error) if error.code == pop_core::Code::InvalidBytes),
+                matches!(&error, Error::Rejected(error) if error.code == pop_contracts::wire::Code::InvalidBytes),
                 "damaged history must retain invalid_bytes: {error:?}"
             );
             assert_eq!(std::fs::read(&path).unwrap(), before, "refusal never rewrites stored history");
@@ -247,7 +245,7 @@ fn close(store: Store, doc: &mut Document) -> Option<bool> {
     store.close().unwrap();
     job.map(|job| job.is_checkpoint())
 }
-/// One editing session of `count` large edits, retaining its source lineage for refusal checks.
+/// One editing session of `count` large edits, retaining its source file for refusal checks.
 fn session(path: &Path, seed: &mut u64, count: usize) -> (Document, String) {
     let (store, mut doc) = open(path);
     set_title(&mut doc, &noise(seed, 32 * 1024));
@@ -290,7 +288,7 @@ fn closing_a_large_document_keeps_no_history_and_compaction_trims_to_now() {
     assert!(
         !doc.history_version().includes(&first.history_version())
             && !doc.history_version().includes(&second.history_version()),
-        "close discards the previous physical lineages"
+        "close discards the previous physical files"
     );
     assert_eq!(doc.value(), second.value(), "close preserves values and row IDs");
     assert_eq!(doc.theme_state().unwrap().effective, second.theme_state().unwrap().effective);
@@ -307,12 +305,15 @@ fn closing_a_large_document_keeps_no_history_and_compaction_trims_to_now() {
                 Origin::Page,
             )
             .unwrap_err();
-        assert_eq!(error.code, pop_core::Code::StaleBase);
+        assert_eq!(error.code, pop_contracts::wire::Code::StaleBase);
         assert_eq!(doc.state().unwrap(), unchanged);
     }
     for source in [&first, &second] {
         let old_updates = source.history_updates_since(&pop_core::HistoryVersion::default()).unwrap();
-        assert_eq!(doc.import_remote(&[&old_updates]).unwrap_err().code, pop_core::Code::MissingDependencies);
+        assert_eq!(
+            doc.import_remote(&[&old_updates]).unwrap_err().code,
+            pop_contracts::wire::Code::MissingDependencies
+        );
         assert_eq!(doc.state().unwrap(), unchanged);
     }
     let before = stored(&path);
@@ -389,10 +390,10 @@ fn session_too_large_to_keep(schema: &str) {
             Origin::Page,
         )
         .unwrap_err();
-    assert_eq!(error.code, pop_core::Code::StaleBase);
+    assert_eq!(error.code, pop_contracts::wire::Code::StaleBase);
     assert_eq!(doc.state().unwrap(), before, "old-token refusal preserves the document");
     for stale in [old_snapshot, old_updates] {
-        assert_eq!(doc.import_remote(&[&stale]).unwrap_err().code, pop_core::Code::MissingDependencies);
+        assert_eq!(doc.import_remote(&[&stale]).unwrap_err().code, pop_contracts::wire::Code::MissingDependencies);
         assert_eq!(doc.state().unwrap(), before, "old history cannot restore discarded state");
     }
     assert_eq!(title(&doc), "Saved");
@@ -505,7 +506,7 @@ fn a_text_edit_from_before_a_trimming_checkpoint_saves_and_reopens() {
     let initial = r#"{"title":"abc"}"#;
     let (_dir, path) = document_with(schema, initial);
     let store = Store::open(&path, Mode::Document).unwrap();
-    let mut doc = store.document().unwrap();
+    let mut doc = store.open_document().unwrap();
     doc.apply_json(&json!({"intents":[{"type":"set","path":["title"],"value":"Rabc"}]}).to_string(), Origin::Page)
         .unwrap();
     store.write(&store.checkpoint_job(&mut doc).unwrap()).unwrap();
@@ -558,7 +559,7 @@ fn snapshots_never_lock_or_modify_the_document() {
     // A snapshot reads the initial checkpoint without taking ownership.
     let before = std::fs::read(&path).unwrap();
     let snapshot = Store::open(&path, Mode::Snapshot).unwrap();
-    let mut doc = snapshot.document().unwrap();
+    let mut doc = snapshot.open_document().unwrap();
     assert_eq!(title(&doc), "Saved");
     assert_eq!(std::fs::read(&path).unwrap(), before, "a render writes nothing");
     set_title(&mut doc, "In memory");
@@ -693,7 +694,9 @@ fn a_moved_or_linked_document_refuses_writes() {
     std::fs::hard_link(&path, dir.path().join("Link.pop")).unwrap();
     assert!(matches!(store.check(false), Err(Error::Moved)));
     store.close().unwrap();
-    assert!(matches!(Lease::acquire(&path), Err(Error::Rejected(e)) if e.code == pop_core::Code::InvalidRequest));
+    assert!(
+        matches!(Lease::acquire(&path), Err(Error::Rejected(e)) if e.code == pop_contracts::wire::Code::InvalidRequest)
+    );
 }
 
 // Failure: the platform SQLite stops a connection for good once its file is renamed, and
@@ -712,7 +715,7 @@ fn a_document_moved_away_and_back_saves_and_reloads() {
     set_title(&mut doc, "Discarded");
     std::fs::rename(&path, &moved).unwrap();
     std::fs::rename(&moved, &path).unwrap();
-    let mut doc = store.document().unwrap();
+    let mut doc = store.open_document().unwrap();
     assert_eq!(title(&doc), "Kept");
     // A hard link added and removed again leaves the writer saving.
     std::fs::hard_link(&path, &moved).unwrap();
@@ -802,7 +805,10 @@ fn a_copy_preserves_visible_state_and_theme_with_independent_identity_and_histor
     left.import_remote(&[&right.checkpoint().unwrap()]).unwrap();
     let accepted = support::value(&left);
     assert_eq!(accepted["values"].as_array().unwrap().len(), limit + 1);
-    assert_eq!(pop_core::validate(schema, &accepted.to_string()).unwrap_err().code, pop_core::Code::TooLarge);
+    assert_eq!(
+        pop_core::validate(schema, &accepted.to_string()).unwrap_err().code,
+        pop_contracts::wire::Code::TooLarge
+    );
     let merged_copy = merged_dir.path().join("accepted-copy.pop");
     merged_store.copy_clean(&merged_copy, &left.checkpoint().unwrap(), &[]).unwrap();
     let copied = Store::open(&merged_copy, Mode::Snapshot).unwrap();
@@ -827,8 +833,7 @@ fn a_shared_document_keeps_its_history_and_blobs_and_a_clean_copy_is_unshared() 
     store.write(&store.checkpoint_job(&mut doc).unwrap()).unwrap();
     assert_eq!(store.reclaim_attachments().unwrap(), 0, "a shared document reclaims no blob");
     store.close().unwrap();
-    // Opening alone has not initialized the cached shared flag through document().
-    // Close-time housekeeping must consult the actual share row under its new lease.
+    // Close-time housekeeping must preserve shared blobs even without document reads.
     let unopened = Store::open(&path, Mode::Document).unwrap();
     let without_document = unopened.put_attachment(b"shared writer without document load").unwrap().id;
     unopened.close_reclaiming().unwrap();
@@ -967,7 +972,7 @@ fn saved_accent(path: &Path) -> String {
     accent(&snapshot.document().unwrap())
 }
 /// Applies one palette intent from the window; whether it changed the document.
-fn palette(doc: &mut Document, intent: Value) -> Result<bool, pop_core::Error> {
+fn palette(doc: &mut Document, intent: Value) -> Result<bool, pop_contracts::Error> {
     doc.apply_json(&json!({ "intents": [intent] }).to_string(), pop_core::Origin::Window)
         .map(|a| a.publication.is_some())
 }
@@ -1001,22 +1006,22 @@ fn a_theme_change_never_waits_for_a_save_in_progress() {
     use std::time::{Duration, Instant};
     let (_dir, path) = document();
     let (store, mut doc) = open(&path);
-    let store = Arc::new(store);
     set_title(&mut doc, "Slow");
     let job = store.job(&mut doc).unwrap().unwrap();
     // The save waits on another connection's lock, inside its transaction.
     let other = hold(&path);
-    let writer = {
-        let store = store.clone();
-        std::thread::spawn(move || store.write(&job))
-    };
+    let writer = std::thread::spawn(move || {
+        let result = store.write(&job);
+        (store, result)
+    });
     std::thread::sleep(Duration::from_millis(200));
     let began = Instant::now();
     assert!(set_accent(&mut doc, "#808080"));
     assert!(began.elapsed() < Duration::from_secs(1), "the theme change waited for the save");
     assert!(!writer.is_finished(), "the save was still in progress");
     other.execute_batch("COMMIT").unwrap();
-    writer.join().unwrap().unwrap();
+    let (store, result) = writer.join().unwrap();
+    result.unwrap();
     assert_eq!(save(&store, &mut doc), Some(false));
     assert_eq!(saved_accent(&path), "#808080");
 }
@@ -1039,7 +1044,7 @@ fn reloading_after_a_discard_drops_unsaved_theme_changes() {
     set_accent(&mut doc, "#404040");
     save(&store, &mut doc);
     set_accent(&mut doc, "#505050");
-    let mut reloaded = store.document().unwrap();
+    let mut reloaded = store.open_document().unwrap();
     assert_eq!(accent(&reloaded), "#404040");
     assert_eq!(save(&store, &mut reloaded), None, "nothing is left to save");
 }

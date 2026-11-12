@@ -21,7 +21,7 @@ export type BuildRoles = { preview?: string, export?: string, icon?: string, wid
 
 /**
  * A device or host service an app declares it uses. The host admits a request only for a
- * declared capability; the OS or browser permission still applies. Authoring refuses any
+ * declared capability; the OS permission still applies. Authoring refuses any
  * value not listed here.
  */
 export type Capability = "camera" | "microphone" | "speech";

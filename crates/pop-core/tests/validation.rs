@@ -37,7 +37,7 @@ fn explicit_null_bounds_are_not_silently_treated_as_absent() {
 #[test]
 fn integral_json_numbers_are_stored_as_integers() {
     let schema = r#"{"kind":"object","properties":{"count":{"kind":"integer"}}}"#;
-    let app = AppSpec::data(schema).unwrap();
+    let app = AppSpec::new(schema, "", "{}").unwrap();
     for (text, expected) in [("1.0", 1), ("-0.0", 0), ("1e2", 100)] {
         let initial = format!(r#"{{"count":{text}}}"#);
         pop_core::validate(schema, &initial).unwrap();
@@ -53,7 +53,7 @@ fn integral_json_numbers_are_stored_as_integers() {
 fn string_bounds_count_code_points_on_create_edit_and_reopen() {
     use pop_core::Origin;
     let schema = r#"{"kind":"object","properties":{"text":{"kind":"string","minLength":1,"maxLength":2}}}"#;
-    let app = AppSpec::data(schema).unwrap();
+    let app = AppSpec::new(schema, "", "{}").unwrap();
     for value in ["a", "😀", "😀😀", "e\u{301}"] {
         let initial = json!({"text":value}).to_string();
         pop_core::validate(schema, &initial).unwrap();
@@ -90,7 +90,7 @@ fn string_bounds_are_safe_nonnegative_integers_in_order() {
     ] {
         let mut node = options;
         node["kind"] = "string".into();
-        assert!(AppSpec::data(&json!({"kind":"object","properties":{"text":node}}).to_string()).is_err());
+        assert!(AppSpec::new(&json!({"kind":"object","properties":{"text":node}}).to_string(), "", "{}").is_err());
     }
     let empty = r#"{"kind":"object","properties":{"text":{"kind":"string","minLength":0,"maxLength":0}}}"#;
     pop_core::validate(empty, r#"{"text":""}"#).unwrap();
@@ -130,7 +130,8 @@ fn descriptor_rules_protect_public_sdk_handles() {
         "propertyIsEnumerable",
     ] {
         for schema in field_positions(&json!({key:{"kind":"string"}})) {
-            let refused = AppSpec::data(&schema.to_string()).err().map(|error| error.code.as_str().to_string());
+            let refused =
+                AppSpec::new(&schema.to_string(), "", "{}").err().map(|error| error.code.as_str().to_string());
             assert_eq!(refused.as_deref(), Some("invalid_schema"), "{key} in {schema}");
         }
     }
@@ -138,7 +139,7 @@ fn descriptor_rules_protect_public_sdk_handles() {
         "set":{"kind":"string"},"clear":{"kind":"string"},"path":{"kind":"string"},"node":{"kind":"string"}
     });
     for schema in field_positions(&members) {
-        if let Err(error) = AppSpec::data(&schema.to_string()) {
+        if let Err(error) = AppSpec::new(&schema.to_string(), "", "{}") {
             panic!("{schema} was refused: {}", error.message);
         }
     }
@@ -153,7 +154,7 @@ fn fields_named_like_handle_members_are_ordinary_fields() {
         "set":{"kind":"string"},"clear":{"kind":"string"},"path":{"kind":"string"},"node":{"kind":"string"}
     });
     let schema = json!({"kind":"object","properties":{"photo":{"kind":"optional","inner":{"kind":"object","properties":members}}}});
-    let app = AppSpec::data(&schema.to_string()).unwrap();
+    let app = AppSpec::new(&schema.to_string(), "", "{}").unwrap();
     let mut document = Document::create(&app, "{}").unwrap();
     let value = |document: &Document| -> Value {
         serde_json::from_str::<Value>(&document.state().unwrap()).unwrap()["value"].clone()
@@ -178,7 +179,7 @@ fn descriptor_depth_is_bounded_before_initial_values_are_checked() {
         node = json!({"kind":"object","properties":{"child":node}});
     }
     let schema = json!(node);
-    assert_eq!(AppSpec::data(&schema.to_string()).err().unwrap().code.as_str(), "too_large");
+    assert_eq!(AppSpec::new(&schema.to_string(), "", "{}").err().unwrap().code.as_str(), "too_large");
 }
 
 // Failure: serde ignores unknown fields on unit variants of an internally tagged enum,
@@ -208,43 +209,4 @@ fn descriptor_limits_accept_their_boundaries() {
     let wide = |n: usize| json!({"kind":"object","properties":(0..n).map(|i| (format!("f{i}"), json!({"kind":"boolean"}))).collect::<serde_json::Map<_, _>>()});
     assert!(accepts(&wide(1024)), "1024 fields");
     assert!(!accepts(&wide(1025)), "1025 fields");
-}
-
-// Every document records the layout it was written in. A build refuses bytes with no
-// layout before interpreting them, and a document from a newer layout asks for an update,
-// whether the newer layout arrives in the checkpoint or in a saved update.
-#[test]
-fn documents_record_their_layout_and_a_newer_one_asks_for_an_update() {
-    use loro::{ExportMode, LoroDoc};
-    use pop_core::{Code, LAYOUT};
-    let schema = r#"{"kind":"object","properties":{"title":{"kind":"string"}}}"#;
-    let checkpoint =
-        Document::create(&AppSpec::data(schema).unwrap(), r#"{"title":"A"}"#).unwrap().checkpoint().unwrap();
-    let inspected = LoroDoc::new();
-    inspected.import(&checkpoint).unwrap();
-    assert_eq!(serde_json::to_value(inspected.get_map("meta").get_deep_value()).unwrap(), json!({"layout": LAYOUT}));
-    assert!(Document::open(&AppSpec::data(schema).unwrap(), &checkpoint, &[]).is_ok());
-
-    let since = inspected.oplog_vv();
-    inspected.get_map("meta").insert("layout", LAYOUT + 1).unwrap();
-    inspected.commit();
-    let newer = inspected.export(ExportMode::Snapshot).unwrap();
-    let newer_update = inspected.export(ExportMode::updates(&since)).unwrap();
-    assert_eq!(
-        Document::open(&AppSpec::data(schema).unwrap(), &newer, &[]).err().map(|e| e.code),
-        Some(Code::RequiresUpdate)
-    );
-    assert_eq!(
-        Document::open(&AppSpec::data(schema).unwrap(), &checkpoint, &[newer_update]).err().map(|e| e.code),
-        Some(Code::RequiresUpdate)
-    );
-
-    let bare = LoroDoc::new();
-    bare.get_map("data").insert("title", "A").unwrap();
-    bare.commit();
-    let bare = bare.export(ExportMode::Snapshot).unwrap();
-    assert_eq!(
-        Document::open(&AppSpec::data(schema).unwrap(), &bare, &[]).err().map(|e| e.code),
-        Some(Code::InvalidBytes)
-    );
 }

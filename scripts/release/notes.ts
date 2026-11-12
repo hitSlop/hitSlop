@@ -72,9 +72,8 @@ export async function loadReleaseNotes(root = repository) {
   });
   const notes = parseReleaseNotes(source, project.version);
   const title = `# pop ${project.version}`;
-  // 2.0.0 starts document lineage 2, the first supported pop document format.
-  const baseline = project.version === "2.0.0"
-    ? "\nThis is the first supported release of the pop document format. Documents and authoring APIs from earlier releases, including pop 1.x .pop documents and hitSlop .slop documents, are unsupported: pop refuses them without changing them. Create new .pop documents from the included templates. Documents written by this release remain supported by future pop versions.\n"
+  const baseline = project.version === "3.0.0"
+    ? "\nThis is the first release of the pop document format. Documents written by this release remain supported by future pop versions.\n"
     : "";
   return {
     ...project,

@@ -1,6 +1,6 @@
-//! Typed native adapter; sequencing and persistence remain in pop-core::owner.
+//! Typed native adapter; sequencing and persistence remain in pop-runtime::owner.
 use super::*;
-use pop_core::{Batch, Code};
+use pop_contracts::wire::{Batch, Code};
 use pop_runtime::owner::{self as core, Event, Failure, FailureKind, SaveStatus, ThemeChange};
 use pop_storage::store::Pressure;
 use std::path::PathBuf;
@@ -12,6 +12,7 @@ pub enum ThemeChange {
 }
 
 #[uniffi::remote(Enum)]
+#[uniffi(name = "OwnerFailureKind")]
 pub enum FailureKind {
     Rejected,
     Replaced,
@@ -27,127 +28,36 @@ pub enum FailureKind {
     Failed,
 }
 #[uniffi::remote(Record)]
+#[uniffi(name = "OwnerFailure")]
 pub struct Failure {
     pub kind: FailureKind,
     pub message: String,
     pub reason: Option<Code>,
     pub op_index: Option<u32>,
+    pub path: Vec<String>,
 }
-// Request destinations are file paths, which Swift passes as strings.
-uniffi::custom_type!(PathBuf, String, {
-    remote,
-    lower: |path| path.to_string_lossy().into_owned(),
-    try_lift: |path| Ok(PathBuf::from(path)),
-});
-/// Native input remains opaque JSON; decoding failures complete through the same
-/// callback as owner refusals, rather than failing during UniFFI argument lifting.
-#[derive(uniffi::Enum)]
-pub enum Request {
-    State,
-    Apply {
-        batch: String,
-        origin: Origin,
-    },
-    Undo {
-        redo: bool,
-    },
-    Flush,
-    Discard,
-    Close {
-        preview: Option<Vec<u8>>,
-        icon: Option<Vec<u8>>,
-    },
-    /// Moves a document that cannot save to a new file at `dest`, holding its live state,
-    /// and releases it without saving. Refused (the file exists, the copy fails its check)
-    /// with the owner open and every edit untouched, after the host's close barrier.
-    Handoff {
-        dest: PathBuf,
-        preview: Option<Vec<u8>>,
-        icon: Option<Vec<u8>>,
-    },
-    /// A copy a person keeps, as a document of its own, with the artwork rendered for it.
-    Copy {
-        destination: PathBuf,
-        preview: Option<Vec<u8>>,
-        icon: Option<Vec<u8>>,
-    },
-    /// The saved document as stored, for a capture to render once.
-    CaptureSource {
-        destination: PathBuf,
-    },
-    /// The complete saved file, durably exported with identity, history and artwork.
-    Backup {
-        destination: PathBuf,
-    },
-    Artwork {
-        name: Artwork,
-    },
-    SetArtwork {
-        source_version: String,
-        preview: Option<Vec<u8>>,
-        icon: Option<Vec<u8>>,
-    },
-    /// The palette; changes are batch intents from the window.
-    Theme,
-    ExportTheme,
-    ChangeTheme {
-        change: ThemeChange,
-    },
+#[derive(uniffi::Record)]
+pub struct OwnerApplied {
+    pub sequence: u64,
+    pub ids: Vec<String>,
 }
-impl Request {
-    fn into_core(self) -> Result<core::Request, Failure> {
-        use core::Request as R;
-        Ok(match self {
-            Self::State => R::State,
-            Self::Apply { batch, origin } => R::Apply { batch: Batch::decode(&batch)?, origin },
-            Self::Undo { redo } => R::Undo { redo },
-            Self::Flush => R::Flush,
-            Self::Discard => R::Discard,
-            Self::Close { preview, icon } => R::Close { preview, icon },
-            Self::Handoff { dest, preview, icon } => R::Handoff { dest, preview, icon },
-            Self::Copy { destination, preview, icon } => R::Copy { destination, preview, icon },
-            Self::CaptureSource { destination } => R::CaptureSource { destination },
-            Self::Backup { destination } => R::Backup { destination },
-            Self::Artwork { name } => R::Artwork { name },
-            Self::SetArtwork { source_version, preview, icon } => R::SetArtwork { source_version, preview, icon },
-            Self::Theme => R::Theme,
-            Self::ExportTheme => R::ExportTheme,
-            Self::ChangeTheme { change } => core::theme_request(change),
-        })
+impl From<core::Applied> for OwnerApplied {
+    fn from(value: core::Applied) -> Self {
+        Self { sequence: value.sequence, ids: value.ids }
     }
 }
-
-/// The owner's reply as the host receives it: the core's, without what only the core's
-/// command path reads, or the failure.
-#[derive(uniffi::Enum)]
-pub enum OwnerReply {
-    Command { sequence: u64, ids: Vec<String>, result_json: String },
-    Unit,
-    State { json: String },
-    ThemeFile { json: String },
-    Applied { sequence: u64, ids: Vec<String> },
-    Theme { state: ThemeState, sequence: u64 },
-    Bytes { bytes: Option<Vec<u8>> },
-    Attachments { items: Vec<Attachment> },
-    Attachment { item: Attachment },
-    Failed { failure: Failure },
+#[derive(uniffi::Record)]
+pub struct OwnerTheme {
+    pub state: ThemeState,
+    pub sequence: u64,
 }
-impl From<core::Reply> for OwnerReply {
-    fn from(value: core::Reply) -> Self {
-        match value {
-            core::Reply::Command { sequence, ids, result_json } => Self::Command { sequence, ids, result_json },
-            core::Reply::Unit => Self::Unit,
-            core::Reply::State { reading, .. } => Self::State { json: reading.to_json() },
-            core::Reply::ThemeFile { json } => Self::ThemeFile { json },
-            core::Reply::Applied { sequence, ids, .. } => Self::Applied { sequence, ids },
-            core::Reply::Theme { state, sequence } => Self::Theme { state: state.into(), sequence },
-            core::Reply::Bytes { bytes } => Self::Bytes { bytes },
-            core::Reply::Attachments { items } => Self::Attachments { items },
-            core::Reply::Attachment { item } => Self::Attachment { item },
-        }
+impl From<core::Theme> for OwnerTheme {
+    fn from(value: core::Theme) -> Self {
+        Self { state: value.state.into(), sequence: value.sequence }
     }
 }
 #[uniffi::remote(Enum)]
+#[uniffi(name = "OwnerSaveStatus")]
 pub enum SaveStatus {
     Saved,
     Saving,
@@ -160,6 +70,7 @@ pub enum Pressure {
     Full,
 }
 #[uniffi::remote(Enum)]
+#[uniffi(name = "OwnerEvent")]
 pub enum Event {
     Publication { json: String },
     SaveStatus { status: SaveStatus, failure: Option<Failure>, pressure: Pressure, shared: bool },
@@ -167,8 +78,29 @@ pub enum Event {
     ThemeChanged,
 }
 #[uniffi::export(callback_interface)]
-pub trait OwnerCompletion: Send + Sync {
-    fn complete(&self, reply: OwnerReply);
+pub trait OwnerUnitCompletion: Send + Sync {
+    fn complete(&self);
+    fn failed(&self, failure: Failure);
+}
+#[uniffi::export(callback_interface)]
+pub trait OwnerAppliedCompletion: Send + Sync {
+    fn complete(&self, value: OwnerApplied);
+    fn failed(&self, failure: Failure);
+}
+#[uniffi::export(callback_interface)]
+pub trait OwnerThemeCompletion: Send + Sync {
+    fn complete(&self, value: OwnerTheme);
+    fn failed(&self, failure: Failure);
+}
+#[uniffi::export(callback_interface)]
+pub trait OwnerBytesCompletion: Send + Sync {
+    fn complete(&self, value: Option<Vec<u8>>);
+    fn failed(&self, failure: Failure);
+}
+#[uniffi::export(callback_interface)]
+pub trait OwnerStringCompletion: Send + Sync {
+    fn complete(&self, value: String);
+    fn failed(&self, failure: Failure);
 }
 #[uniffi::export(callback_interface)]
 pub trait OwnerListener: Send + Sync {
@@ -190,24 +122,15 @@ impl NativeOwner {
             Path::new(&path),
             mode,
             Arc::new(move |event| listener.event(event)),
-            evaluator_path
-                .map(|path| {
-                    #[cfg(target_os = "ios")]
-                    {
-                        core::Evaluator::in_process_capture(PathBuf::from(path))
-                    }
-                    #[cfg(not(target_os = "ios"))]
-                    {
-                        core::Evaluator::process(PathBuf::from(path), vec![])
-                    }
-                })
-                .transpose()
-                .map_err(|e| Failure {
+            evaluator_path.map(|path| pop_runtime::evaluator(PathBuf::from(path))).transpose().map_err(|e| {
+                Failure {
                     kind: FailureKind::Rejected,
-                    message: e,
-                    reason: Some(Code::InvalidRequest),
+                    message: e.to_string(),
+                    reason: Some(Code::EngineError),
                     op_index: None,
-                })?,
+                    path: vec![],
+                }
+            })?,
         )?))))
     }
     pub fn app(&self) -> OpenedFile {
@@ -219,20 +142,125 @@ impl NativeOwner {
     pub fn attach(&self, view: String) {
         self.0.attach(view);
     }
-    pub fn submit(&self, request: Request, view: Option<String>, completion: Box<dyn OwnerCompletion>) {
-        let request = match request.into_core() {
-            Ok(request) => request,
-            Err(failure) => return completion.complete(OwnerReply::Failed { failure }),
-        };
-        self.0.submit(
-            request,
-            view,
-            Box::new(move |result| {
-                completion.complete(match result {
-                    Ok(reply) => reply.into(),
-                    Err(failure) => OwnerReply::Failed { failure },
-                })
-            }),
+    /// Retained for native page and save-recovery integration tests, including iPhone lifecycle tests.
+    pub fn state(&self, completion: Box<dyn OwnerStringCompletion>) {
+        self.0.state(
+            core::CallOptions::default(),
+            string_completion(completion, |value: core::Reading| value.reading.to_json()),
         );
     }
+    /// Integration tests inject edits without evaluating an authored app.
+    pub fn apply(
+        &self,
+        batch: String,
+        origin: Origin,
+        view: Option<String>,
+        completion: Box<dyn OwnerAppliedCompletion>,
+    ) {
+        match Batch::decode(&batch) {
+            Ok(batch) => {
+                self.0.apply(batch, origin, core::CallOptions { view, deadline: None }, applied_completion(completion))
+            }
+            Err(error) => completion.failed(error.into()),
+        }
+    }
+    pub fn undo(&self, completion: Box<dyn OwnerAppliedCompletion>) {
+        self.0.undo(core::CallOptions::default(), applied_completion(completion));
+    }
+    pub fn redo(&self, completion: Box<dyn OwnerAppliedCompletion>) {
+        self.0.redo(core::CallOptions::default(), applied_completion(completion));
+    }
+    pub fn flush(&self, completion: Box<dyn OwnerUnitCompletion>) {
+        self.0.flush(core::CallOptions::default(), unit_completion(completion));
+    }
+    pub fn discard(&self, completion: Box<dyn OwnerUnitCompletion>) {
+        self.0.discard(core::CallOptions::default(), unit_completion(completion));
+    }
+    pub fn close(&self, preview: Option<Vec<u8>>, icon: Option<Vec<u8>>, completion: Box<dyn OwnerUnitCompletion>) {
+        self.0.close(preview, icon, core::CallOptions::default(), unit_completion(completion));
+    }
+    pub fn handoff(
+        &self,
+        dest: String,
+        preview: Option<Vec<u8>>,
+        icon: Option<Vec<u8>>,
+        completion: Box<dyn OwnerUnitCompletion>,
+    ) {
+        self.0.handoff(PathBuf::from(dest), preview, icon, core::CallOptions::default(), unit_completion(completion));
+    }
+    pub fn copy(
+        &self,
+        destination: String,
+        preview: Option<Vec<u8>>,
+        icon: Option<Vec<u8>>,
+        completion: Box<dyn OwnerUnitCompletion>,
+    ) {
+        self.0.copy(
+            PathBuf::from(destination),
+            preview,
+            icon,
+            core::CallOptions::default(),
+            unit_completion(completion),
+        );
+    }
+    pub fn capture_source(&self, destination: String, completion: Box<dyn OwnerUnitCompletion>) {
+        self.0.capture_source(PathBuf::from(destination), core::CallOptions::default(), unit_completion(completion));
+    }
+    pub fn backup(&self, destination: String, completion: Box<dyn OwnerUnitCompletion>) {
+        self.0.backup(PathBuf::from(destination), core::CallOptions::default(), unit_completion(completion));
+    }
+    pub fn set_artwork(
+        &self,
+        source_version: String,
+        preview: Option<Vec<u8>>,
+        icon: Option<Vec<u8>>,
+        completion: Box<dyn OwnerUnitCompletion>,
+    ) {
+        self.0.set_artwork(source_version, preview, icon, core::CallOptions::default(), unit_completion(completion));
+    }
+    pub fn artwork(&self, name: Artwork, completion: Box<dyn OwnerBytesCompletion>) {
+        self.0.artwork(name, core::CallOptions::default(), bytes_completion(completion));
+    }
+    pub fn theme(&self, completion: Box<dyn OwnerThemeCompletion>) {
+        self.0.theme(core::CallOptions::default(), theme_completion(completion));
+    }
+    pub fn export_theme(&self, completion: Box<dyn OwnerStringCompletion>) {
+        self.0.export_theme(core::CallOptions::default(), string_completion(completion, |value| value));
+    }
+    pub fn change_theme(&self, change: ThemeChange, completion: Box<dyn OwnerAppliedCompletion>) {
+        self.0.change_theme(change, core::CallOptions::default(), applied_completion(completion));
+    }
+}
+fn unit_completion(completion: Box<dyn OwnerUnitCompletion>) -> core::Completion<()> {
+    Box::new(move |result| match result {
+        Ok(()) => completion.complete(),
+        Err(failure) => completion.failed(failure),
+    })
+}
+fn applied_completion(completion: Box<dyn OwnerAppliedCompletion>) -> core::Completion<core::Applied> {
+    Box::new(move |result| match result {
+        Ok(value) => completion.complete(value.into()),
+        Err(failure) => completion.failed(failure),
+    })
+}
+fn theme_completion(completion: Box<dyn OwnerThemeCompletion>) -> core::Completion<core::Theme> {
+    Box::new(move |result| match result {
+        Ok(value) => completion.complete(value.into()),
+        Err(failure) => completion.failed(failure),
+    })
+}
+fn bytes_completion(completion: Box<dyn OwnerBytesCompletion>) -> core::Completion<Option<Vec<u8>>> {
+    Box::new(move |result| match result {
+        Ok(value) => completion.complete(value),
+        Err(failure) => completion.failed(failure),
+    })
+}
+fn string_completion<T: 'static>(
+    completion: Box<dyn OwnerStringCompletion>,
+    success: impl FnOnce(T) -> String + Send + 'static,
+) -> core::Completion<T> {
+    Box::new(move |result| match result {
+        Ok(value) => completion.complete(success(value)),
+        Err(failure) => completion.failed(failure),
+    })
 }

@@ -59,13 +59,9 @@ impl Document {
             // A remote deletion can leave an inverse writing only a hidden generation.
             // Inspect committed event paths, not a before/after copy of the document.
             let visible = if done {
-                let visible = publication::affects_view(
-                    &self.doc,
-                    &self.app.schema,
-                    &self.lists,
-                    &before_inverse,
-                    &lock(&self.events)[first_event..],
-                );
+                let events = lock(&self.events)[first_event..].to_vec();
+                let visible =
+                    publication::affects_view(&self.doc, &self.app.schema, &self.lists, &before_inverse, &events);
                 match visible {
                     Ok(visible) => visible,
                     Err(error) => {
@@ -97,18 +93,22 @@ impl Document {
     /// Groups the pending edit before it commits: it joins the current step when it
     /// `continues` the run, else it starts a new step, a group of its own when it begins a
     /// run.
-    pub(super) fn group(&mut self, run: Option<Run>, continues: bool) {
+    pub(super) fn group(&mut self, run: Option<Run>, continues: bool) -> Result<()> {
         if continues {
             // Loro closes a group when an import touches its containers; reopening it keeps
             // the run going in a new step after the conflict.
-            let _ = self.undo.group_start();
+            match self.undo.group_start() {
+                Ok(()) | Err(loro::LoroError::UndoGroupAlreadyStarted) => {}
+                Err(error) => return Err(engine(error)),
+            }
         } else {
             self.undo.group_end();
             if run.is_some() {
-                let _ = self.undo.group_start();
+                self.undo.group_start().map_err(engine)?;
             }
         }
         self.run = run;
+        Ok(())
     }
     pub fn can_undo(&self) -> bool {
         self.undo.can_undo()

@@ -24,7 +24,7 @@ import "../styles/motion.css";
 const burst = templates.map((template) => template.emoji);
 const faqs = [
   { question: "What is a .pop?", answer: "A .pop is a mini app that lives in a single file. Think of it as a little website you can keep and share with friends. Turn on collaboration to work together, or make your own in about a minute." },
-  { question: "Can I open a .pop without dotpop?", answer: "Yes. Open a shared .pop link in Chrome to use the app and collaborate with friends, without installing dotpop." },
+  { question: "Can I open a .pop without dotpop?", answer: "No. A .pop opens in dotpop on Mac and iPhone. A shared link opens a page that sends you to the app." },
   { question: "What comes with the app?", answer: `A whole collection of tiny apps, from checklists, planners and journals to a tomato timer, an invoice, a radio and a koi pond, and we keep releasing more. Pick one from Templates on Mac and pop makes you your own copy. The iPhone app on TestFlight includes the Popular templates.` },
   { question: "Where does my data live?", answer: "In your document: one SQLite file holds the app and your saved work. Local Mac documents need no account. Synced Library keeps pop in sync across your devices through your pop account: on iPhone in TestFlight and on Mac. Live links connect copies between people. Apps that use online media still need the network." },
   { question: "Can an AI edit it?", answer: "Yes. A coding agent can build a pop from scratch, and it can change the tasks, notes and numbers in a document through the pop CLI. It edits the same live document you have open." },
@@ -33,7 +33,7 @@ const faqs = [
   { question: "Will my pop update on their own?", answer: "No. A document keeps the app version it was made with. A new build is available for new copies and never rewrites the ones you already use." },
   { question: "Can I put a pop in a desktop widget?", answer: "Yes, when its author includes a widget view. Open the document in pop, add a pop widget from the Mac widget gallery, and choose your document in Edit Widget. Small, medium and large sizes show saved content and refresh while pop runs. macOS controls when updates appear; quitting pop leaves the last image visible." },
   { question: "Can I share the result without sharing the app?", answer: "Yes. Export a crisp PNG, or a PDF with selectable text and vector output. Good for invoices, recipes, plans, or anything that needs to leave your desktop." },
-  { question: "Can we edit together?", answer: "Yes. Choose Live collaboration in the Share popover. The owner signs in with Apple; anyone with the link can edit on Mac, iPhone or Chrome at share.dotpop.click. Stop ends the link and everyone keeps a copy." },
+  { question: "Can we edit together?", answer: "Yes. Choose Live collaboration in the Share popover. The owner signs in with Apple; anyone with the link can edit on Mac or iPhone after signing in with Apple. Sharing uploads the embedded app, retained history and attachments. Stop ends the link and everyone keeps a copy." },
   { question: "Can I use it on my iPhone?", answer: "The iPhone app is in TestFlight for iOS 26+; the App Store release is coming soon. Open, edit and create pop, start with the Popular templates, import from Files, and use Synced Library through your pop account. Choose Collaborate in the document actions menu to share a live link. Library pop with a widget view can appear on your Home Screen; tap to open them. Widgets also refresh in the background when iOS allows." },
   { question: "Is it free?", answer: "Yes. pop is free and open source under the MIT license." },
 ];
@@ -189,7 +189,7 @@ const faqs = [
           <div>
             <p class="kicker">Live collaboration</p>
             <h2 class="headline small" id="together-title">Little things, <em>better together.</em></h2>
-            <p class="lede">Plan a trip or split a list with friends, live. Turn on Live collaboration in the Share popover and copy the link. Anyone with it can join on Mac, iPhone or Chrome.</p>
+            <p class="lede">Plan a trip or split a list with friends, live. Turn on Live collaboration in the Share popover and copy the link. Anyone with it can join on Mac or iPhone.</p>
             <a class="text-link" href="/docs/guides/live-sharing/">How live sharing works <span aria-hidden="true">→</span></a>
           </div>
           <LiveTogether client:visible />

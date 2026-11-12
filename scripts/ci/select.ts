@@ -4,9 +4,9 @@ import { repository } from "../lib/artifacts";
 import { affectedTiers, nativeGateInputs, sharedInputs, sharingGateInputs, touchesCompatibility, type TierName } from "../lib/verification-inputs";
 import { changedPaths } from "../lib/verification";
 
-/** Required jobs exercise shipping boundaries. Browser qualification never blocks a PR; the
+/** Required jobs exercise shipping boundaries. WebKit qualification never blocks a PR; the
  * sharing relay's qualification (`sharing` in `main`) runs on a pull request only when it
- * changes code that relay, the clients or the browser host share.
+ * changes code that relay or its clients share.
  * `nativeGate` is false for a pull request into master that changes nothing in
  * `nativeGateInputs`: its Swift/native tiers are deferred to the master push. */
 export function ciJobs(tiers: TierName[], event: string | undefined, nativeGate = true, appBuild = false) {
@@ -18,7 +18,7 @@ export function ciJobs(tiers: TierName[], event: string | undefined, nativeGate 
     nativeRust: pick(["rust"]),
     rust: pick(["rust"]),
     deferred: nativeGate ? "" : pick(["swift", "native"]),
-    qualification: event === "schedule" || event === "workflow_dispatch" ? "browser,cli,packed" : "",
+    qualification: event === "schedule" || event === "workflow_dispatch" ? "webkit,cli,packed" : "",
   };
 }
 
@@ -28,7 +28,7 @@ export function touchesNativeGate(paths: string[]) {
 }
 
 /** Whether a pull request changes live-sharing code: the relay, its clients and the core
- * and browser host they share. Master pushes qualify it in sharing.yml. */
+ * they share. Master pushes qualify it in sharing.yml. */
 export function touchesSharing(paths: string[]) {
   return paths.some(path => sharingGateInputs.some(pattern => pattern.test(path)));
 }

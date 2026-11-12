@@ -1,19 +1,18 @@
 //! Owner coordination across a deliberately delayed child. The actual restricted JS
 //! runtime is tested in pop-runner; here the oracle is state and lifecycle fencing.
 use crate::support;
+use pop_contracts::wire::Code;
+use pop_core::Origin;
 use pop_runner::Evaluator;
-use pop_runtime::{
-    Code, Origin, file,
-    owner::{Failure, FailureKind, Owner, Reply, Request},
-    store::Mode,
-};
+use pop_runtime::owner::{Applied, CallOptions, CommandResult, Completion, Failure, FailureKind, Owner, Reading};
+use pop_storage::file;
+use pop_storage::store::Mode;
+use pop_testkit::owner::{call, close, submit};
 use serde_json::{Value, json};
-use std::{
-    fs,
-    path::PathBuf,
-    sync::{Arc, mpsc},
-    time::{Duration, Instant},
-};
+use std::fs;
+use std::path::PathBuf;
+use std::sync::{Arc, mpsc};
+use std::time::{Duration, Instant};
 
 struct Fixture {
     dir: tempfile::TempDir,
@@ -84,42 +83,31 @@ while ! test -f "$folder/reply-$i"; do /bin/sleep 0.01; done
         fs::rename(pending, self.dir.path().join(format!("reply-{attempt}"))).unwrap();
     }
 }
-fn submit(owner: &Owner, request: Request, view: Option<&str>) -> mpsc::Receiver<Result<Reply, Failure>> {
-    let (tx, rx) = mpsc::channel();
-    owner.submit(
-        request,
-        view.map(str::to_owned),
-        Box::new(move |result| {
-            let _ = tx.send(result);
-        }),
-    );
-    rx
-}
-fn receive(rx: mpsc::Receiver<Result<Reply, Failure>>) -> Result<Reply, Failure> {
+fn receive<T>(rx: mpsc::Receiver<Result<T, Failure>>) -> Result<T, Failure> {
     rx.recv_timeout(Duration::from_secs(5)).unwrap()
 }
-fn call(owner: &Owner, request: Request) -> Result<Reply, Failure> {
-    receive(submit(owner, request, None))
+fn command(args: Value) -> impl FnOnce(&Owner, CallOptions, Completion<CommandResult>) {
+    move |owner: &Owner, options, callback| {
+        owner.command("rename".into(), args.to_string(), Origin::Page, options, callback)
+    }
 }
-fn command(args: Value) -> Request {
-    Request::Command { name: "rename".into(), args_json: args.to_string(), origin: Origin::Page }
-}
-fn edit(title: &str) -> Request {
-    Request::Apply {
-        batch: serde_json::from_value(json!({"intents":[{"type":"set","path":["title"],"value":title}]})).unwrap(),
-        origin: Origin::Page,
+fn edit(title: &str) -> impl FnOnce(&Owner, CallOptions, Completion<Applied>) + '_ {
+    move |owner: &Owner, options, callback| {
+        owner.apply(
+            serde_json::from_value(json!({"intents":[{"type":"set","path":["title"],"value":title}]})).unwrap(),
+            Origin::Page,
+            options,
+            callback,
+        )
     }
 }
 fn accepted(title: &str) -> Value {
     json!({"ok":true,"intents":[{"type":"set","path":["title"],"value":title}],"result":title})
 }
 fn title(owner: &Owner) -> Value {
-    let Reply::State { reading, .. } = call(owner, Request::State).unwrap() else { panic!("state") };
+    let Reading { reading, .. } = call(owner, Owner::state).unwrap();
     let json = serde_json::to_string(&reading).unwrap();
     serde_json::from_str::<Value>(&json).unwrap()["value"]["title"].clone()
-}
-fn close(owner: &Owner) {
-    call(owner, Request::Close { preview: None, icon: None }).unwrap();
 }
 
 #[test]
@@ -128,10 +116,14 @@ fn saved_state_fences_wait_for_an_earlier_command() {
     let owner = fixture.open(true);
     let command = submit(&owner, command(json!({"title":"Included"})), None);
     fixture.input(0);
-    let flushed = submit(&owner, Request::Flush, None);
+    let flushed = submit(&owner, Owner::flush, None);
     let copy = fixture.dir.path().join("Copy.pop");
-    let copied = submit(&owner, Request::Copy { destination: copy.clone(), preview: None, icon: None }, None);
-    let closed = submit(&owner, Request::Close { preview: None, icon: None }, None);
+    let copied = submit(
+        &owner,
+        |owner: &Owner, options, callback| owner.copy(copy.clone(), None, None, options, callback),
+        None,
+    );
+    let closed = submit(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback), None);
     assert_eq!(title(&owner), "Saved"); // The fences have reached the owner; reads still work.
     let premature = flushed.try_recv();
     assert_eq!(call(&owner, edit("too late")).unwrap_err().kind, FailureKind::Closing);
@@ -140,7 +132,7 @@ fn saved_state_fences_wait_for_an_earlier_command() {
     receive(command).unwrap();
     receive(flushed).unwrap();
     receive(copied).unwrap();
-    let saved = pop_runtime::store::Store::open(&copy, Mode::Snapshot).unwrap().document().unwrap();
+    let saved = pop_storage::store::Store::open(&copy, Mode::Snapshot).unwrap().document().unwrap();
     assert_eq!(serde_json::from_str::<Value>(&saved.value()).unwrap()["title"], "Included");
     receive(closed).unwrap();
 }
@@ -161,9 +153,9 @@ fn a_command_retries_one_stale_base_with_a_fresh_snapshot_and_stable_clock_and_s
     assert_eq!(first["now"], second["now"]);
     assert_eq!(first["seed"], second["seed"]);
     fixture.reply(1, accepted("Command"));
-    assert!(matches!(receive(reply).unwrap(), Reply::Command { sequence: 2, .. }));
+    assert!(matches!(receive(reply).unwrap(), CommandResult { sequence: 2, .. }));
     assert_eq!(title(&owner), "Command");
-    call(&owner, Request::Undo { redo: false }).unwrap();
+    call(&owner, Owner::undo).unwrap();
     assert_eq!(title(&owner), "Concurrent");
     close(&owner);
 }
@@ -202,7 +194,7 @@ fn command_envelopes_ignore_unknown_members_but_keep_required_fields_and_intents
     let mut output = accepted("Command");
     output["extra"] = json!(1);
     fixture.reply(0, output);
-    assert!(matches!(receive(reply).unwrap(), Reply::Command { sequence: 1, .. }));
+    assert!(matches!(receive(reply).unwrap(), CommandResult { sequence: 1, .. }));
     assert_eq!(title(&owner), "Command");
 
     let reply = submit(&owner, command(json!({"title":"Ignored"})), None);
@@ -260,7 +252,7 @@ fn an_intent_that_does_not_decode_is_an_invalid_reply_and_applies_nothing() {
     let reply = submit(&owner, command(json!({"title":"Command"})), None);
     fixture.input(5);
     fixture.reply(5, accepted("Command"));
-    assert!(matches!(receive(reply).unwrap(), Reply::Command { sequence: 1, .. }));
+    assert!(matches!(receive(reply).unwrap(), CommandResult { sequence: 1, .. }));
     assert_eq!(title(&owner), "Command");
     close(&owner);
 }
@@ -313,7 +305,7 @@ fn late_commands_cannot_cross_page_replacement_or_discard() {
         match action {
             "replace" => owner.attach("new".into()),
             "discard" => {
-                call(&owner, Request::Discard).unwrap();
+                call(&owner, Owner::discard).unwrap();
             }
             _ => unreachable!(),
         }
@@ -321,7 +313,7 @@ fn late_commands_cannot_cross_page_replacement_or_discard() {
         assert!(receive(reply).is_err(), "{action}");
         assert_eq!(title(&owner), "Saved");
         close(&owner);
-        let saved = pop_runtime::store::Store::open(&fixture.path, Mode::Snapshot).unwrap();
+        let saved = pop_storage::store::Store::open(&fixture.path, Mode::Snapshot).unwrap();
         assert_eq!(serde_json::from_str::<Value>(&saved.document().unwrap().value()).unwrap()["title"], "Saved");
     }
 }

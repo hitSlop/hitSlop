@@ -31,16 +31,19 @@ pub(crate) const CURRENT: &str = "current";
 pub(crate) const INITIAL: &str = "initial";
 
 pub(crate) fn slotted(node: &Node, entry: bool) -> bool {
-    matches!(node, Node::Optional { inner } if !is_scalar(inner)) || (entry && matches!(node, Node::Object { .. }))
+    matches!(node, Node::Optional { inner, .. } if !is_scalar(inner)) || (entry && matches!(node, Node::Object { .. }))
 }
 pub(crate) fn valid_generation(key: &str) -> bool {
     key == INITIAL || key.strip_prefix("g:").is_some_and(valid_id)
 }
+pub(crate) fn current_generation(selector: Option<&str>) -> &str {
+    selector.unwrap_or(INITIAL)
+}
 pub(crate) fn generation(slot: &LoroMap) -> Result<String> {
     match slot.get(CURRENT) {
-        None => Ok(INITIAL.to_owned()),
+        None => Ok(current_generation(None).to_owned()),
         Some(ValueOrContainer::Value(LoroValue::String(current))) if valid_generation(&current) => {
-            Ok(current.to_string())
+            Ok(current_generation(Some(&current)).to_owned())
         }
         _ => Err(err(Code::InvalidBytes, "Invalid slot generation")),
     }

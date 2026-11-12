@@ -4,7 +4,8 @@
 //! renders a closed document's export in this executable's restricted evaluator. Only
 //! opening a window needs dotpop.app. Only build/protocol queries and the exact restricted
 //! evaluator entry point are outside the JSON wire.
-use pop_core::{Code, EngineRequest, EngineSuccess, engine::True};
+use pop_contracts::wire::Code;
+use pop_contracts::wire::engine::{EngineRequest, EngineSuccess, FileRequest, True};
 use pop_runtime::command;
 use pop_runtime::owner::{Failure, FailureKind};
 use pop_storage::{file, registry, store};
@@ -18,16 +19,22 @@ mod open;
 mod preview;
 
 /// A classified refusal, as every engine reply spells one.
-fn rejected(reason: Code, error: impl std::fmt::Display) -> String {
-    command::failure(
-        Failure { kind: FailureKind::Rejected, message: error.to_string(), reason: Some(reason), op_index: None },
+fn rejected(reason: Code, error: impl std::fmt::Display) -> pop_contracts::wire::engine::Failure {
+    command::classified_failure(
+        Failure {
+            kind: FailureKind::Rejected,
+            message: error.to_string(),
+            reason: Some(reason),
+            op_index: None,
+            path: vec![],
+        },
         false,
         false,
     )
 }
 /// A file operation's refusal: nothing changed.
 fn refusal(code: Code, message: impl Into<String>) -> store::Error {
-    store::Error::Rejected(pop_core::Error { code, message: message.into(), op_index: None, path: vec![] })
+    store::Error::Rejected(pop_contracts::Error { code, message: message.into(), op_index: None, path: vec![] })
 }
 /// The restricted evaluator: this same executable, run with `--evaluate-command`.
 fn evaluator() -> Result<pop_runner::Evaluator, String> {
@@ -35,33 +42,31 @@ fn evaluator() -> Result<pop_runner::Evaluator, String> {
         std::env::current_exe().map_err(|e| e.to_string())?,
         vec!["--evaluate-command".into()],
     )
+    .map_err(|error| error.to_string())
 }
 
-fn success(result: EngineSuccess) -> String {
-    serde_json::to_string(&result).expect("serializable reply")
-}
-fn dispatch(request: EngineRequest) -> String {
+fn dispatch(request: FileRequest) -> command::DocumentResult {
     let result = (|| -> Result<EngineSuccess, store::Error> {
         Ok(match request {
-            EngineRequest::AttachmentRef { file } => {
+            FileRequest::AttachmentRef { file } => {
                 EngineSuccess::AttachmentRef { ok: True, reference: attachments::reference(Path::new(&file))? }
             }
-            EngineRequest::Templates {} => {
+            FileRequest::Templates {} => {
                 EngineSuccess::Templates { ok: True, catalog: file::list_templates(&file::template_roots()) }
             }
-            EngineRequest::Create { from, output } => {
+            FileRequest::Create { from, output } => {
                 file::create_document(&file::template_source(&from)?, Path::new(&output))?;
                 let path = std::fs::canonicalize(&output).unwrap_or(PathBuf::from(output));
                 EngineSuccess::Create { ok: True, document_path: path.to_string_lossy().into_owned() }
             }
-            EngineRequest::Pack { stage, file: path, app, render_views } => {
+            FileRequest::Pack { stage, file: path, app, render_views } => {
                 let (stage, path) = (Path::new(&stage), Path::new(&path));
                 let artwork = if render_views {
                     let evaluator = evaluator().map_err(|e| {
                         refusal(Code::InvalidRequest, format!("Cannot start the capture renderer: {e}"))
                     })?;
                     let render = |template: &Path, roles: &[file::Artwork]| {
-                        pop_capture::capture::render_views(template, &evaluator, roles)
+                        pop_runtime::capture::render_views(template, &evaluator, roles)
                     };
                     file::pack(app.get(), stage, path, Some(&render))?
                 } else {
@@ -69,60 +74,45 @@ fn dispatch(request: EngineRequest) -> String {
                 };
                 EngineSuccess::Pack { ok: True, artwork }
             }
-            EngineRequest::ValidateMetadata { metadata } => {
+            FileRequest::ValidateMetadata { metadata } => {
                 pop_core::app::validate_metadata(&metadata).map_err(store::Error::Rejected)?;
                 EngineSuccess::ValidateMetadata { ok: True }
             }
-            EngineRequest::ValidateApp { app, stage } => {
+            FileRequest::ValidateApp { app, stage } => {
                 let (window, capabilities) = file::validate_app(app.get(), Path::new(&stage))?;
                 EngineSuccess::ValidateApp { ok: True, window, capabilities }
             }
-            EngineRequest::ArtworkExport { file: path, target, output } => {
+            FileRequest::ArtworkExport { file: path, target, output } => {
                 let name = match target {
-                    pop_core::engine::ArtworkTarget::Icon => file::Artwork::Icon,
-                    pop_core::engine::ArtworkTarget::Preview => file::Artwork::Preview,
+                    pop_contracts::wire::engine::ArtworkTarget::Icon => file::Artwork::Icon,
+                    pop_contracts::wire::engine::ArtworkTarget::Preview => file::Artwork::Preview,
                 };
                 let present = file::export_artwork(Path::new(&path), name, Path::new(&output))?;
                 EngineSuccess::ArtworkExport { ok: True, output: present.then_some(output) }
             }
-            EngineRequest::Inspect { file: path } => {
+            FileRequest::Inspect { file: path } => {
                 let path = Path::new(&path);
                 EngineSuccess::Inspect { ok: True, info: file::inspect(path)? }
             }
-            EngineRequest::Schema { file: path } => EngineSuccess::Schema {
+            FileRequest::Schema { file: path } => EngineSuccess::Schema {
                 ok: True,
                 schema: serde_json::from_str(&file::descriptor(Path::new(&path))?).expect("valid descriptor"),
             },
-            EngineRequest::Open { document_path } => {
+            FileRequest::Open { document_path } => {
                 EngineSuccess::Open { ok: True, document_path: open::document(Path::new(&document_path))? }
             }
-            EngineRequest::Get { .. }
-            | EngineRequest::Batch { .. }
-            | EngineRequest::Copy { .. }
-            | EngineRequest::Export { .. }
-            | EngineRequest::ThemeExport { .. }
-            | EngineRequest::AttachmentsList { .. }
-            | EngineRequest::AttachmentsRead { .. }
-            | EngineRequest::Describe { .. }
-            | EngineRequest::Call { .. } => unreachable!("document requests route to the owner"),
         })
     })();
-    match result {
-        Ok(result) => success(result),
-        Err(error) => command::failure(error.into(), false, false),
-    }
+    result.map_err(|error| command::classified_failure(error.into(), false, false))
 }
-fn request(input: &str, protocol: u64) -> String {
-    if input.len() > command::MAX_REQUEST_BYTES {
-        return rejected(Code::TooLarge, "Engine request is too large");
-    }
+fn request(input: &str, protocol: u64) -> command::CommandReply {
     let request = match EngineRequest::parse(input) {
         Ok(request) => request,
-        Err(error) => return rejected(Code::InvalidRequest, error),
+        Err(error) => return Err(command::classified_failure(error.into(), false, false)).into(),
     };
-    match request.route() {
-        pop_core::engine::Route::Document => command::request_with_evaluator(request, protocol, evaluator().ok()),
-        pop_core::engine::Route::File => dispatch(request),
+    match request {
+        EngineRequest::Document(request) => command::request_with_evaluator(request, protocol, evaluator().ok()),
+        EngineRequest::File(request) => dispatch(request).into(),
     }
 }
 fn main() -> ExitCode {
@@ -140,7 +130,7 @@ fn main() -> ExitCode {
             eprintln!("Invalid client protocol");
             return ExitCode::from(2);
         };
-        if let Some(message) = command::protocol_mismatch(version) {
+        if let Some(message) = pop_contracts::wire::socket::protocol_mismatch(version) {
             eprintln!("{message}");
             return ExitCode::from(2);
         }
@@ -155,28 +145,6 @@ fn main() -> ExitCode {
         println!("{}", pop_runtime::BUILD_ID);
         return ExitCode::SUCCESS;
     }
-    if args == ["--limits"] {
-        println!("{}", serde_json::to_string(&pop_core::app::AppDefinition::open_limits()).expect("limits encode"));
-        return ExitCode::SUCCESS;
-    }
-    if args.len() == 2 && args[0] == "--acceptance-vectors" {
-        let result = (|| -> Result<(), Box<dyn std::error::Error>> {
-            let vectors = pop_core::app::AppDefinition::acceptance_vectors()?;
-            let folder = Path::new(&args[1]);
-            std::fs::create_dir_all(folder)?;
-            for (name, vector) in vectors {
-                std::fs::write(folder.join(format!("{name}.json")), serde_json::to_vec_pretty(&vector)?)?;
-            }
-            Ok(())
-        })();
-        return match result {
-            Ok(()) => ExitCode::SUCCESS,
-            Err(error) => {
-                eprintln!("Acceptance vectors: {error}");
-                ExitCode::FAILURE
-            }
-        };
-    }
     if let Some(folder) = std::env::var_os("POP_TEST_REGISTRY").filter(|folder| !folder.is_empty()) {
         let _ = registry::use_folder(Path::new(&folder));
     }
@@ -190,8 +158,8 @@ fn main() -> ExitCode {
     let mut input = String::new();
     let reply = match std::io::stdin().take(command::MAX_REQUEST_BYTES as u64 + 1).read_to_string(&mut input) {
         Ok(_) => request(&input, protocol),
-        Err(error) => rejected(Code::InvalidRequest, error),
+        Err(error) => Err(rejected(Code::InvalidRequest, error)).into(),
     };
-    println!("{}", reply.trim_end());
+    println!("{}", command::encode_reply(reply));
     ExitCode::SUCCESS
 }

@@ -1,0 +1,25 @@
+[package]
+name = "pop-compat"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+autotests = false
+
+[lints]
+workspace = true
+
+[dependencies]
+pop-core = { path = "../../crates/pop-core" }
+pop-contracts = { path = "../../crates/pop-contracts" }
+serde.workspace = true
+serde_json.workspace = true
+brotli.workspace = true
+data-encoding.workspace = true
+
+[dev-dependencies]
+pop-testkit = { path = "../../crates/pop-testkit" }
+
+[[test]]
+name = "compat"
+path = "tests/main.rs"

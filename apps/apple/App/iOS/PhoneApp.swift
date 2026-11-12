@@ -72,7 +72,7 @@ import UIKit
       let before = PopLibrary.shared.entries
       do {
         try Task.checkCancellation()
-        try await PopLibrary.shared.fetchInBackground()
+        await PopLibrary.shared.syncNow()
         if PopLibrary.shared.lastError != nil || !PopLibrary.shared.isReady { return UIBackgroundFetchResult.failed }
         try Task.checkCancellation()
         await model.widgets.refreshPlaced()

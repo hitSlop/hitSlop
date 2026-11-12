@@ -17,15 +17,16 @@ pub struct CreateRoom {
     pub document: String,
 }
 
-/// The seed an upload makes live. The relay refuses (409) one that is not the seed it
-/// stores, so an older attempt cannot publish a seed uploaded after it. The relay does not
-/// check attachments: the creator uploads every attachment the seed references first.
+/// The exact content-addressed seed and attachment set committed by Open.
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 pub struct OpenRoom {
     /// Lowercase hex SHA-256 of the uploaded seed bytes.
-    pub seed_sha256: String,
+    pub seed: String,
+    pub version: Vec<(String, u32)>,
+    pub app: String,
+    pub attachments: Vec<String>,
 }
 
 /// A document's seed and app, read by any member. Access and the invitation secret are
@@ -42,83 +43,11 @@ pub struct RoomInfo {
     /// Whether retained updates have reached the size at which a member may compact.
     pub compact: bool,
 }
-/// What a browser copy joins: the invitation's document, checked against its metadata,
-/// and the seed's declared size. Routes are `/v1/documents/{document}/...`.
-#[derive(Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-pub struct ConnectionPlan {
-    pub document: String,
-    pub size: u32,
-}
-/// How the trusted host opens a browser copy: through its invitation, or as a local copy
-/// that no longer syncs.
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-pub enum SharingControl {
-    JoinInvitation { invitation: String },
-    OpenLocal,
-}
-#[derive(Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-pub enum SharingEvent {
-    IdentityAttention {
-        message: String,
-    },
-    ResourcesReady,
-    Files {
-        status: String,
-    },
-    /// `status` is for people. `phase` is what a host routes on.
-    Sync {
-        status: String,
-        phase: SyncPhase,
-    },
-}
-/// Where a replica stands with its room, apart from the words shown for it.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-pub enum SyncPhase {
-    #[default]
-    Offline,
-    Syncing,
-    Synced,
-    /// Stopped until a person acts; the reason travels with the pause.
-    Paused,
-    /// The room no longer exists; the local copy is all that remains.
-    Ended,
-}
-
-#[derive(Clone, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-pub struct ResourceGrant {
-    pub app: String,
-}
-
 #[derive(Clone, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
 pub struct ApiFailure {
     pub code: String,
     pub message: String,
-}
-
-impl ApiFailure {
-    /// Public v1 refusal codes are stable; clients may also receive unfamiliar strings.
-    pub fn refused(status: u16) -> Self {
-        let code = match status {
-            401 => "sign_in_required",
-            400 | 413 | 422 => "invalid_request",
-            403 => "denied",
-            404 => "not_found",
-            409 => "conflict",
-            410 => "sharing_ended",
-            429 => "limited",
-            _ => "unavailable",
-        };
-        Self { code: code.into(), message: "The sharing service refused this request".into() }
-    }
 }
 
 /// An invitation secret stays in the fragment of a pinned-origin link.
@@ -129,28 +58,34 @@ pub struct Invitation {
     pub capability: String,
 }
 impl Invitation {
-    pub fn validate(&self) -> Result<(), String> {
-        if !crate::valid_room(&self.room) || !crate::resources::hash_id(&self.capability) {
-            return Err("Sharing link is no longer valid".into());
+    pub fn validate(&self) -> Result<(), pop_contracts::Error> {
+        if !pop_contracts::identity::valid_document_id(&self.room)
+            || !pop_contracts::wire::valid_attachment_id(&self.capability)
+        {
+            return Err(invalid("Sharing link is no longer valid"));
         }
         Ok(())
     }
-    pub fn link(&self) -> Result<String, String> {
+    pub fn link(&self) -> Result<String, pop_contracts::Error> {
         self.validate()?;
         Ok(format!("{}/join#{}.{}", crate::TRUSTED_ORIGIN, self.room, self.capability))
     }
-    pub fn parse(link: &str) -> Result<Self, String> {
+    pub fn parse(link: &str) -> Result<Self, pop_contracts::Error> {
         let prefix = format!("{}/join#", crate::TRUSTED_ORIGIN);
         let link = link.trim();
         if link.len() != prefix.len() + 36 + 1 + 64 {
-            return Err("Sharing link is no longer valid".into());
+            return Err(invalid("Sharing link is no longer valid"));
         }
-        let fragment = link.strip_prefix(&prefix).ok_or("Sharing link is no longer valid")?;
-        let (room, capability) = fragment.split_once('.').ok_or("Sharing link is no longer valid")?;
+        let fragment = link.strip_prefix(&prefix).ok_or_else(|| invalid("Sharing link is no longer valid"))?;
+        let (room, capability) = fragment.split_once('.').ok_or_else(|| invalid("Sharing link is no longer valid"))?;
         let invitation = Self { room: room.into(), capability: capability.into() };
         invitation.validate()?;
         Ok(invitation)
     }
+}
+
+fn invalid(message: impl ToString) -> pop_contracts::Error {
+    pop_contracts::Error::new(pop_contracts::wire::Code::InvalidRequest, message)
 }
 
 #[cfg(test)]
@@ -170,19 +105,6 @@ mod tests {
             format!("{}/join#{}", crate::TRUSTED_ORIGIN, "a".repeat(100)),
         ] {
             assert!(Invitation::parse(&invalid).is_err());
-        }
-    }
-    #[test]
-    fn authored_origins_require_one_exact_canonical_copy_uuid() {
-        let copy = "00000000-0000-4000-8000-000000000001";
-        assert!(crate::is_authored_origin(&format!("https://{copy}.{}", crate::AUTHORED_DOMAIN)));
-        for origin in [
-            "https://dotslop.com",
-            "https://other.dotslop.com",
-            "https://00000000-0000-4000-8000-000000000001.dotslop.com.attacker.example",
-            "http://00000000-0000-4000-8000-000000000001.dotslop.com",
-        ] {
-            assert!(!crate::is_authored_origin(origin));
         }
     }
 }

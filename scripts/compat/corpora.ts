@@ -11,18 +11,18 @@ import { verifyCorpus } from "./integrity";
 import { atomicJson } from "../lib/verification";
 import { corpusRoot, readJSON, releases, type Release } from "./corpus";
 import requiredHistory from "./dotpop-required-history.json";
-import { DocumentLineage } from "../../packages/pop/src/schema/constants";
+import { ApplicationId } from "../../packages/pop/src/schema/constants";
 
 export type HistoricalRelease = { release: PublishedRelease; record: ReleaseRecord };
 export type CorpusInventory = Record<string, string>;
-export const corpusCache = () => resolve(process.env.POP_CORPUS_CACHE ?? join(homedir(), `.cache/pop/compat-corpora/lineage-${DocumentLineage}`));
+export const corpusCache = () => resolve(process.env.POP_CORPUS_CACHE ?? join(homedir(), `.cache/pop/compat-corpora/application-${ApplicationId}`));
 
 /** Remembered inventory, the checked-in launch baseline and each release's closure
  * detect disappearing history. Never recapture evidence. */
 export function verifyHistory(entries: HistoricalRelease[], known: CorpusInventory = {}): CorpusInventory {
   const inventory: CorpusInventory = {};
   for (const { release, record } of entries) {
-    assert.equal(record.documentLineage, DocumentLineage, "Unsupported document lineage in compatibility history");
+    assert.equal(record.applicationId, ApplicationId, "Unsupported application ID in compatibility history");
     assert.ok(!release.draft && !release.prerelease && release.immutable, `${release.tag_name} must be an immutable stable release`);
     validateRecord(record, release.tag_name, record.commit);
     assert.ok(!inventory[record.macVersion], `Duplicate release: ${record.macVersion}`);
@@ -36,24 +36,19 @@ export function verifyHistory(entries: HistoricalRelease[], known: CorpusInvento
   return inventory;
 }
 
-/** Document lineage 2 began with pop 2.0.0. Earlier releases are never acceptance inputs,
- * so their records are not downloaded; a new lineage moves this with DocumentLineage. */
-const lineageFirstMajor = 2;
-const inLineage = (tag: string) => Number(stableTag.exec(tag)?.[1] ?? -1) >= lineageFirstMajor;
-
 export async function publishedHistory(options: {
   list?: () => Promise<PublishedRelease[]>; download?: (id: number) => Promise<Buffer>; required?: CorpusInventory;
 } = {}): Promise<HistoricalRelease[]> {
   const all = await (options.list ?? releaseInventory)();
   const entries: HistoricalRelease[] = [];
-  for (const release of all.filter(entry => inLineage(entry.tag_name) && !entry.draft && !entry.prerelease)) {
+  for (const release of all.filter(entry => stableTag.test(entry.tag_name) && !entry.draft && !entry.prerelease)) {
     const bytes = await (options.download ?? assetBytes)(requiredAsset(release, "release-record.json").id);
     const record: ReleaseRecord = JSON.parse(bytes.toString());
+    // A release of another application ID wrote a different format: it is not this history.
+    if (record.applicationId !== undefined && record.applicationId > ApplicationId)
+      throw new Error("Published application ID requires newer release tooling");
+    if (record.applicationId !== ApplicationId) continue;
     validateRecord(record, release.tag_name, record.commit);
-    if (record.documentLineage !== undefined && record.documentLineage > DocumentLineage)
-      throw new Error("Published document lineage requires newer release tooling");
-    if (record.documentLineage !== DocumentLineage)
-      throw new Error(`${release.tag_name}: release record must declare document lineage ${DocumentLineage}`);
     entries.push({ release, record });
   }
   verifyHistory(entries, options.required ?? requiredHistory);

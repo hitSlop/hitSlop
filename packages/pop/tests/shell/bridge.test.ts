@@ -48,8 +48,8 @@ test("native refusals and transport failures retain distinct outcomes", async ()
   }
 });
 
-// Attachment bytes cross the bridge as base64; Chrome before 140 has no native Uint8Array
-// codec, and the browser host sets no minimum Chrome.
+// Attachment bytes cross the bridge as base64; older engines have no native Uint8Array
+// codec, so `pop dev` needs the fallbacks.
 describe("bridge base64", () => {
   test("round-trips empty, odd and large payloads", () => {
     for (const size of [0, 1, 2, 3, 16_383, 16_384, 16_385, 100_001]) {

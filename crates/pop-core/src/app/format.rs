@@ -1,5 +1,4 @@
-//! The stored app format (`packageFormat` 1): its syntax and acceptance. Later host structs
-//! are not its decoder.
+//! App syntax and acceptance for `packageFormat` 1.
 //!
 //! Two rule sets live here. `checked` is what opening a saved app requires: the shape the
 //! host can interpret safely, under this format's own limits. Released acceptance is
@@ -10,16 +9,17 @@
 //! The stored types are open readers: a member this format does not define is ignored, so a
 //! later build can add an optional member without a new package format. What decides what a
 //! value may be stays exact: the descriptor and the commands' arguments.
-use super::{
-    AppDefinition, AppMetadata, Background, Capability, CommandDefinition, CommandInput, StandardFrame, ThemeInput,
-    Views, WidgetOptions, WindowDefinition, WindowFrame,
-};
+use super::{AppDefinition, CommandDefinition};
 use crate::arguments::Arguments;
-use crate::build::{BuildDeclaration, WindowInput};
 use crate::wire::{APP_TEXT_BYTES, ASSET_FILE_BYTES, MANIFEST_BYTES, THEME_LIMIT, present_option};
-use crate::{AppSpec, Code, Result, descriptor, encode, err, shape, theme};
+use crate::{AppSpec, Result, descriptor, encode, err, shape, theme};
+use pop_contracts::app::{
+    AppMetadata, Background, Capability, CommandInput, StandardFrame, ThemeInput, Views, WindowDefinition, WindowFrame,
+};
+use pop_contracts::wire::Code;
+use pop_contracts::wire::build::{BuildDeclaration, WindowInput};
 use serde::{Deserialize, Serialize};
-use serde_json::{Value, value::RawValue};
+use serde_json::value::RawValue;
 use std::collections::HashSet;
 
 pub(crate) use crate::wire::{
@@ -39,155 +39,27 @@ pub(crate) const TITLE_MAX: usize = 80;
 pub(crate) const DESCRIPTION_MAX: usize = 240;
 pub(crate) const AUTHOR_NAME_MAX: usize = 80;
 
-/// The stored `definition_json`. These structs are this format's alone: the
-/// host model (`super`) translates from them and may change without changing them.
+/// The stored definition envelope; leaf types are shared with authoring.
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(super) struct Definition {
+struct Definition {
     pub(super) window: Window,
     pub(super) document: Box<RawValue>,
-    theme: Vec<Token>,
-    commands: Vec<Command>,
-    views: StoredViews,
+    theme: Vec<ThemeInput>,
+    commands: Vec<CommandInput>,
+    views: Views,
     /// Stored spellings (`capability_name`), sorted and unique when packed. Absent means
     /// none, so an app without capabilities stores exactly what it did before they existed.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     capabilities: Vec<String>,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct Token {
-    token: String,
-    color: String,
-}
-#[derive(Clone, Debug, Serialize, Deserialize)]
-struct Command {
-    name: String,
-    description: String,
-    args: Value,
-}
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-struct StoredViews {
-    preview: bool,
-    export: bool,
-    icon: bool,
-    #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
-    widget: Option<StoredWidget>,
-}
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct StoredWidget {
-    #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
-    refresh_minutes: Option<u32>,
-}
-impl From<StoredWidget> for WidgetOptions {
-    fn from(value: StoredWidget) -> Self {
-        Self { refresh_minutes: value.refresh_minutes }
-    }
-}
-impl From<WidgetOptions> for StoredWidget {
-    fn from(value: WidgetOptions) -> Self {
-        Self { refresh_minutes: value.refresh_minutes }
-    }
-}
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub(super) enum StoredBackground {
-    Transparent,
-    Glass,
-}
-impl From<StoredBackground> for Background {
-    fn from(value: StoredBackground) -> Self {
-        match value {
-            StoredBackground::Transparent => Self::Transparent,
-            StoredBackground::Glass => Self::Glass,
-        }
-    }
-}
-impl From<Background> for StoredBackground {
-    fn from(value: Background) -> Self {
-        match value {
-            Background::Transparent => Self::Transparent,
-            Background::Glass => Self::Glass,
-        }
-    }
-}
-/// A window silhouette as the format stores it: a CSS radius, or bounded SVG path data.
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(untagged)]
-pub(super) enum StoredShape {
-    Radius(String),
-    Path(StoredPath),
-}
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub(super) struct StoredPath {
-    path: String,
-    #[serde(rename = "viewBox", default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
-    view_box: Option<[f64; 2]>,
-    #[serde(
-        rename = "fillRule",
-        default,
-        deserialize_with = "present_option",
-        skip_serializing_if = "Option::is_none"
-    )]
-    fill_rule: Option<StoredFillRule>,
-}
-#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub(super) enum StoredFillRule {
-    Nonzero,
-    Evenodd,
-}
-impl From<StoredShape> for shape::Shape {
-    fn from(value: StoredShape) -> Self {
-        match value {
-            StoredShape::Radius(radius) => Self::Radius(radius),
-            StoredShape::Path(path) => Self::Path(shape::PathShape {
-                path: path.path,
-                view_box: path.view_box,
-                fill_rule: path.fill_rule.map(Into::into),
-            }),
-        }
-    }
-}
-impl From<shape::Shape> for StoredShape {
-    fn from(value: shape::Shape) -> Self {
-        match value {
-            shape::Shape::Radius(radius) => Self::Radius(radius),
-            shape::Shape::Path(path) => Self::Path(StoredPath {
-                path: path.path,
-                view_box: path.view_box,
-                fill_rule: path.fill_rule.map(Into::into),
-            }),
-        }
-    }
-}
-impl From<StoredFillRule> for shape::FillRule {
-    fn from(value: StoredFillRule) -> Self {
-        match value {
-            StoredFillRule::Nonzero => Self::Nonzero,
-            StoredFillRule::Evenodd => Self::Evenodd,
-        }
-    }
-}
-impl From<shape::FillRule> for StoredFillRule {
-    fn from(value: shape::FillRule) -> Self {
-        match value {
-            shape::FillRule::Nonzero => Self::Nonzero,
-            shape::FillRule::Evenodd => Self::Evenodd,
-        }
-    }
-}
 /// The stored `capabilities` spellings. Opening ignores any other string: it can only
 /// name a capability a later build added, which this host does not implement and so never
 /// grants. That lets a later build add a capability without a new package format; one that
 /// needs new app-facing API raises `runtimeABI` instead. Authoring refuses unknown values.
-fn capability_name(capability: Capability) -> &'static str {
-    match capability {
-        Capability::Camera => "camera",
-        Capability::Microphone => "microphone",
-        Capability::Speech => "speech",
-    }
+fn capability_name(capability: Capability) -> String {
+    pop_contracts::enum_name(capability)
 }
-fn stored_capability(name: &str) -> Option<Capability> {
+pub(super) fn stored_capability(name: &str) -> Option<Capability> {
     Capability::ALL.iter().copied().find(|&capability| capability_name(capability) == name)
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -203,9 +75,9 @@ pub(super) enum Window {
         #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
         lock_aspect: Option<bool>,
         #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
-        background: Option<StoredBackground>,
+        background: Option<Background>,
         #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]
-        shape: Option<StoredShape>,
+        shape: Option<pop_contracts::shape::Shape>,
     },
     Skin {
         width: f64,
@@ -241,8 +113,8 @@ pub(super) fn from_declaration(input: &BuildDeclaration, skin: Option<&str>) -> 
                 fullscreenable: *fullscreenable,
                 resizable: *resizable,
                 lock_aspect: *lock_aspect,
-                background: background.map(Into::into),
-                shape: shape.clone().map(Into::into),
+                background: *background,
+                shape: shape.clone(),
             }
         }
         WindowInput::Skin { width, height, fullscreenable, image } => {
@@ -259,23 +131,14 @@ pub(super) fn from_declaration(input: &BuildDeclaration, skin: Option<&str>) -> 
     let definition = Definition {
         window,
         document: RawValue::from_string(encode(&input.document)).expect("JSON value"),
-        theme: input.theme.iter().map(|t| Token { token: t.token.clone(), color: t.color.clone() }).collect(),
-        commands: input
-            .commands
-            .iter()
-            .map(|c| Command { name: c.name.clone(), description: c.description.clone(), args: c.args.clone() })
-            .collect(),
-        views: StoredViews {
-            preview: input.views.preview,
-            export: input.views.export,
-            icon: input.views.icon,
-            widget: input.views.widget.map(Into::into),
-        },
+        theme: input.theme.clone(),
+        commands: input.commands.clone(),
+        views: input.views,
         capabilities: {
             let mut declared = input.capabilities.clone();
             declared.sort();
             declared.dedup();
-            declared.into_iter().map(|c| capability_name(c).into()).collect()
+            declared.into_iter().map(capability_name).collect()
         },
     };
     checked(input.metadata.clone(), definition)
@@ -290,7 +153,7 @@ fn checked(metadata_value: AppMetadata, stored: Definition) -> Result<AppDefinit
     bound(encode(&stored.theme).len(), THEME_LIMIT, "theme")?;
     bound(encode(&stored.commands).len(), ASSET_FILE_BYTES, "commands")?;
     bound(encode(&stored.capabilities).len(), MANIFEST_BYTES, "capabilities")?;
-    let window = window(&stored.window).map_err(|e| e.at("window"))?;
+    window(&stored.window).map_err(|e| e.at("window"))?;
     let node = descriptor::descriptor(stored.document.get()).map_err(|e| e.at("document"))?;
     let tokens: Vec<_> = stored.theme.iter().map(|t| (t.token.clone(), t.color.clone())).collect();
     theme::validate_tokens(&tokens).map_err(|e| e.at("theme"))?;
@@ -306,7 +169,10 @@ fn checked(metadata_value: AppMetadata, stored: Definition) -> Result<AppDefinit
             if !crate::wire::engine::valid_command_name(name) {
                 return Err(err(
                     Code::InvalidRequest,
-                    "Command names start with a lowercase letter and contain at most 80 letters or digits",
+                    format!(
+                        "Command names start with a lowercase letter and contain at most {} letters or digits",
+                        crate::wire::COMMAND_NAME_BYTES
+                    ),
                 )
                 .at("name"));
             }
@@ -320,27 +186,14 @@ fn checked(metadata_value: AppMetadata, stored: Definition) -> Result<AppDefinit
         commands.push(command);
     }
     let spec = AppSpec::of(node, &metadata_value.slug, tokens);
-    let theme = stored.theme.iter().map(|t| ThemeInput { token: t.token.clone(), color: t.color.clone() }).collect();
-    let views = Views {
-        preview: stored.views.preview,
-        export: stored.views.export,
-        icon: stored.views.icon,
-        widget: stored.views.widget.map(Into::into),
-    };
-
-    let mut capabilities: Vec<_> = stored.capabilities.iter().filter_map(|name| stored_capability(name)).collect();
-    capabilities.sort();
-    capabilities.dedup();
     Ok(AppDefinition {
         metadata: metadata_value,
-        stored,
-        window,
-        theme,
-        views,
+        window: stored.window,
+        document_encoding: stored.document,
+        views: stored.views,
         commands,
-        capabilities,
+        capabilities: stored.capabilities,
         spec,
-        state_contract_id: Default::default(),
     })
 }
 
@@ -357,7 +210,7 @@ fn stored_metadata(value: &AppMetadata) -> Result<()> {
 }
 
 /// The current authoring rules for a new app, on top of what opening requires.
-fn authoring_widget(widget: Option<super::WidgetOptions>) -> Result<()> {
+fn authoring_widget(widget: Option<pop_contracts::app::WidgetOptions>) -> Result<()> {
     if let Some(minutes) = widget.and_then(|widget| widget.refresh_minutes)
         && !(pop_contracts::widgets::MIN_REFRESH_MINUTES..=pop_contracts::widgets::MAX_REFRESH_MINUTES)
             .contains(&minutes)
@@ -391,7 +244,8 @@ pub(super) fn authoring(metadata: &AppMetadata, window: &WindowInput, commands: 
         }
     }
     for (index, command) in commands.iter().enumerate() {
-        text(&command.description, 1, 500).map_err(|e| e.at("description").at(index).at("commands"))?;
+        text(&command.description, 1, crate::wire::DESCRIPTOR_DESCRIPTION as usize)
+            .map_err(|e| e.at("description").at(index).at("commands"))?;
     }
     Ok(())
 }
@@ -413,7 +267,7 @@ pub(super) fn authoring_metadata(value: &AppMetadata) -> Result<()> {
         return Err(err(Code::InvalidRequest, "Author name must contain non-whitespace text").at("name").at("author"));
     }
     if let Some(url) = &value.author.url {
-        let valid = url.chars().count() <= 2048
+        let valid = url.chars().count() <= crate::wire::AUTHOR_URL_CHARACTERS
             && fluent_uri::Uri::parse(url.as_str()).is_ok_and(|uri| {
                 matches!(uri.scheme().as_str(), "http" | "https")
                     && uri.authority().is_some_and(|a| !a.host().is_empty())
@@ -421,7 +275,10 @@ pub(super) fn authoring_metadata(value: &AppMetadata) -> Result<()> {
         if !valid {
             return Err(err(
                 Code::InvalidRequest,
-                "Author URL must be an http or https URI with a host, at most 2048 characters",
+                format!(
+                    "Author URL must be an http or https URI with a host, at most {} characters",
+                    crate::wire::AUTHOR_URL_CHARACTERS
+                ),
             )
             .at("url")
             .at("author"));
@@ -430,7 +287,7 @@ pub(super) fn authoring_metadata(value: &AppMetadata) -> Result<()> {
     Ok(())
 }
 
-fn window(value: &Window) -> Result<WindowDefinition> {
+pub(super) fn window(value: &Window) -> Result<WindowDefinition> {
     let (width, height, fullscreenable) = match value {
         Window::Standard { width, height, fullscreenable, .. } | Window::Skin { width, height, fullscreenable, .. } => {
             (*width, *height, fullscreenable.unwrap_or(false))
@@ -445,10 +302,10 @@ fn window(value: &Window) -> Result<WindowDefinition> {
     }
     let frame = match value {
         Window::Standard { resizable, lock_aspect, background, shape: geometry, .. } => {
-            let geometry: Option<shape::Shape> = geometry.clone().map(Into::into);
+            let geometry: Option<pop_contracts::shape::Shape> = geometry.clone();
             let radius = match &geometry {
-                Some(shape::Shape::Radius(radius)) => radius.clone(),
-                Some(shape::Shape::Path(_)) => "0".into(),
+                Some(pop_contracts::shape::Shape::Radius(radius)) => radius.clone(),
+                Some(pop_contracts::shape::Shape::Path(_)) => "0".into(),
                 None => crate::wire::DEFAULT_WINDOW_RADIUS.into(),
             };
             WindowFrame::Standard {
@@ -456,10 +313,12 @@ fn window(value: &Window) -> Result<WindowDefinition> {
                     fullscreen_fit: !resizable.unwrap_or(true) || lock_aspect.unwrap_or(false) || geometry.is_some(),
                     resizable: resizable.unwrap_or(true),
                     lock_aspect: lock_aspect.unwrap_or(false),
-                    background: background.map(Into::into),
+                    background: *background,
                     radius,
                     shape: shape::normalize(
-                        geometry.unwrap_or_else(|| shape::Shape::Radius(crate::wire::DEFAULT_WINDOW_RADIUS.into())),
+                        geometry.unwrap_or_else(|| {
+                            pop_contracts::shape::Shape::Radius(crate::wire::DEFAULT_WINDOW_RADIUS.into())
+                        }),
                         width,
                         height,
                     )
@@ -488,16 +347,24 @@ fn bound(bytes: usize, max: usize, field: &str) -> Result<()> {
     if bytes > max { Err(err(Code::TooLarge, format!("{field} exceeds its byte limit")).at(field)) } else { Ok(()) }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    /// A capability reads back from the spelling packing stores, and `ALL` lists every one.
-    #[test]
-    fn every_capability_has_one_stored_spelling() {
-        for &capability in Capability::ALL {
-            let name = capability_name(capability);
-            assert_eq!(stored_capability(name), Some(capability));
-            assert_eq!(serde_json::to_value(capability).unwrap(), name, "the authored and stored spellings agree");
-        }
+/// Keeps authored encodings that participate in app identity, without a second definition.
+pub(super) fn encode_definition(app: &AppDefinition) -> String {
+    #[derive(Serialize)]
+    struct Definition<'a> {
+        window: &'a Window,
+        document: &'a RawValue,
+        theme: Vec<ThemeInput>,
+        commands: &'a [CommandDefinition],
+        views: Views,
+        #[serde(skip_serializing_if = "<[String]>::is_empty")]
+        capabilities: &'a [String],
     }
+    encode(&Definition {
+        window: &app.window,
+        document: &app.document_encoding,
+        theme: app.theme(),
+        commands: &app.commands,
+        views: app.views,
+        capabilities: &app.capabilities,
+    })
 }

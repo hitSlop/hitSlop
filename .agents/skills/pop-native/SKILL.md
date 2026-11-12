@@ -14,8 +14,9 @@ and, for a document, its saved state, theme overrides and attachments. `pop-core
 owns Loro document semantics and app acceptance. `pop-contracts` owns passive wire types,
 error codes, shared limits and shape geometry; `pop-storage` owns file acceptance, SQLite,
 the writer lock, save policy and immutable attachments. `pop-runtime` owns owner scheduling
-and Unix socket routing; `pop-library` coordinates private-library snapshots, while
-`pop-capture` and `pop-renderer` own saved-source capture and native rendering. UniFFI
+and Unix socket routing, plus saved-source capture (its `capture` module); `pop-cloud`
+coordinates the cloud client and device-library snapshots, while `pop-runner` (its `render` module) owns native
+rendering. UniFFI
 exposes the composed runtime through `PopCoreBinding`. The shared Rust owner runs one write
 in flight on its persistence worker. Swift `DocumentOwner` forwards typed requests and
 events; `DocumentSession` delivers ordered publications to the page. The private
@@ -30,7 +31,8 @@ evaluator; the app owns the documents it has open, and `pop open` asks LaunchSer
 open one in it. The writer lock and the live owner's
 discovery live outside the file, in the storage registry (`~/.pop/live`, keyed by the
 file's device and inode); never remove a lock file there or bypass a busy lock, and never
-lock or open the database file outside the core. Closed edits never start WebKit. Agent commands use the owner's restricted child runner; pages edit through handles. The app embeds and signs `pop-evaluator`. A
+lock or open the database file outside the core. Closed edits never start WebKit. Agent commands use the owner's restricted child runner; pages edit through handles. The Mac app embeds and signs `pop-engine`; its `--evaluate-command` entry point
+runs restricted evaluator children. A
 document is a local regular file: never a link, and never with a second hard link.
 
 **Errors.** Rust classifies command outcomes; `RequestOutcome` maps native UI failures

@@ -4,7 +4,7 @@ use serde_json::{Value, json};
 use std::time::Instant;
 
 fn main() {
-    let app = AppSpec::data(r#"{"kind":"object","properties":{"rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"text"},"done":{"kind":"boolean"}}}}}}"#).unwrap();
+    let app = AppSpec::new(r#"{"kind":"object","properties":{"rows":{"kind":"list","item":{"kind":"object","properties":{"text":{"kind":"text"},"done":{"kind":"boolean"}}}}}}"#, "", "{}").unwrap();
     let mut results = vec![];
     for count in [1000, 5000] {
         let rows: Vec<Value> =
@@ -42,7 +42,7 @@ fn main() {
             let mut publication_bytes = 0;
             for sample in 0..6 {
                 let mut document = Document::create(&app, &initial).unwrap();
-                let batch = pop_core::Batch::decode(&batch).unwrap();
+                let batch = pop_contracts::wire::Batch::decode(&batch).unwrap();
                 let start = Instant::now();
                 let applied = std::hint::black_box(document.apply_batch(batch, Origin::Agent).unwrap());
                 let elapsed = start.elapsed().as_secs_f64() * 1000.0;
@@ -78,7 +78,7 @@ fn main() {
     let mut publication_bytes = 0;
     for sample in 0..11 {
         let mut document = Document::create(&app, &initial).unwrap();
-        let batch = pop_core::Batch::decode(&batch).unwrap();
+        let batch = pop_contracts::wire::Batch::decode(&batch).unwrap();
         let start = Instant::now();
         let applied = std::hint::black_box(document.apply_batch(batch, Origin::Page).unwrap());
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;

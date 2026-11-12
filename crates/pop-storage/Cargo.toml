@@ -13,31 +13,25 @@ workspace = true
 bundled-sqlite = ["rusqlite/bundled"]
 
 [dependencies]
-pop-core = { path = "../pop-core", default-features = false }
+pop-core = { path = "../pop-core" }
 pop-contracts = { path = "../pop-contracts" }
-pop-sharing-protocol = { path = "../pop-sharing-protocol" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-rusqlite = { version = "=0.40.2", features = ["backup", "blob", "limits"] }
-sha2 = "=0.11.0"
-data-encoding = "=2.11.1"
-brotli = "=9.0.0"
-png = "=0.18.1"
-getrandom = "0.2"
-
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-libc = "0.2"
+rusqlite = { workspace = true, features = ["backup", "blob", "limits"] }
+sha2.workspace = true
+data-encoding.workspace = true
+brotli.workspace = true
+png.workspace = true
+libc.workspace = true
 oxipng = { version = "=10.2.1", default-features = false }
 
 [dev-dependencies]
+pop-testkit = { path = "../pop-testkit" }
 loro.workspace = true
-rusqlite = { version = "=0.40.2", features = ["hooks"] }
-tempfile = "3"
+rusqlite = { workspace = true, features = ["hooks"] }
+tempfile.workspace = true
 
 [[test]]
 name = "storage"
 path = "tests/main.rs"
-
-[build-dependencies]
-cc = "=1.5.1"

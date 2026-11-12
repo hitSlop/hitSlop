@@ -20,6 +20,7 @@ static FOLDER: OnceLock<PathBuf> = OnceLock::new();
 /// fill a person's registry. Every process sharing documents must use the same folder:
 /// only debug hosts call this (`POP_TEST_REGISTRY`), and the engine for reads.
 pub fn use_folder(path: &Path) -> Result<()> {
+    // OnceLock returns the unused path, not an error cause.
     FOLDER.set(path.to_owned()).map_err(|_| failed("The registry folder was already chosen"))
 }
 /// `~/.pop/live` for the account running this process.
@@ -75,6 +76,7 @@ pub(crate) fn regular(path: &Path) -> Result<fs::Metadata> {
 /// The device, inode and link count of the regular file at `path`; `Moved` for anything
 /// else. The device and inode name the file in the registry.
 pub(crate) fn identity(path: &Path) -> Result<(u64, u64, u64)> {
+    // Lease checks classify every missing or invalid leaf as replacement.
     let meta = regular(path).map_err(|_| Error::Moved)?;
     Ok((meta.dev() as u64, meta.ino(), meta.nlink() as u64))
 }
@@ -103,8 +105,9 @@ impl Lease {
         }
         let (dev, ino) = (meta.dev() as u64, meta.ino());
         let folder = folder()?;
-        fs::create_dir_all(&folder).map_err(|e| failed(format!("Cannot create {}: {e}", folder.display())))?;
-        fs::set_permissions(&folder, fs::Permissions::from_mode(0o700)).map_err(failed)?;
+        fs::create_dir_all(&folder)
+            .map_err(|e| crate::error::caused(format!("Cannot create {}: {e}", folder.display()), e))?;
+        fs::set_permissions(&folder, fs::Permissions::from_mode(0o700)).map_err(crate::error::from_error)?;
         let key = name(dev, ino);
         let lock = fs::OpenOptions::new()
             .read(true)
@@ -114,10 +117,10 @@ impl Lease {
             .mode(0o600)
             .custom_flags(libc::O_NOFOLLOW)
             .open(folder.join(format!("{key}.lock")))
-            .map_err(|_| failed("Cannot open the writer lock"))?;
+            .map_err(|error| crate::error::caused("Cannot open the writer lock", error))?;
         lock.try_lock().map_err(|error| match error {
             fs::TryLockError::WouldBlock => Error::Locked,
-            fs::TryLockError::Error(_) => failed("Cannot acquire the writer lock"),
+            fs::TryLockError::Error(error) => crate::error::caused("Cannot acquire the writer lock", error),
         })?;
         let lease =
             Self { _lock: lock, path: path.to_owned(), dev, ino, discovery: folder.join(format!("{key}.json")) };
@@ -149,9 +152,9 @@ impl Lease {
             .mode(0o600)
             .custom_flags(libc::O_NOFOLLOW)
             .open(&staged)
-            .map_err(failed)?;
-        file.write_all(json.as_bytes()).map_err(failed)?;
-        fs::rename(&staged, &self.discovery).map_err(failed)
+            .map_err(crate::error::from_error)?;
+        file.write_all(json.as_bytes()).map_err(crate::error::from_error)?;
+        fs::rename(&staged, &self.discovery).map_err(crate::error::from_error)
     }
     pub fn withdraw(&self) {
         let _ = fs::remove_file(&self.discovery);
@@ -173,7 +176,7 @@ pub fn sweep() -> Result<usize> {
     let entries = match fs::read_dir(&folder) {
         Ok(entries) => entries,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(0),
-        Err(e) => return Err(failed(e)),
+        Err(e) => return Err(crate::error::from_error(e)),
     };
     let mut removed = 0;
     for entry in entries.flatten() {
@@ -205,6 +208,6 @@ pub fn discovery(path: &Path) -> Result<Option<String>> {
     match fs::read_to_string(folder()?.join(format!("{}.json", name(dev, ino)))) {
         Ok(json) => Ok(Some(json)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
-        Err(e) => Err(failed(e)),
+        Err(e) => Err(crate::error::from_error(e)),
     }
 }

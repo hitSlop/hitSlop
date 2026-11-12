@@ -187,12 +187,12 @@ assert_arm64_only() {
 }
 
 assert_arm64_only "$app/Contents/MacOS/dotpop"
-assert_arm64_only "$app/Contents/Helpers/pop-evaluator"
+assert_arm64_only "$app/Contents/Helpers/pop-engine"
 
 /bin/cp "$profile" "$app/Contents/embedded.provisionprofile"
 
 echo "Signing nested tools and app…"
-/usr/bin/codesign --force --timestamp --options runtime --sign "$identity" "$app/Contents/Helpers/pop-evaluator"
+/usr/bin/codesign --force --timestamp --options runtime --sign "$identity" "$app/Contents/Helpers/pop-engine"
 /usr/bin/codesign --force --timestamp --options runtime --sign "$identity" "$app/Contents/Frameworks/Sparkle.framework"
 /usr/bin/codesign --force --timestamp --options runtime \
   --entitlements "$project_dir/App/macOS/pop.Release.entitlements" \

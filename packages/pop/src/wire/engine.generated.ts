@@ -32,21 +32,22 @@ export type DescribeState = { metadata: AppMetadata, schema: Record<string, unkn
 
 export type DescribedField = { path: Array<Segment>, kind: string, description: string | null, operations: Array<string>, };
 
+/**
+ * Commands handled by a document owner.
+ */
+export type DocumentRequest = { "method": "attachments.list", documentPath: string, } | { "method": "attachments.read", documentPath: string, attachmentID: string, } | { "method": "theme.export", documentPath: string, } | { "method": "get", documentPath: string, } | { "method": "batch", documentPath: string, batch: Batch, attachments?: Array<string>, } | { "method": "export", documentPath: string, format: ExportFormat, output: string, } | { "method": "describe", documentPath: string, } | { "method": "call", documentPath: string, command: string, args: unknown, };
+
 export type EngineReply = EngineSuccess | Failure;
 
 /**
- * One request on the engine's standard input. Protocol negotiation stays outside it.
+ * One engine input, dispatched by the operation's owner.
  */
-export type EngineRequest = { "method": "attachments.ref", file: string, } | { "method": "attachments.list", documentPath: string, } | { "method": "attachments.read", documentPath: string, attachmentID: string, } | { "method": "theme.export", documentPath: string, } | { "method": "get", documentPath: string, } | { "method": "batch", documentPath: string, batch: Batch, attachments?: Array<string>, } | { "method": "copy", documentPath: string, output: string, } | { "method": "export", documentPath: string, format: ExportFormat, output: string, } | { "method": "templates", } | { "method": "create", from: string, output: string, } | { "method": "inspect", file: string, } | { "method": "artwork.export", file: string, target: ArtworkTarget, output: string, } | { "method": "schema", file: string, } | { "method": "pack", stage: string, file: string, app: unknown,
-/**
- * Check every declared view and store only unsupplied Preview/Icon artwork before publishing.
- */
-renderViews: boolean, } | { "method": "validateApp", stage: string, app: unknown, } | { "method": "validateMetadata", metadata: AppMetadata, } | { "method": "describe", documentPath: string, } | { "method": "call", documentPath: string, command: string, args: unknown, } | { "method": "open", documentPath: string, };
+export type EngineRequest = FileRequest | DocumentRequest;
 
 /**
  * Every successful result names its method and carries all fields that method promises.
  */
-export type EngineSuccess = { "method": "attachments.ref", ok: True, reference: AttachmentRef, } | { "method": "get", ok: True, state: GetState, } | { "method": "batch", ok: True, ids: Array<string>, } | { "method": "copy", ok: True, output: string, } | { "method": "export", ok: True, output: string, } | { "method": "theme.export", ok: True, state: ThemeExportState, } | { "method": "attachments.list", ok: True, state: Array<AttachmentInfo>, } | { "method": "attachments.read", ok: True, state: AttachmentBytes, } | { "method": "call", ok: True, result: unknown, ids: Array<string>, } | { "method": "templates", ok: True, catalog: Catalog, } | { "method": "create", ok: True, documentPath: string, } | { "method": "inspect", ok: True, info: InspectInfo, } | { "method": "artwork.export", ok: True, output: string | null, } | { "method": "schema", ok: True, schema: Record<string, unknown>, } | { "method": "pack", ok: True, artwork: PackedArtwork, } | { "method": "validateApp", ok: True, window: WindowDefinition, capabilities: Array<Capability>, } | { "method": "validateMetadata", ok: True, } | { "method": "describe", ok: True, state: DescribeState, } | { "method": "open", ok: True, documentPath: string, };
+export type EngineSuccess = { "method": "attachments.ref", ok: True, reference: AttachmentRef, } | { "method": "get", ok: True, state: GetState, } | { "method": "batch", ok: True, ids: Array<string>, } | { "method": "export", ok: True, output: string, } | { "method": "theme.export", ok: True, state: ThemeExportState, } | { "method": "attachments.list", ok: True, state: Array<AttachmentInfo>, } | { "method": "attachments.read", ok: True, state: AttachmentBytes, } | { "method": "call", ok: True, result: unknown, ids: Array<string>, } | { "method": "templates", ok: True, catalog: Catalog, } | { "method": "create", ok: True, documentPath: string, } | { "method": "inspect", ok: True, info: InspectInfo, } | { "method": "artwork.export", ok: True, output: string | null, } | { "method": "schema", ok: True, schema: Record<string, unknown>, } | { "method": "pack", ok: True, artwork: PackedArtwork, } | { "method": "validateApp", ok: True, window: WindowDefinition, capabilities: Array<Capability>, } | { "method": "validateMetadata", ok: True, } | { "method": "describe", ok: True, state: DescribeState, } | { "method": "open", ok: True, documentPath: string, };
 
 export type ExportFormat = "png" | "pdf";
 
@@ -61,6 +62,15 @@ export type Failure = { ok: False, error: string, code: OutcomeCode, reason?: Co
 export type False = false;
 
 export type FileKind = "template" | "document";
+
+/**
+ * File operations handled by the engine.
+ */
+export type FileRequest = { "method": "attachments.ref", file: string, } | { "method": "templates", } | { "method": "create", from: string, output: string, } | { "method": "inspect", file: string, } | { "method": "artwork.export", file: string, target: ArtworkTarget, output: string, } | { "method": "schema", file: string, } | { "method": "pack", stage: string, file: string, app: unknown,
+/**
+ * Check every declared view and store only unsupplied Preview/Icon artwork before publishing.
+ */
+renderViews: boolean, } | { "method": "validateApp", stage: string, app: unknown, } | { "method": "validateMetadata", metadata: AppMetadata, } | { "method": "open", documentPath: string, };
 
 /**
  * A template folder hosts list, whether or not it exists yet: `pop register` builds into

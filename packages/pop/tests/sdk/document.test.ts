@@ -1,7 +1,7 @@
 // Gap: a definition is data; an editor component acquires its own mount's document through
 // Svelte context; commands keep their supplied context. Oracle: probe components rendered
 // on the server (Svelte context behaves alike there; client mounting is in
-// document.browser.test.ts), and the command runner's intents.
+// document.webkit.test.ts), and the command runner's intents.
 import { afterAll, expect, test } from "bun:test";
 import { compile } from "svelte/compiler";
 import { render } from "svelte/server";

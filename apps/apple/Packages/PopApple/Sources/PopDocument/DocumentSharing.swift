@@ -6,19 +6,13 @@ import PopCoreBinding
 import SwiftUI
 
 public func sharingMessage(_ error: Error) -> String {
-  if case SharingError.Failed(let message) = error { return message }
+  if case SharingError.Failed(_, let message) = error { return message }
   return error.localizedDescription
 }
-private final class SharingStatusListener: SharingListener, @unchecked Sendable {
-  let update: @Sendable () -> Void
-  init(_ update: @escaping @Sendable () -> Void) { self.update = update }
-  func changed() { update() }
-}
-
 /// Sharing is an access setting on the same persistent cloud document.
 /// Rust owns the connection; the host supplies identity and presents its status.
 @MainActor public final class DocumentSharing: ObservableObject {
-  @Published public private(set) var status: SharingStatus?
+  @Published public private(set) var status: LibraryEntry?
   @Published public private(set) var link: String?
   @Published public private(set) var access: AccessState?
   public var sharingEnabled: Bool { access?.sharing == true }
@@ -31,7 +25,7 @@ private final class SharingStatusListener: SharingListener, @unchecked Sendable 
     var refresh: @MainActor () async throws -> AccessState?
     var setSharing: @MainActor (Bool) async throws -> AccessState
     var pause: @MainActor () async throws -> Void = {}
-    var connection: @MainActor () -> NativeSharing? = { nil }
+    var entry: @MainActor () -> LibraryEntry? = { nil }
 
     @MainActor static func live(owner: DocumentOwner) -> Services {
       let native = owner.native
@@ -40,32 +34,14 @@ private final class SharingStatusListener: SharingListener, @unchecked Sendable 
       return Services(
         account: { SharingAccount.shared.identityID ?? "" },
         refresh: {
-          guard PopLibrary.shared.entry(at: file)?.localOnly == false,
-            let account = SharingAccount.shared.identityID,
-            PopLibrary.shared.isReady, PopLibrary.shared.accountIdentity == account
-          else { return nil }
+          guard PopLibrary.shared.entry(at: file)?.localOnly == false else { return nil }
           try PopLibrary.register(owner: native)
           await PopLibrary.shared.syncNow()
-          guard SharingAccount.shared.identityID == account, PopLibrary.shared.accountIdentity == account,
-            PopLibrary.shared.isReady, !Task.isCancelled
-          else {
-            throw PopFailure("The account changed. Try again.")
-          }
           return try await PopLibrary.shared.access(id: document)
         },
         setSharing: { enabled in
-          guard let account = SharingAccount.shared.identityID,
-            PopLibrary.shared.isReady, PopLibrary.shared.accountIdentity == account
-          else {
-            throw PopFailure("The account changed. Try again.")
-          }
           if enabled && PopLibrary.shared.entry(at: file)?.localOnly != false {
             try await PopLibrary.shared.enableSync(source: file, title: file.deletingPathExtension().lastPathComponent)
-          }
-          guard SharingAccount.shared.identityID == account, PopLibrary.shared.accountIdentity == account,
-            PopLibrary.shared.isReady, !Task.isCancelled
-          else {
-            throw PopFailure("The account changed. Try again.")
           }
           return try await PopLibrary.shared.sharing(id: document, enabled: enabled)
         },
@@ -74,18 +50,16 @@ private final class SharingStatusListener: SharingListener, @unchecked Sendable 
             try await PopLibrary.shared.pauseDocument(id: document)
           }
         },
-        connection: { PopLibrary.shared.connection(id: document) })
+        entry: { PopLibrary.shared.entries.first { $0.id == document } })
     }
   }
   private let services: Services
   private var account: String
   private var refreshRequested = false
   private var desiredSharing: Bool?
-  private var client: NativeSharing?
-  private var listener: SharingStatusListener?
   private var active = true
-  private var generation: UInt64 = 0
   private var work: Task<Void, Never>?
+  private var libraryChanges: AnyCancellable?
   private var triggers: AnyCancellable?
   convenience init(owner: DocumentOwner) { self.init(services: .live(owner: owner)) }
   init(services: Services, start: Bool = true) {
@@ -94,6 +68,9 @@ private final class SharingStatusListener: SharingListener, @unchecked Sendable 
     triggers = NotificationCenter.default.publisher(for: .popSharingAccountChanged)
       .merge(with: NotificationCenter.default.publisher(for: .popSharingForeground))
       .sink { @Sendable [weak self] _ in Task { @MainActor [weak self] in self?.refresh() } }
+    libraryChanges = PopLibrary.shared.$entries.sink { [weak self] _ in
+      Task { @MainActor [weak self] in self?.updateStatus() }
+    }
     if start { resume() }
   }
   public func resume() {
@@ -102,7 +79,6 @@ private final class SharingStatusListener: SharingListener, @unchecked Sendable 
   }
   public func pause() async throws {
     active = false
-    generation += 1
     work?.cancel()
     work = nil
     desiredSharing = nil
@@ -114,7 +90,6 @@ private final class SharingStatusListener: SharingListener, @unchecked Sendable 
       refresh()
       throw error
     }
-    client = nil
   }
   public func refresh() {
     guard active else { return }
@@ -126,23 +101,20 @@ private final class SharingStatusListener: SharingListener, @unchecked Sendable 
     let next = services.account()
     guard next != account else { return false }
     account = next
-    generation += 1
     work?.cancel()
     work = nil
     desiredSharing = nil
     refreshRequested = false
     access = nil
     link = nil
-    client = nil
     status = nil
-    listener = nil
     error = nil
     busy = false
     acting = false
     return true
   }
-  private func isCurrent(_ current: UInt64) -> Bool {
-    guard current == generation, active, !Task.isCancelled else { return false }
+  private func isCurrent() -> Bool {
+    guard active, !Task.isCancelled else { return false }
     if invalidateChangedAccount() {
       refreshRequested = true
       startWork()
@@ -154,38 +126,35 @@ private final class SharingStatusListener: SharingListener, @unchecked Sendable 
     let nextLink = try access.flatMap { $0.role == .owner ? try sharingLink(access: $0) : nil }
     self.access = access
     link = nextLink
-    client = access == nil ? nil : services.connection()
-    observe()
     updateStatus()
   }
   /// Controls run serially. Routine notices request one refresh after accepted
   /// controls; they never cancel a control or supersede its committed result.
   private func startWork() {
     guard active, work == nil, desiredSharing != nil || refreshRequested else { return }
-    let current = generation
     busy = true
     acting = desiredSharing != nil
     work = Task {
       defer {
-        if current == generation {
+        if !Task.isCancelled {
           work = nil
           busy = false
           acting = false
         }
       }
       var controlFailure: String?
-      while isCurrent(current) {
+      while isCurrent() {
         if let enabled = desiredSharing {
           desiredSharing = nil
           acting = true
           do {
             let access = try await services.setSharing(enabled)
-            guard isCurrent(current) else { return }
+            guard isCurrent() else { return }
             try applyAccess(access)
             controlFailure = nil
             error = nil
           } catch {
-            guard isCurrent(current) else { return }
+            guard isCurrent() else { return }
             controlFailure = sharingMessage(error)
             self.error = controlFailure
           }
@@ -194,11 +163,11 @@ private final class SharingStatusListener: SharingListener, @unchecked Sendable 
           acting = false
           do {
             let access = try await services.refresh()
-            guard isCurrent(current) else { return }
+            guard isCurrent() else { return }
             try applyAccess(access)
             error = controlFailure
           } catch {
-            guard isCurrent(current) else { return }
+            guard isCurrent() else { return }
             self.error = sharingMessage(error)
           }
         } else {
@@ -207,18 +176,8 @@ private final class SharingStatusListener: SharingListener, @unchecked Sendable 
       }
     }
   }
-  private func observe() {
-    let callback = SharingStatusListener { [weak self] in
-      Task { @MainActor [weak self] in
-        guard let self, self.active else { return }
-        self.updateStatus()
-      }
-    }
-    listener = callback
-    client?.listen(listener: callback)
-  }
   private func updateStatus() {
-    status = client?.status()
+    status = active ? services.entry() : nil
   }
   @discardableResult public func create() -> Bool { setSharing(true) }
   public func stop() { _ = setSharing(false) }
@@ -238,6 +197,7 @@ private final class SharingStatusListener: SharingListener, @unchecked Sendable 
   }
 
   public static func join(_ link: String) async throws -> URL {
+    try await SharingAccount.shared.signInToJoin()
     _ = try await SharingAccount.shared.token()
     let entry = try await PopLibrary.shared.join(link: link)
     return URL(fileURLWithPath: entry.path)

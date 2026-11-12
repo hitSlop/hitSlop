@@ -1,4 +1,3 @@
-import Combine
 import Foundation
 import PopCore
 import PopCoreBinding
@@ -9,77 +8,29 @@ import WidgetKit
 
 @MainActor final class PhoneWidgetPublisher {
   private let cache = try? WidgetCache.shared()
-  private var subscriptions: Set<AnyCancellable> = []
-  private var entries: [LibraryEntry] = []
-  /// A saved document's debounced refresh. A newer save replaces it; only the current one clears itself.
-  private var pending: [String: (version: UUID, task: Task<Void, Never>)] = [:]
-  private var tail: Task<Void, Never>?
+  private var library: WidgetLibraryIndex?
+  private lazy var publisher = WidgetPublisher { [weak self] in self?.report($0) }
   private var backgroundRefreshes = 0
   private var captureAllowed: Bool {
     UIApplication.shared.applicationState == .active || backgroundRefreshes > 0
   }
-  private var lifetime = UUID()
-  private var indexRevision = UUID()
-  private var account = ""
   /// The live session for a document, on screen or still closing.
   private let session: (URL) -> DocumentSession?
 
   init(session: @escaping (URL) -> DocumentSession?) {
     self.session = session
-    PopLibrary.shared.$accountIdentity.sink { [weak self] in self?.accountChanged($0) }.store(in: &subscriptions)
-    PopLibrary.shared.$entries.sink { [weak self] in self?.libraryChanged($0) }.store(in: &subscriptions)
-  }
-
-  private func accountChanged(_ account: String) {
-    guard !account.isEmpty, account != self.account, let cache else { return }
-    self.account = account
-    lifetime = UUID()
-    indexRevision = UUID()
-    for save in pending.values { save.task.cancel() }
-    pending.removeAll()
-    let marker = cache.root.appendingPathComponent("account")
-    do {
-      let previous = try? String(contentsOf: marker, encoding: .utf8)
-      if previous != account {
-        try cache.clear()
-        WidgetCenter.shared.reloadTimelines(ofKind: WidgetCache.kind)
-      }
-      try FileManager.default.createDirectory(at: cache.root, withIntermediateDirectories: true)
-      try Data(account.utf8).write(to: marker, options: .atomic)
-      if account != "unavailable" {
-        libraryChanged(PopLibrary.shared.entries)
-        foreground()
-      }
-    } catch { report(error) }
-  }
-
-  private func libraryChanged(_ next: [LibraryEntry]) {
-    let previous = Dictionary(uniqueKeysWithValues: entries.map { ($0.id, $0.version) })
-    entries = next
-    guard !account.isEmpty, account != "unavailable", let cache else { return }
-    let revision = UUID()
-    indexRevision = revision
-    let started = lifetime
-    let visible = next.filter { !$0.deleted }
-    let ids = Set(visible.map(\.id))
-    var removed = false
-    do {
-      for record in cache.records() where !ids.contains(record.id) {
-        try cache.remove(libraryID: record.id)
-        removed = true
-      }
-    } catch { report(error) }
-    if removed { WidgetCenter.shared.reloadTimelines(ofKind: WidgetCache.kind) }
-    Task {
-      do {
-        let index = try await DocumentArtworkRenderer.libraryIndex(entries: visible)
-        guard lifetime == started, indexRevision == revision else { return }
-        try cache.writeLibraryIndex(index)
-      } catch { report(error) }
-    }
-    let changed = Set(visible.filter { previous[$0.id] != $0.version }.map(\.id))
-    if UIApplication.shared.applicationState == .active && backgroundRefreshes == 0 {
-      Task { await refresh(ids: changed) }
+    if let cache {
+      library = WidgetLibraryIndex(
+        cache: cache, publisher: publisher,
+        reload: { WidgetCenter.shared.reloadTimelines(ofKind: WidgetCache.kind) },
+        report: { [weak self] in self?.report($0) },
+        changed: { [weak self] ids in
+          guard let self, UIApplication.shared.applicationState == .active, self.backgroundRefreshes == 0 else {
+            return
+          }
+          Task { await self.refresh(ids: ids) }
+        })
+      library?.observe(PopLibrary.shared)
     }
   }
 
@@ -96,91 +47,59 @@ import WidgetKit
 
   func saved(_ session: DocumentSession) {
     guard UIApplication.shared.applicationState == .active, backgroundRefreshes == 0 else { return }
-    guard let entry = PopLibrary.shared.entry(at: session.file.url), !entry.deleted else { return }
-    pending[entry.id]?.task.cancel()
-    let version = UUID()
-    let task = Task { [weak self] in
-      do { try await Task.sleep(for: .seconds(1)) } catch { return }
-      // An older save woken after a newer one replaced it leaves the newer one in place.
-      guard let self, pending[entry.id]?.version == version else { return }
-      pending[entry.id] = nil
-      await refresh(ids: [entry.id])
+    guard let entry = library?.entry(at: session.file.url), !entry.deleted else { return }
+    publisher.saved(key: entry.id) { [weak self] in
+      await self?.refresh(ids: [entry.id])
     }
-    pending[entry.id] = (version, task)
   }
 
   func closing(_ session: DocumentSession) async {
-    guard let entry = PopLibrary.shared.entry(at: session.file.url), !entry.deleted else { return }
-    pending.removeValue(forKey: entry.id)?.task.cancel()
+    guard let entry = library?.entry(at: session.file.url), !entry.deleted else { return }
+    publisher.cancelSave(key: entry.id)
     await refresh(ids: [entry.id])
   }
 
-  private func placedIDs() async -> Set<String> {
-    do {
-      let configurations: [WidgetInfo] = try await withCheckedThrowingContinuation { continuation in
-        WidgetCenter.shared.getCurrentConfigurations { continuation.resume(with: $0) }
-      }
-      return Set(
-        configurations.filter { $0.kind == WidgetCache.kind }.compactMap {
-          $0.widgetConfigurationIntent(of: PopWidgetIntent.self)?.pop?.id
-        })
-    } catch {
-      report(error)
-      return []
-    }
-  }
-
   private func refresh(ids: Set<String>?) async {
-    guard !Task.isCancelled, captureAllowed else { return }
-    let started = lifetime
-    let placed = await placedIDs()
-    guard !Task.isCancelled, captureAllowed, lifetime == started else { return }
+    guard !Task.isCancelled, captureAllowed, let library else { return }
+    let started = library.lifetime
+    let placed = await PopWidgetIntent.placedDocumentIDs()
+    guard !Task.isCancelled, captureAllowed, library.lifetime == started else { return }
     let requested = ids.map { placed.intersection($0) } ?? placed
     guard !requested.isEmpty else { return }
-    let previous = tail
-    let task = Task { [self] in
-      await previous?.value
+    await publisher.serialized { [self] in
       for id in requested {
         guard !Task.isCancelled, captureAllowed else { return }
-        guard lifetime == started, account != "unavailable", !account.isEmpty, let cache,
-          let entry = entries.first(where: { $0.id == id && !$0.deleted })
+        guard library.lifetime == started, let cache,
+          let entry = library.entry(id: id), entry.downloaded
         else { continue }
         do {
           let url = URL(fileURLWithPath: entry.path)
-          let version = try await DocumentArtworkRenderer.widgetSourceVersion(url: url)
-          try Task.checkCancellation()
-          guard captureAllowed else { return }
-          guard lifetime == started, cache.record(id: id)?.sourceVersion != version else { continue }
           let capturedAt = Date()
-          let capture: DocumentWidgetCapture
-          if let open = session(url) {
-            guard open.isReady else { continue }
-            capture = try await DocumentArtworkRenderer.widgetCapture(session: open)
-          } else {
-            capture = try await DocumentArtworkRenderer.widgetCapture(url: url)
-          }
-          try Task.checkCancellation()
-          guard captureAllowed else { return }
-          guard lifetime == started, let current = entries.first(where: { $0.id == id && !$0.deleted }) else {
-            continue
-          }
-          let previousGeneration = cache.record(id: id)?.generation
-          let record = try cache.publish(
-            libraryID: id, title: current.title, images: capture.images, capturedAt: capturedAt,
-            sourceVersion: capture.sourceVersion)
-          if record.generation != previousGeneration { WidgetCenter.shared.reloadTimelines(ofKind: WidgetCache.kind) }
+          try await publisher.refresh(
+            url: url, currentVersion: { cache.record(id: id)?.sourceVersion },
+            valid: {
+              self.captureAllowed && library.lifetime == started && library.entry(id: id)?.path == entry.path
+            },
+            render: {
+              if let open = self.session(url) {
+                guard open.isReady else { throw CancellationError() }
+                return try await DocumentArtworkRenderer.widgetCapture(session: open)
+              }
+              return try await DocumentArtworkRenderer.widgetCapture(url: url)
+            },
+            publish: { capture in
+              guard let current = library.entry(id: id) else { return false }
+              let previous = cache.record(id: id)?.generation
+              let record = try cache.publish(
+                libraryID: id, title: current.title, images: capture.images, capturedAt: capturedAt,
+                sourceVersion: capture.sourceVersion)
+              return record.generation != previous
+            }, reload: { WidgetCenter.shared.reloadTimelines(ofKind: WidgetCache.kind) })
         } catch {
           if Task.isCancelled { return }
           report(error)
         }
       }
-    }
-    tail = task
-    // A cancelled refresh stops only its own captures; a closing document's capture goes on.
-    await withTaskCancellationHandler {
-      await task.value
-    } onCancel: {
-      task.cancel()
     }
   }
 

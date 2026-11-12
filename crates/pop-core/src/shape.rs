@@ -1,18 +1,21 @@
 //! Window silhouettes: the manifest's radius grammar and bounded SVG path data, parsed
 //! and normalized once. Native builds its path from the output; authoring validates
 //! through WASM. This module is independent of Loro and of document semantics.
-use crate::{Code, Error, Result, err};
+use crate::{Result, err};
 use kurbo::{Arc, PathEl, Point, SvgArc, Vec2};
+use pop_contracts::Error;
+use pop_contracts::wire::Code;
 use serde::Deserialize;
 use serde_json::Value;
 use svgtypes::{PathParser, PathSegment};
 
-pub use pop_contracts::shape::*;
+use pop_contracts::shape::{FillRule, Length, Segment, Shape, Silhouette};
 
 /// Approximation target in logical points at the declared window size.
-use crate::wire::SHAPE_ARC_TOLERANCE as ARC_TOLERANCE;
-use crate::wire::{SHAPE_COMMANDS as MAX_COMMANDS, SHAPE_SEGMENTS as MAX_SEGMENTS};
-use crate::wire::{SHAPE_PATH, SHAPE_RADIUS, SHAPE_VIEW_BOX};
+use crate::wire::{
+    SHAPE_ARC_TOLERANCE as ARC_TOLERANCE, SHAPE_COMMANDS as MAX_COMMANDS, SHAPE_PATH, SHAPE_RADIUS,
+    SHAPE_SEGMENTS as MAX_SEGMENTS, SHAPE_VIEW_BOX,
+};
 
 fn invalid() -> Error {
     err(Code::InvalidShape, "Invalid window silhouette")
@@ -22,18 +25,20 @@ fn finite(values: &[f64]) -> Result<()> {
     if values.iter().all(|v| v.is_finite() && (v * SHAPE_VIEW_BOX).is_finite()) { Ok(()) } else { Err(invalid()) }
 }
 
-/// Checks a manifest `shape` given as JSON text (`None` for the default rounded corners),
-/// as authoring validates it.
-pub fn validate(shape: Option<&str>, width: f64, height: f64) -> Result<()> {
-    let shape: Option<Value> = shape.map(serde_json::from_str).transpose().map_err(|_| invalid())?;
-    silhouette(shape.as_ref(), width, height).map(|_| ())
-}
 /// The silhouette for a manifest `shape` (or `None` for the default rounded corners) on a
 /// window of `width` × `height` points.
 pub fn silhouette(shape: Option<&Value>, width: f64, height: f64) -> Result<Silhouette> {
     let shape = match shape {
         None => Shape::Radius(crate::wire::DEFAULT_WINDOW_RADIUS.into()),
-        Some(value) => Shape::deserialize(value).map_err(|_| invalid())?,
+        Some(value) => {
+            if value
+                .as_object()
+                .is_some_and(|map| map.keys().any(|key| !["path", "viewBox", "fillRule"].contains(&key.as_str())))
+            {
+                return Err(invalid());
+            }
+            Shape::deserialize(value).map_err(|_| invalid())?
+        }
     };
     normalize(shape, width, height)
 }

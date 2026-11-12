@@ -41,13 +41,17 @@ pub enum WindowInput {
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
 pub struct BuildDeclaration {
     pub metadata: AppMetadata,
+    #[serde(deserialize_with = "authoring_window")]
     pub window: WindowInput,
+    #[serde(deserialize_with = "authoring_theme")]
     pub theme: Vec<ThemeInput>,
     #[cfg_attr(feature = "ts", ts(type = "unknown"))]
     pub document: Value,
     #[cfg_attr(feature = "ts", ts(type = "unknown"))]
     pub initial: Value,
+    #[serde(deserialize_with = "authoring_commands")]
     pub commands: Vec<CommandInput>,
+    #[serde(deserialize_with = "authoring_views")]
     pub views: Views,
     /// Devices and host services the app uses; absent means none. Unknown values are
     /// refused here, at authoring, because only implemented capabilities are variants.
@@ -136,4 +140,56 @@ impl BuildInput {
         crate::app::requirements(markers.package_format.into(), markers.runtime_abi.into())?;
         serde_json::from_str(input).map_err(|e| crate::err(super::Code::InvalidRequest, e))
     }
+}
+
+impl BuildRoles {
+    pub fn program(&self, role: crate::media::ProgramRole) -> Option<&str> {
+        use crate::media::ProgramRole;
+        match role {
+            ProgramRole::Ui => Some(&self.ui),
+            ProgramRole::Commands => self.commands.as_deref(),
+            ProgramRole::Widget => self.widget.as_deref(),
+            ProgramRole::Icon => self.icon.as_deref(),
+            ProgramRole::Export => self.export.as_deref(),
+            ProgramRole::Preview => self.preview.as_deref(),
+        }
+    }
+}
+
+fn known(value: &Value, fields: &[&str]) -> Result<(), String> {
+    if let Some(map) = value.as_object()
+        && let Some(name) = map.keys().find(|name| !fields.contains(&name.as_str()))
+    {
+        return Err(format!("unknown field `{name}`"));
+    }
+    Ok(())
+}
+fn authoring_window<'de, D: serde::Deserializer<'de>>(d: D) -> Result<WindowInput, D::Error> {
+    let value = Value::deserialize(d)?;
+    if let Some(shape) = value.get("shape") {
+        known(shape, &["path", "viewBox", "fillRule"]).map_err(serde::de::Error::custom)?;
+    }
+    serde_json::from_value(value).map_err(serde::de::Error::custom)
+}
+fn authoring_theme<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<ThemeInput>, D::Error> {
+    let value = Value::deserialize(d)?;
+    for token in value.as_array().into_iter().flatten() {
+        known(token, &["token", "color"]).map_err(serde::de::Error::custom)?;
+    }
+    serde_json::from_value(value).map_err(serde::de::Error::custom)
+}
+fn authoring_commands<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<CommandInput>, D::Error> {
+    let value = Value::deserialize(d)?;
+    for command in value.as_array().into_iter().flatten() {
+        known(command, &["name", "description", "args"]).map_err(serde::de::Error::custom)?;
+    }
+    serde_json::from_value(value).map_err(serde::de::Error::custom)
+}
+fn authoring_views<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Views, D::Error> {
+    let value = Value::deserialize(d)?;
+    known(&value, &["preview", "export", "icon", "widget"]).map_err(serde::de::Error::custom)?;
+    if let Some(widget) = value.get("widget") {
+        known(widget, &["refreshMinutes"]).map_err(serde::de::Error::custom)?;
+    }
+    serde_json::from_value(value).map_err(serde::de::Error::custom)
 }

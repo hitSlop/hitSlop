@@ -7,8 +7,8 @@ impl Store {
     pub fn put_attachment(&self, bytes: &[u8]) -> Result<Attachment> {
         self.check(true)?;
         let attachment = Attachment::from_bytes(bytes)?;
-        self.connected(&mut lock(&self.backing).conn, |conn| self.store_attachment(conn, &attachment.id, bytes))?;
-        lock(&self.account).changed = true;
+        self.connected(&mut self.backing.borrow_mut().conn, |conn| self.store_attachment(conn, &attachment.id, bytes))?;
+        self.account.borrow_mut().changed = true;
         Ok(attachment)
     }
 
@@ -20,11 +20,11 @@ impl Store {
             let (count, _, total) = rows::attachment_sizes(&tx)?;
             if !file::attachments_fit(count + 1, bytes.len() as i64, total + bytes.len() as i64) {
                 return Err(rejected(
-                    crate::Code::TooLarge,
+                    pop_contracts::wire::Code::TooLarge,
                     format!(
                         "Document attachment limit reached ({} MiB or {} files)",
-                        crate::ATTACHMENT_BYTES >> 20,
-                        crate::ATTACHMENT_COUNT
+                        pop_contracts::wire::ATTACHMENT_BYTES >> 20,
+                        pop_contracts::wire::ATTACHMENT_COUNT
                     ),
                 ));
             }
@@ -36,11 +36,11 @@ impl Store {
     /// An attachment's bytes, verified against its identity.
     pub fn attachment(&self, id: &str) -> Result<Vec<u8>> {
         self.check(false)?;
-        if !crate::wire::valid_attachment_id(id) {
-            return Err(rejected(crate::Code::InvalidId, "Invalid attachment ID"));
+        if !pop_contracts::wire::valid_attachment_id(id) {
+            return Err(rejected(pop_contracts::wire::Code::InvalidId, "Invalid attachment ID"));
         }
         self.read(|conn| stored_attachment(conn, id))?
-            .ok_or_else(|| rejected(crate::Code::PathNotFound, "Attachment not found"))
+            .ok_or_else(|| rejected(pop_contracts::wire::Code::PathNotFound, "Attachment not found"))
     }
 
     /// Every stored attachment, by identity.
@@ -57,10 +57,10 @@ impl Store {
     pub fn reclaim_attachments(&self) -> Result<usize> {
         self.check(true)?;
         // Another replica can still reference a shared document's attachment.
-        if !lock(&self.account).changed || self.is_shared() {
+        if !self.account.borrow().changed || self.is_shared() {
             return Ok(0);
         }
-        self.connected(&mut lock(&self.backing).conn, |conn| {
+        self.connected(&mut self.backing.borrow_mut().conn, |conn| {
             let tx = file::begin_write(conn, "reclaim attachments")?;
             let deleted = delete_unreferenced(&tx, None, self.app.app.spec())?;
             tx.commit()?;
@@ -70,7 +70,7 @@ impl Store {
 }
 /// Deletes the attachments `doc`, or the saved state when none is given, does not
 /// reference (`Document::attachment_references`), inside the caller's transaction.
-pub(super) fn delete_unreferenced(conn: &Connection, doc: Option<&Document>, app: &crate::AppSpec) -> Result<usize> {
+pub(super) fn delete_unreferenced(conn: &Connection, doc: Option<&Document>, app: &pop_core::AppSpec) -> Result<usize> {
     let stored: Vec<String> = rows::attachment_list(conn)?.into_iter().map(|(id, _, _)| id).collect();
     if stored.is_empty() {
         return Ok(0);
@@ -101,10 +101,10 @@ pub struct Attachment {
 impl Attachment {
     /// The same limits, identity and passive-media classification used when storing a blob.
     pub fn from_bytes(bytes: &[u8]) -> Result<Self> {
-        if bytes.len() > crate::ATTACHMENT_FILE_BYTES {
+        if bytes.len() > pop_contracts::wire::ATTACHMENT_FILE_BYTES {
             return Err(rejected(
-                crate::Code::TooLarge,
-                format!("Attachment exceeds {} MiB", crate::ATTACHMENT_FILE_BYTES >> 20),
+                pop_contracts::wire::Code::TooLarge,
+                format!("Attachment exceeds {} MiB", pop_contracts::wire::ATTACHMENT_FILE_BYTES >> 20),
             ));
         }
         Ok(Self {

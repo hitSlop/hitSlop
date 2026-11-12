@@ -10,9 +10,26 @@ import PopWidgets
 @MainActor public enum PopRenderer {
   static let captureQueue = DispatchQueue(
     label: "click.dotpop.capture-render", qos: .utility, attributes: .concurrent)
-  static let nativeRuntime: Result<CaptureRuntime, Error> = Result {
-    guard let evaluator = DocumentOwner.evaluatorPath else { throw PopFailure("Capture renderer is missing") }
-    return try CaptureRuntime(evaluatorPath: evaluator)
+
+  public static func exportDocument(session: DocumentSession, format: ExportFormat, output: URL) async throws {
+    let runtime = try DocumentArtworkRenderer.captureRuntime()
+    do {
+      try await session.withCaptureSnapshot { source in
+        try await PopPreparation.run(on: captureQueue) {
+          try runtime.exportSaved(path: source.path, format: format, output: output.path)
+        }
+      }
+    } catch CoreError.Failure(let failure) {
+      if failure.reason == .exists {
+        let exists = OwnerFailure(
+          kind: .rejected,
+          message:
+            "A file already exists at “\(output.lastPathComponent)”. Export cannot replace existing files. Choose a different name or location.",
+          reason: .exists, opIndex: nil, path: [])
+        throw PopDiagnosticError(exists, diagnostic: .init(.rejection, reason: .operationRejected))
+      }
+      throw PopDiagnosticError(failure, diagnostic: .classify(failure))
+    }
   }
 
   public static func previewPNGData(url: URL) async throws -> Data {
@@ -57,7 +74,7 @@ import PopWidgets
 
   /// Every output in one restricted Rust child, from the same saved source.
   static func captureNative(url: URL, outputs: [CaptureOutput]) async throws -> [CaptureResult] {
-    let runtime = try nativeRuntime.get()
+    let runtime = try DocumentArtworkRenderer.captureRuntime()
     let results = try await PopPreparation.run(on: captureQueue) {
       try runtime.renderSaved(path: url.path, outputs: outputs)
     }
@@ -102,24 +119,23 @@ import PopWidgets
     -> PopRenderedArtwork
   {
     let capturedAt = Date()
-    let widgetIdentity = widgetURL.flatMap { try? WidgetCache.identity($0) }
     if !renderArtwork {
-      if let widgetURL, let widgetIdentity {
+      if let widgetURL {
         await PopWidgetPublisher.shared.capture(
-          renderer: session, url: widgetURL, identity: widgetIdentity, capturedAt: capturedAt)
+          renderer: session, url: widgetURL, capturedAt: capturedAt)
       }
       return PopRenderedArtwork(preview: nil, icon: nil)
     }
     do {
       return try await session.withCaptureSnapshot(trace: trace) { source in
-        if let widgetURL, let widgetIdentity, let options = session.file.views.widget,
-          PopWidgetPublisher.shared.enabled
+        if let widgetURL, let options = session.file.views.widget,
+          PopWidgetPublisher.shared.needsCapture(url: widgetURL, edited: true)
         {
           var artwork = PopRenderedArtwork(preview: nil, icon: nil)
           // The publisher captures its lifetime before any asynchronous rendering.
           // A widget failure must not discard successful preview/icon output.
           await PopWidgetPublisher.shared.capture(
-            url: widgetURL, identity: widgetIdentity, capturedAt: capturedAt, options: options
+            url: widgetURL, capturedAt: capturedAt, options: options
           ) {
             let results: [CaptureResult]
             do { results = try await captureNative(url: source, outputs: [.preview, .icon, .widgets]) } catch {
@@ -155,7 +171,7 @@ import PopWidgets
   }
   typealias WidgetCapture = DocumentWidgetCapture
   static func widgetSourceVersion(url: URL) async throws -> String {
-    let runtime = try nativeRuntime.get()
+    let runtime = try DocumentArtworkRenderer.captureRuntime()
     return try await PopPreparation.run(on: captureQueue) {
       try runtime.savedWidgetVersion(path: url.path)
     }

@@ -33,7 +33,9 @@ Writes are asynchronous, so avoid these patterns:
 
 Never replace an existing identity-bearing list through a containing object. Use insert/remove/move. Subtract from a counter with increment(-n); there is no concurrent reset API. History is bounded; undo is for the current session, not a durable audit log.
 
-Rust owns Loro and storage in both the native app and browser development. WebViews receive snapshots and patches; `pop dev` connects Vite to a native Rust owner of a disposable file. WASM runs SDK tests and the local Chrome browser host (`pop open --browser`), using the same Rust owner and SQLite store. Browser copies persist in OPFS and download as complete `.pop` files; `pop dev` remains a native-owner preview. Build packs one SQLite template: scalar catalog metadata, one immutable definition, initial values, `ui.js`, optional `ui.css` and `commands.js`, content-addressed media and artwork. Svelte and the app SDK are bundled; the host supplies the page shell. Initial values become a seed Loro checkpoint. No source tree or dependency installation is needed to open it.
+Rust owns Loro and storage. WebViews receive snapshots and patches; `pop dev` connects Vite to a native Rust owner of a disposable file. WASM runs SDK tests only. Build packs one SQLite template: scalar catalog metadata, one immutable definition, initial values, `ui.js`, optional `ui.css` and `commands.js`, content-addressed media and artwork. Svelte and the app SDK are bundled; the host supplies the page shell. Initial values become a seed Loro checkpoint. No source tree or dependency installation is needed to open it in the Mac or iPhone
+app. Sharing requires Sign in with Apple to create or join; it uploads the embedded app,
+retained history and attachments. A share link’s web page points to the apps.
 
 Start anywhere with `bunx @hitslop/pop init NAME`, then `cd NAME` and `bun install`. Use the generated `bun run check/dev/build/register` scripts. Bun is the only JavaScript runtime required. check/dev/build/register run on macOS or Linux; on both platforms, build and register also render the Preview and Icon artwork you do not supply, and PNG/PDF export renders a closed document, with no Mac app, Swift or Xcode. `pop open` needs the compatible installed pop Mac app, which is also where the bundled starter templates come from. Data commands run through the native Rust engine on macOS or Linux. Preview state is disposable; rerun dev to rebuild source. Create a writable document before editing with `pop create --from TEMPLATE --output PATH`, where TEMPLATE is a registered template's slug (`pop templates` lists them) or a built template's path. Agents use describe/call for the app's named commands, and schema/get/apply/batch for direct field edits. Supply an explicit `id` to address an inserted row from later CLI commands. After an unknown outcome, inspect current state before another edit; never blindly replay the insertion.
 
@@ -92,7 +94,7 @@ For editor presentation, call `const environment = getEnvironment()` from `@hits
 during component initialization. Read `environment.current.platform` (`macos`, `ios`,
 `android`, `windows`, `linux`, `unknown`), `.device` (`phone`, `tablet`, `desktop`,
 `unknown`) and `.layout` (`compact` below 640 CSS px of the document viewport, otherwise
-`regular`). Native hosts report identity; browsers use `unknown`.
+`regular`). Native hosts report identity; the `pop dev` Browser preset uses `unknown`.
 A narrow Mac window remains desktop/macOS. Use layout for available space and ordinary
 pointer/hover queries for input differences; identity does not grant capabilities.
 Keep reads reactive rather than destructuring `current` once. Editor CSS can select
@@ -121,7 +123,7 @@ never request devices. Playback and ordinary file import need no capability.
 recording on-device in the Mac app; omit locale for the person's default. Declare `speech`;
 microphone is separate. Save returned `text` through document handles. Use `isSpeechError`
 for `unavailable` (reason `notDeclared`, `host`, `system`, `locale`, `permission`, `format`), `cancelled`
-or `failed`. Previews and browser copies return `unavailable`/`host`; native recognition never
+or `failed`. Previews return `unavailable`/`host`; native recognition never
 falls back to uploading a clip. The Mac provider transcribes m4a, mp3, wav, flac, mp4 and mov;
 other formats return `unavailable`/`format` before permission is requested. Let the host
 report support instead of copying its format list. Locale separators normalize from `_` to `-`. Keep recording/playback useful when transcription is unavailable. A capability

@@ -10,15 +10,14 @@
 //! Runs where the shipped engine runs (darwin-arm64); `POP_COMPAT_SEEDS` and
 //! `POP_COMPAT_STEPS` size it.
 use crate::support;
-use pop_runtime::Origin;
-use pop_runtime::store::{Mode, Store};
+use pop_core::Origin;
+use pop_storage::store::{Mode, Store};
 use serde_json::{Value, json};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
-use support::ApplyJson;
 use support::generate::intent;
-use support::next;
+use support::{ApplyJson, next};
 
 fn sorted(path: &Path) -> Vec<PathBuf> {
     let mut found: Vec<PathBuf> =
@@ -32,7 +31,7 @@ fn released_engine(entry: &Path, into: &Path) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let release: Value = serde_json::from_slice(&std::fs::read(entry.join("release.json")).unwrap()).unwrap();
     let hash = release["writer"]["sha256"].as_str().expect("missing writer SHA-256");
-    assert!(hash.len() == 64 && hash.bytes().all(|byte| byte.is_ascii_hexdigit()), "invalid writer SHA-256");
+    assert!(pop_contracts::wire::valid_attachment_id(hash), "invalid writer SHA-256");
     let cache = std::env::var_os("POP_COMPAT_WRITERS").map(PathBuf::from).unwrap_or_else(|| {
         PathBuf::from(std::env::var_os("HOME").expect("HOME is required for the writer cache"))
             .join(".cache/pop/compat-writers")
@@ -47,11 +46,7 @@ fn released_engine(entry: &Path, into: &Path) -> PathBuf {
         ),
     };
     use sha2::{Digest, Sha256};
-    assert_eq!(
-        Sha256::digest(&bytes).iter().map(|byte| format!("{byte:02x}")).collect::<String>(),
-        hash,
-        "cached writer hash differs from release.json"
-    );
+    assert_eq!(pop_contracts::hex(&Sha256::digest(&bytes)), hash, "cached writer hash differs from release.json");
     let copy = into.join("pop-engine");
     std::fs::copy(&writer, &copy).unwrap_or_else(|e| panic!("{}: no candidate writer: {e}", entry.display()));
     std::fs::set_permissions(&copy, std::fs::Permissions::from_mode(0o755)).unwrap();
@@ -138,7 +133,7 @@ fn documents_each_release_writes_read_the_same_here_and_take_edits() {
 
                 // And it edits it: a generated batch, saved, trimmed on close, reopened.
                 let store = Store::open(&document, Mode::Document).unwrap();
-                let mut doc = store.document().unwrap();
+                let mut doc = store.open_document().unwrap();
                 let mut edited = None;
                 for _ in 0..16 {
                     let op = intent(&mut rng, &mut serial, &descriptor, &released);

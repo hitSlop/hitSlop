@@ -11,31 +11,32 @@ import WidgetKit
   public static let shared = PopWidgetPublisher()
   public private(set) var enabled = false
   private var scheduler: NSBackgroundActivityScheduler?
-  private var tail: Task<Void, Never>?
   private var cache: WidgetCache?
-  private var openSession: (String) -> DocumentSession? = { _ in nil }
+  private var openSession: (URL) -> DocumentSession? = { _ in nil }
   private var activeSelections: () async -> Set<String> = { [] }
-  private var savedCaptures: [String: Task<Void, Never>] = [:]
-  private var savedVersions: [String: UUID] = [:]
   private var watchers: [String: DispatchSourceFileSystemObject] = [:]
   private var changedCaptures: [String: Task<Void, Never>] = [:]
   private var changedVersions: [String: UUID] = [:]
   private var lifetime = UUID()
-  var refreshLocation: (WidgetCache, String, URL) throws -> Bool = { try $0.refreshLocation(id: $1, url: $2) }
+  private var library: WidgetLibraryIndex?
   private var reload: () -> Void = { WidgetCenter.shared.reloadTimelines(ofKind: WidgetCache.kind) }
   private let logger = Logger(subsystem: "click.dotpop", category: "widgets")
+  private lazy var publisher = WidgetPublisher { [weak self] error in
+    self?.logger.error("Widget capture retained its previous image: \(error.localizedDescription, privacy: .private)")
+  }
 
   public func start(
-    activeSelections: @escaping () async -> Set<String>, openSession: @escaping (String) -> DocumentSession?
+    activeSelections: @escaping () async -> Set<String>, openSession: @escaping (URL) -> DocumentSession?
   ) {
     guard let cache = try? WidgetCache.shared() else { return }
     start(cache: cache, activeSelections: activeSelections, openSession: openSession)
+    library?.observe(PopLibrary.shared)
   }
 
   func start(
-    cache: WidgetCache, activeSelections: @escaping () async -> Set<String> = { [] },
+    cache: WidgetCache, entries: [LibraryEntry] = [], activeSelections: @escaping () async -> Set<String> = { [] },
     reload: @escaping () -> Void = { WidgetCenter.shared.reloadTimelines(ofKind: WidgetCache.kind) },
-    openSession: @escaping (String) -> DocumentSession?
+    openSession: @escaping (URL) -> DocumentSession?
   ) {
     guard !enabled else { return }
     self.cache = cache
@@ -44,6 +45,16 @@ import WidgetKit
     self.openSession = openSession
     self.activeSelections = activeSelections
     self.reload = reload
+    library = WidgetLibraryIndex(
+      cache: cache, publisher: publisher, entries: entries, reload: reload,
+      report: { [weak self] in self?.logger.error("Widget index failed: \($0.localizedDescription, privacy: .private)")
+      },
+      changed: { [weak self] _ in
+        guard let self else { return }
+        for watcher in self.watchers.values { watcher.cancel() }
+        self.watchers.removeAll()
+        Task { await self.refreshDue() }
+      })
     let activity = NSBackgroundActivityScheduler(identifier: "com.hitslop.widget-capture")
     activity.interval = Double(widgetLimits().minRefreshMinutes) * 60
     activity.tolerance = 5 * 60
@@ -64,9 +75,8 @@ import WidgetKit
     enabled = false
     cache = nil
     activeSelections = { [] }
-    for task in savedCaptures.values { task.cancel() }
-    savedCaptures.removeAll()
-    savedVersions.removeAll()
+    library?.invalidate()
+    library = nil
     for watcher in watchers.values { watcher.cancel() }
     watchers.removeAll()
     for task in changedCaptures.values { task.cancel() }
@@ -78,114 +88,67 @@ import WidgetKit
   /// A successful save refreshes the widget even while its editor stays open.
   /// Coalesce bursts; capture still crosses the owner's flush/snapshot boundary.
   func saved(_ session: DocumentSession) {
-    guard enabled, session.file.views.widget != nil,
-      let identity = try? WidgetCache.identity(session.file.url)
-    else { return }
-    savedCaptures[identity]?.cancel()
-    let version = UUID()
-    savedVersions[identity] = version
-    savedCaptures[identity] = Task { @MainActor [weak self, weak session] in
-      defer {
-        if let self, self.savedVersions[identity] == version {
-          self.savedCaptures[identity] = nil
-          self.savedVersions[identity] = nil
-        }
-      }
-      do { try await Task.sleep(for: .seconds(1)) } catch { return }
-      guard let self, let session, self.enabled, session.isReady else { return }
-      await self.serialized { [self, weak session] in
-        guard savedVersions[identity] == version, let session, session.isReady else { return }
-        if let record = cache?.record(for: session.file.url),
-          let sourceVersion = try? await PopRenderer.widgetSourceVersion(url: session.file.url),
-          record.sourceVersion == sourceVersion
-        {
-          return
-        }
-        guard savedVersions[identity] == version, enabled, session.isReady else { return }
-        await capture(renderer: session, url: session.file.url, identity: identity, capturedAt: Date())
-      }
+    guard enabled, session.file.views.widget != nil, let entry = library?.entry(at: session.file.url) else { return }
+    publisher.saved(key: entry.id) { [weak self, weak session] in
+      guard let self, let session, session.isReady else { return }
+      await self.refresh(ids: [entry.id], scheduledIDs: [])
     }
   }
 
   func opened(_ session: DocumentSession) {
-    guard enabled, session.file.views.widget != nil else { return }
-    if let record = cache?.record(for: session.file.url) {
-      sourceChanged(id: record.id)
-    } else {
-      saved(session)
-    }
+    guard enabled, session.file.views.widget != nil, let entry = library?.entry(at: session.file.url) else { return }
+    if cache?.record(id: entry.id) != nil { sourceChanged(id: entry.id) } else { saved(session) }
   }
 
   func needsCapture(url: URL, edited: Bool) -> Bool {
-    enabled && (edited || cache?.record(for: url) == nil)
+    guard enabled, let entry = library?.entry(at: url) else { return false }
+    return edited || cache?.record(id: entry.id) == nil
   }
 
-  public func capture(renderer: DocumentSession, url: URL, identity: String, capturedAt: Date) async {
-    guard enabled, let options = renderer.file.views.widget else { return }
-    await capture(url: url, identity: identity, capturedAt: capturedAt, options: options) {
+  public func capture(renderer: DocumentSession, url: URL, capturedAt: Date) async {
+    guard let options = renderer.file.views.widget else { return }
+    await capture(url: url, capturedAt: capturedAt, options: options) {
       try await PopRenderer.widgetCapture(session: renderer)
     }
   }
 
   func capture(
-    url: URL, identity: String, capturedAt: Date, options: WidgetOptions,
+    url: URL, capturedAt: Date, options: WidgetOptions,
     render: () async throws -> PopRenderer.WidgetCapture
   ) async {
-    guard enabled else { return }
-    let started = lifetime
-    do {
-      let capture = try await render()
-      try Task.checkCancellation()
-      guard lifetime == started else { return }
-      try publish(
-        url: url, identity: identity, capture: capture, capturedAt: capturedAt, refreshMinutes: options.refreshMinutes)
-    } catch {
-      logger.error("Widget capture retained its previous image: \(error.localizedDescription, privacy: .private)")
-    }
+    guard enabled, let library, let entry = library.entry(at: url) else { return }
+    let started = library.lifetime
+    await publisher.capture(
+      valid: { self.enabled && library.lifetime == started && library.entry(id: entry.id)?.path == entry.path },
+      render: render,
+      publish: { capture in
+        try self.publish(
+          id: entry.id, capture: capture, capturedAt: capturedAt, refreshMinutes: options.refreshMinutes)
+      }, reload: reload)
   }
-  private func serialized(_ work: @escaping @MainActor () async throws -> Void) async {
-    let previous = tail
-    let task = Task { @MainActor [self] in
-      await previous?.value
-      do { try await work() } catch {
-        logger.error("Widget capture retained its previous image: \(error.localizedDescription, privacy: .private)")
-      }
-    }
-    tail = task
-    await task.value
-  }
+
   private func publish(
-    url: URL, identity: String, capture: PopRenderer.WidgetCapture, capturedAt: Date, refreshMinutes: UInt32?,
+    id: String, capture: PopRenderer.WidgetCapture, capturedAt: Date, refreshMinutes: UInt32?,
     scheduledRefresh: Bool = false
-  )
-    throws
-  {
-    guard try WidgetCache.identity(url) == identity else {
-      throw PopFailure("The widget document moved during capture")
-    }
-    guard enabled, let cache else { return }
-    // Close captures can overlap a queued save capture. Only a scheduled refresh
-    // needs new pixels when another capture already published this exact source.
-    if !scheduledRefresh, cache.record(for: url)?.sourceVersion == capture.sourceVersion { return }
-    let previous = cache.record(for: url)?.generation
+  ) throws -> Bool {
+    guard enabled, let cache, let entry = library?.entry(id: id) else { return false }
+    if !scheduledRefresh, cache.record(id: id)?.sourceVersion == capture.sourceVersion { return false }
+    let previous = cache.record(id: id)?.generation
     let record = try cache.publish(
-      url: url, title: url.deletingPathExtension().lastPathComponent,
-      images: capture.images, capturedAt: capturedAt, refreshMinutes: refreshMinutes,
-      sourceVersion: capture.sourceVersion)
-    watch(record)
-    // A refused stale capture did not publish and must not consume a reload request.
-    if record.generation != previous { reload() }
+      libraryID: id, title: entry.title, images: capture.images, capturedAt: capturedAt,
+      refreshMinutes: refreshMinutes, sourceVersion: capture.sourceVersion)
+    watch(id: id, url: URL(fileURLWithPath: entry.path))
+    return record.generation != previous
   }
   private func refreshDue() async {
-    guard enabled, let cache else { return }
+    guard enabled else { return }
     let started = lifetime
-    if cache.pruneUnavailable() { reload() }
-    let records = cache.records()
-    let ids = Set(records.map(\.id))
+    let entries = library?.entries ?? []
+    let ids = Set(entries.map(\.id))
     for id in Array(watchers.keys) where !ids.contains(id) {
       watchers.removeValue(forKey: id)?.cancel()
     }
-    for record in records { watch(record) }
+    for entry in entries { watch(id: entry.id, url: URL(fileURLWithPath: entry.path)) }
     let scheduledIDs = await activeSelections()
     guard enabled, lifetime == started else { return }
     await refresh(ids: ids, scheduledIDs: scheduledIDs)
@@ -195,51 +158,50 @@ import WidgetKit
     let started = lifetime
     for id in ids {
       guard enabled, lifetime == started else { break }
-      await serialized { [self] in
-        guard enabled, lifetime == started, let cache, let record = cache.record(id: id),
-          let identity = record.fileIdentity
-        else { return }
-        let url = try cache.resolve(record)
-        // Location is independent of rendered content, and must catch up even when the
-        // source token is unchanged or a subsequent capture fails.
-        do {
-          if try refreshLocation(cache, id, url) { reload() }
-        } catch {
-          logger.error("Widget location could not be refreshed: \(error.localizedDescription, privacy: .private)")
+      await publisher.serialized { [self] in
+        guard enabled, lifetime == started, let library, let entry = library.entry(id: id), entry.downloaded else {
+          return
         }
-        watch(record)
-        let version = try await PopRenderer.widgetSourceVersion(url: url)
-        guard enabled, lifetime == started else { return }
-        let current = cache.record(id: id) ?? record
+        let accountLifetime = library.lifetime
+        let url = URL(fileURLWithPath: entry.path)
+        let current = cache?.record(id: id)
+        guard let options = (try? PopFile(url: url))?.views.widget else { return }
+        let requested = options.refreshMinutes
         let due: Bool
-        if (scheduledIDs ?? ids).contains(id), let requested = current.refreshMinutes {
+        if (scheduledIDs ?? ids).contains(id), let requested {
           let limits = widgetLimits()
           let interval = min(limits.maxRefreshMinutes, max(limits.minRefreshMinutes, requested))
-          due = Date().timeIntervalSince1970 - current.updatedAt >= Double(interval) * 60
+          due = Date().timeIntervalSince1970 - (current?.updatedAt ?? 0) >= Double(interval) * 60
         } else {
           due = false
         }
-        guard current.sourceVersion != version || due else { return }
         let capturedAt = Date()
-        let capture: PopRenderer.WidgetCapture
-        if let session = openSession(identity) {
-          guard session.isReady else { return }
-          capture = try await PopRenderer.widgetCapture(session: session)
-        } else {
-          capture = try await PopRenderer.widgetCapture(url: url)
-        }
-        guard lifetime == started else { return }
-        try publish(
-          url: url, identity: identity, capture: capture, capturedAt: capturedAt,
-          refreshMinutes: current.refreshMinutes, scheduledRefresh: due)
+        try await publisher.refresh(
+          url: url, currentVersion: { self.cache?.record(id: id)?.sourceVersion }, scheduled: due,
+          valid: {
+            self.enabled && self.lifetime == started && library.lifetime == accountLifetime
+              && library.entry(id: id)?.path == entry.path
+          },
+          render: {
+            if let session = self.openSession(url) {
+              guard session.isReady else { throw CancellationError() }
+              return try await PopRenderer.widgetCapture(session: session)
+            }
+            return try await PopRenderer.widgetCapture(url: url)
+          },
+          publish: { capture in
+            try self.publish(
+              id: id, capture: capture, capturedAt: capturedAt,
+              refreshMinutes: requested, scheduledRefresh: due)
+          }, reload: reload)
       }
     }
   }
 
   /// Observe saved-file activity, including writes by a closed CLI owner. The event
   /// is only a hint: the core's state/renderer token decides whether pixels need refreshing.
-  private func watch(_ record: WidgetRecord) {
-    guard enabled, watchers[record.id] == nil, let cache, let url = try? cache.resolve(record) else { return }
+  private func watch(id: String, url: URL) {
+    guard enabled, watchers[id] == nil else { return }
     let descriptor = open(url.path, O_EVTONLY)
     guard descriptor >= 0 else { return }
     let started = lifetime
@@ -249,16 +211,16 @@ import WidgetKit
       guard let self, self.enabled, self.lifetime == started else { return }
       if let source, !source.data.isDisjoint(with: [.rename, .delete, .revoke]) {
         source.cancel()
-        self.watchers[record.id] = nil
+        self.watchers[id] = nil
       }
-      self.sourceChanged(id: record.id)
+      self.sourceChanged(id: id)
     }
     source.setCancelHandler { close(descriptor) }
-    watchers[record.id] = source
+    watchers[id] = source
     source.resume()
     // Close the gap between acquiring the rendered snapshot and installing its
     // first watcher. A save in that gap must not leave the published image stale.
-    sourceChanged(id: record.id)
+    sourceChanged(id: id)
   }
 
   private func sourceChanged(id: String) {

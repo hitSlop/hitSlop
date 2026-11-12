@@ -95,7 +95,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   var pageCallTimeout = Timeouts.pageCall
   var readyTimeout = Timeouts.pageReady
   private var openingWatchdog: Task<Void, Never>?
-  public var onExport: ((ExportFormat, URL, NativeCommandDeadline) async throws -> Void)?
   private(set) var capturing = false
   /// Captures queued behind the one in progress (`withCapture`).
   private var captureQueue: [CheckedContinuation<Void, Never>] = []
@@ -136,12 +135,6 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   let owner: DocumentOwner
   public var documentID: String? { owner.documentID }
   public private(set) var sharing: DocumentSharing?
-  private final class SharedSession {
-    weak var value: DocumentSession?
-    init(_ value: DocumentSession) { self.value = value }
-  }
-  private static var sharingSessions: [String: SharedSession] = [:]
-  static func sharedSession(document: String) -> DocumentSession? { sharingSessions[document]?.value }
   private var server: NativeSocketServer?
   /// The attached page's token (see `makeWebView`).
   private(set) var view = UUID().uuidString
@@ -179,10 +172,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     observeOwner()
     configureFileSaver()
     makeWebView()
-    if let document = documentID {
-      sharing = DocumentSharing(owner: owner)
-      Self.sharingSessions[document] = SharedSession(self)
-    }
+    if documentID != nil { sharing = DocumentSharing(owner: owner) }
   }
   private func configureFileSaver() {
     fileSaver.window = { [weak self] in self?.liveWebView?.window }
@@ -586,7 +576,7 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
   /// them; otherwise the owner undoes directly.
   public func undo(redo: Bool = false) async throws {
     guard isReady else {
-      _ = try await owner.undo(redo: redo)
+      if redo { _ = try await owner.redo() } else { _ = try await owner.undo() }
       return
     }
     try await callPage(redo ? .redo : .undo)
@@ -912,21 +902,43 @@ public final class DocumentSession: NSObject, WKScriptMessageHandlerWithReply {
     liveWebView = nil
   }
 
+  private var cliCapturePrepared = false
+
   /// The socket and discovery file live as long as the owner, not the page.
   func startDiscovery() throws {
     #if os(macOS)
       guard server == nil else { return }
       server = try owner.startServer(
-        exporter: NativeExports(copy: { [weak self] output, deadline in
-          guard let self, acceptsPageWork else { throw OwnerFailure.closing }
-          try deadline.check()
-          _ = try await self.copy(to: output)
-          try deadline.check()
-        }) { [weak self] _, format, output, deadline in
-          guard let self, !closed, !closing else { throw OwnerFailure.closing }
-          guard let onExport, isReady else { throw PopFailure("Export unavailable") }
-          try await onExport(format, output, deadline)
-        })
+        page: PageBarrier(
+          settle: { [weak self] completion in
+            guard let self, !closed, !closing, isReady, completion.isActive() else {
+              _ = completion.complete(failure: .closing)
+              return
+            }
+            self.cliCapturePrepared = true
+            do {
+              let drafts = try await self.prepareClose(for: .handoff)
+              guard drafts.isEmpty else { throw PopFailure("Unresolved text drafts prevent export") }
+              guard completion.isActive() else {
+                await self.cancelClose()
+                self.cliCapturePrepared = false
+                return
+              }
+              if !completion.complete(failure: nil) {
+                await self.cancelClose()
+                self.cliCapturePrepared = false
+              }
+            } catch {
+              await self.cancelClose()
+              self.cliCapturePrepared = false
+              _ = completion.complete(failure: OwnerFailure(error))
+            }
+          },
+          resume: { [weak self] in
+            guard let self, self.cliCapturePrepared else { return }
+            await self.cancelClose()
+            self.cliCapturePrepared = false
+          }))
     #endif
   }
 

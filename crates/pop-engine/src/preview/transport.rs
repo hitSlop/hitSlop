@@ -1,14 +1,11 @@
 //! Bounded preview pipes. Only this thread touches stdin/stdout; owner callbacks never wait.
-use pop_core::preview::PreviewEvent;
+use pop_contracts::wire::preview::PreviewEvent;
 use serde_json::value::RawValue;
 use std::io::{Read, Write};
 use std::os::fd::{AsRawFd, RawFd};
 use std::os::unix::net::UnixStream;
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-    mpsc,
-};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 
 const WRITE_TIMEOUT: Duration = Duration::from_secs(5);

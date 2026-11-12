@@ -4,7 +4,6 @@ pub mod app;
 pub mod arguments;
 #[cfg(feature = "ts")]
 pub mod bindings;
-pub mod capture;
 mod check;
 pub mod describe;
 mod descriptor;
@@ -19,12 +18,11 @@ pub mod shape;
 pub mod sync;
 mod text;
 pub mod theme;
-pub mod widgets;
-mod wire;
+use pop_contracts::wire;
 
 pub use descriptor::validate;
 use descriptor::{Node, is_scalar, loro_scalar, unwrap_optional, valid_key};
-pub use document::{AppSpec, Applied, Document, HistoryVersion, LAYOUT, Origin, TextEdit};
+pub use document::{AppSpec, Applied, Document, HistoryVersion, Origin, TextEdit};
 use execute::{put, resolve};
 use identity::application_id;
 use loro::{
@@ -36,39 +34,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::Arc;
-pub use wire::browser as browser_wire;
-pub use wire::build;
-pub use wire::engine;
-pub use wire::engine::{EngineReply, EngineRequest, EngineSuccess};
-use wire::valid_id;
-pub use wire::{
-    ASSET_BYTES, ASSET_COUNT, ASSET_FILE_BYTES, ATTACHMENT_BYTES, ATTACHMENT_COUNT, ATTACHMENT_FILE_BYTES,
-    ATTACHMENT_NAME_BYTES, Code, IMAGE_PIXELS, IMAGE_SIDE, PACKAGE_FORMAT, RUNTIME_ABI, STORAGE_BYTES, STORAGE_ROWS,
-};
-pub use wire::{Anchor, Batch, Hunk, Intent, OwnerState, PatchOp, Publication, Reading, Segment, Selection, ThemeFile};
-pub use wire::{ENGINE_PROTOCOL, HostLimits, NATIVE_RESOURCE_POLICY, host_limits};
-pub use wire::{OutcomeCode, page as page_wire, preview, socket as socket_wire};
+use wire::{Anchor, Code, Hunk, Intent, PatchOp, Segment, valid_id};
 
-/// The largest JSON text the core parses: a page request, or an app's initial values.
-use wire::JSON_BYTES as MAX_JSON;
-
-pub use pop_contracts::Error;
+use pop_contracts::{Error, MAX_SAFE, encode, err, parse};
 type Result<T> = std::result::Result<T, Error>;
-fn err(code: Code, message: impl ToString) -> Error {
-    Error { code, message: message.to_string(), op_index: None, path: vec![] }
-}
 fn engine(e: impl ToString) -> Error {
     err(Code::EngineError, e)
-}
-fn parse<T: serde::de::DeserializeOwned>(s: &str) -> Result<T> {
-    if s.len() > MAX_JSON {
-        return Err(err(Code::TooLarge, "JSON exceeds size limit"));
-    }
-    serde_json::from_str(s).map_err(|e| err(Code::InvalidRequest, e))
-}
-/// JSON text of a value the core built: string keys and finite or null numbers only.
-fn encode(v: &impl Serialize) -> String {
-    serde_json::to_string(v).expect("core values encode as JSON")
 }
 /// A materialized Loro value as JSON.
 fn json(value: loro::LoroValue) -> Value {
@@ -76,14 +47,25 @@ fn json(value: loro::LoroValue) -> Value {
 }
 /// `mutex`'s value, also after a thread panicked holding it: no value guarded here is left
 /// half-changed by a panic.
-pub(crate) fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+pub fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|e| e.into_inner())
 }
-/// Fills `buffer` from the platform's randomness, without which no identity can be minted.
-fn random(buffer: &mut [u8]) {
-    getrandom::getrandom(buffer).expect("random bytes");
+/// Fills `buffer` from the platform's randomness.
+///
+/// # Errors
+/// Returns the platform error if its random source is unavailable.
+pub fn random(buffer: &mut [u8]) -> std::result::Result<(), getrandom::Error> {
+    getrandom::getrandom(buffer)
 }
-const MAX_SAFE: i64 = 9_007_199_254_740_991;
+/// A random identity encoded as lowercase hexadecimal.
+///
+/// # Errors
+/// Returns the platform error if its random source is unavailable.
+pub fn random_hex(bytes: usize) -> std::result::Result<String, getrandom::Error> {
+    let mut buffer = vec![0; bytes];
+    random(&mut buffer)?;
+    Ok(pop_contracts::hex(&buffer))
+}
 fn safe(n: i64) -> bool {
     (-MAX_SAFE..=MAX_SAFE).contains(&n)
 }
@@ -93,7 +75,3 @@ fn integer(value: &Value) -> Option<i64> {
     let n = value.as_f64()?;
     (n.is_finite() && n.fract() == 0.0 && n.abs() <= MAX_SAFE as f64).then_some(n as i64)
 }
-
-/// Identifies the core build (a hash of its sources and the lockfile), so a release can
-/// prove the app and the engine embed the same core.
-pub const BUILD_ID: &str = env!("POP_CORE_BUILD_ID");

@@ -1,8 +1,9 @@
 //! Theme rules shared by authoring validation and native writes. A theme is a palette:
 //! the colors an app declares, with overrides in the document's own Loro history.
 use crate::wire::{THEME_FILE_LIMIT, THEME_LIMIT, THEME_NAME_LIMIT, THEME_RESERVED_PREFIXES, THEME_TOKENS, ThemeFile};
-use crate::{Code, Result, encode, err, parse};
+use crate::{Result, encode, err, parse};
 use loro::{LoroMap, LoroValue, ValueOrContainer};
+use pop_contracts::wire::Code;
 use std::collections::{BTreeMap, HashSet};
 
 pub(crate) type Values = BTreeMap<String, String>;
@@ -100,19 +101,21 @@ pub struct ThemeState {
 pub(crate) struct Theme {
     template: String,
     tokens: Vec<(String, String)>,
-    defaults: Values,
 }
 impl Theme {
     /// The palette over tokens already checked by `validate_defaults`.
     pub fn new(template: &str, tokens: Vec<(String, String)>) -> Self {
-        Self { template: template.into(), defaults: tokens.iter().cloned().collect(), tokens }
+        Self { template: template.into(), tokens }
     }
     pub fn tokens(&self) -> &[(String, String)] {
         &self.tokens
     }
+    fn defaults(&self) -> Values {
+        self.tokens.iter().cloned().collect()
+    }
     /// The defaults with `overrides` applied.
     fn over(&self, overrides: &Values) -> Values {
-        let mut effective = self.defaults.clone();
+        let mut effective = self.defaults();
         effective.extend(overrides.iter().map(|(k, v)| (k.clone(), v.clone())));
         effective
     }
@@ -121,7 +124,7 @@ impl Theme {
     }
     pub fn state(&self, map: &LoroMap) -> Result<ThemeState> {
         let overrides = overrides(map)?;
-        Ok(ThemeState { defaults: self.defaults.clone(), effective: self.over(&overrides), overrides })
+        Ok(ThemeState { defaults: self.defaults(), effective: self.over(&overrides), overrides })
     }
     /// Sets each listed color, or with `None` returns it to the template's; `replace`
     /// returns every unlisted color to the template's too.
@@ -129,7 +132,7 @@ impl Theme {
         let current = overrides(map)?;
         let mut next = if replace { Values::new() } else { current.clone() };
         for (name, value) in values {
-            if !self.defaults.contains_key(name) {
+            if !self.tokens.iter().any(|(token, _)| token == name) {
                 return Err(err(Code::InvalidKey, format!("Unknown theme token: {name}")));
             }
             match value {
@@ -147,8 +150,10 @@ impl Theme {
     /// result is valid. Overrides equal to their default are dropped, so resetting a token
     /// and setting its default are the same change.
     fn write(&self, map: &LoroMap, current: &Values, mut next: Values) -> Result<()> {
-        check(&next, &self.defaults)?;
-        next.retain(|name, value| self.defaults.get(name) != Some(value));
+        check(&next, &self.defaults())?;
+        next.retain(|name, value| {
+            self.tokens.iter().find(|(token, _)| token == name).map(|(_, color)| color) != Some(value)
+        });
         bound(&self.over(&next))?;
         for name in current.keys().filter(|name| !next.contains_key(*name)) {
             map.delete(name).map_err(crate::engine)?;
@@ -166,8 +171,10 @@ impl Theme {
         let invalid =
             || err(Code::InvalidBytes, "Saved theme does not match the app's palette; keep the file for recovery");
         let overrides = overrides(map).map_err(|_| invalid())?;
-        check(&overrides, &self.defaults).map_err(|_| invalid())?;
-        if overrides.iter().any(|(name, value)| self.defaults.get(name) == Some(value)) {
+        check(&overrides, &self.defaults()).map_err(|_| invalid())?;
+        if overrides.iter().any(|(name, value)| {
+            self.tokens.iter().find(|(token, _)| token == name).map(|(_, color)| color) == Some(value)
+        }) {
             return Err(invalid());
         }
         Ok(())
@@ -221,7 +228,10 @@ mod tests {
         /// Applies one palette intent (JSON text); whether it changed anything.
         fn apply(&mut self, intent: &str) -> Result<bool> {
             self.0
-                .apply_batch(crate::Batch::decode(&format!(r#"{{"intents":[{intent}]}}"#))?, Origin::Window)
+                .apply_batch(
+                    pop_contracts::wire::Batch::decode(&format!(r#"{{"intents":[{intent}]}}"#))?,
+                    Origin::Window,
+                )
                 .map(|a| a.publication.is_some())
         }
         fn set(&mut self, values: &str) -> Result<bool> {
@@ -321,8 +331,11 @@ mod tests {
     fn the_page_cannot_change_the_palette() {
         let mut theme = theme();
         let batch = r##"{"intents":[{"type":"setTheme","values":{"ink":"#000000"}}]}"##;
-        assert_eq!(code(theme.0.apply_batch(crate::Batch::decode(batch).unwrap(), Origin::Page)), Code::InvalidRequest);
-        theme.0.apply_batch(crate::Batch::decode(batch).unwrap(), Origin::Agent).unwrap();
+        assert_eq!(
+            code(theme.0.apply_batch(pop_contracts::wire::Batch::decode(batch).unwrap(), Origin::Page)),
+            Code::InvalidRequest
+        );
+        theme.0.apply_batch(pop_contracts::wire::Batch::decode(batch).unwrap(), Origin::Agent).unwrap();
         assert_eq!(theme.overrides(), r##"{"ink":"#000000"}"##);
     }
 

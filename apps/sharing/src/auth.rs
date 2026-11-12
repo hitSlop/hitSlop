@@ -1,30 +1,18 @@
 //! Firebase identity verification, independent of room permissions. Only Google's
 //! fixed certificate endpoint supplies keys; JWT headers never select a remote URL.
+#[cfg(target_arch = "wasm32")]
+use crate::limits::CERTIFICATE_CACHE_SECONDS;
+use crate::limits::{IDENTITY_FIELD_BYTES, IDENTITY_LEEWAY_SECONDS};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation, decode, decode_header};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
 const TOKEN_BYTES: usize = pop_sharing_protocol::limits::IDENTITY_TOKEN_BYTES;
+#[cfg(target_arch = "wasm32")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum IdentityError {
     Denied,
     Unavailable,
-}
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum CreatorAuthorization {
-    Allowed,
-    Denied,
-    Unavailable,
-}
-pub(crate) fn creator_authorization(
-    identity: std::result::Result<String, IdentityError>,
-    owner_uid: &str,
-) -> CreatorAuthorization {
-    match identity {
-        Ok(uid) if uid == owner_uid => CreatorAuthorization::Allowed,
-        Ok(_) | Err(IdentityError::Denied) => CreatorAuthorization::Denied,
-        Err(IdentityError::Unavailable) => CreatorAuthorization::Unavailable,
-    }
 }
 #[derive(Clone, Deserialize)]
 pub(crate) struct Claims {
@@ -33,11 +21,6 @@ pub(crate) struct Claims {
     pub exp: u64,
     pub iat: u64,
     pub auth_time: u64,
-}
-impl Claims {
-    pub(crate) fn may_create(&self) -> bool {
-        self.firebase.sign_in_provider != "anonymous"
-    }
 }
 #[derive(Clone, Deserialize)]
 pub(crate) struct Firebase {
@@ -51,7 +34,7 @@ pub(crate) fn key_id(token: &str) -> Result<String, &'static str> {
     if header.alg != Algorithm::RS256 {
         return Err("Invalid identity");
     }
-    header.kid.filter(|id| !id.is_empty() && id.len() <= 128).ok_or("Invalid identity")
+    header.kid.filter(|id| !id.is_empty() && id.len() <= IDENTITY_FIELD_BYTES).ok_or("Invalid identity")
 }
 pub(crate) fn verify(token: &str, project: &str, key: &DecodingKey, now: u64) -> Result<Claims, &'static str> {
     key_id(token)?;
@@ -61,20 +44,45 @@ pub(crate) fn verify(token: &str, project: &str, key: &DecodingKey, now: u64) ->
     policy.set_required_spec_claims(&["exp", "iss", "aud", "sub", "iat"]);
     // Use the caller's explicit clock for native tests and the same check on Workers.
     policy.validate_exp = false;
-    policy.leeway = 0;
+    policy.leeway = IDENTITY_LEEWAY_SECONDS;
     let claims = decode::<Claims>(token, key, &policy).map_err(|_| "Invalid identity")?.claims;
-    // Verification establishes identity. Endpoint policy separately limits creation
-    // to named accounts; anonymous identities may exchange invitations for membership.
     if claims.sub.is_empty()
-        || claims.sub.chars().count() > 128
-        || claims.exp <= now
-        || claims.iat > now
-        || claims.auth_time > now
+        || claims.firebase.sign_in_provider == "anonymous"
+        || claims.sub.chars().count() > IDENTITY_FIELD_BYTES
+        || claims.exp.saturating_add(IDENTITY_LEEWAY_SECONDS) <= now
+        || claims.iat > now.saturating_add(IDENTITY_LEEWAY_SECONDS)
+        || claims.auth_time > now.saturating_add(IDENTITY_LEEWAY_SECONDS)
         || claims.auth_time > claims.iat
     {
         return Err("Invalid identity");
     }
     Ok(claims)
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub(crate) struct VerifiedIdentity {
+    pub uid: String,
+    pub expires: u64,
+}
+impl From<Claims> for VerifiedIdentity {
+    fn from(claims: Claims) -> Self {
+        Self { uid: claims.sub, expires: claims.exp }
+    }
+}
+#[cfg(target_arch = "wasm32")]
+pub(crate) const IDENTITY_HEADER: &str = "X-Pop-Verified-Identity";
+#[cfg(target_arch = "wasm32")]
+impl VerifiedIdentity {
+    pub(crate) fn forward(&self, headers: &mut worker::Headers) -> worker::Result<()> {
+        headers.set(IDENTITY_HEADER, &serde_json::to_string(self)?)
+    }
+    pub(crate) fn from_request(req: &worker::Request) -> worker::Result<Self> {
+        let value = req
+            .headers()
+            .get(IDENTITY_HEADER)?
+            .ok_or_else(|| worker::Error::RustError("Missing verified identity".into()))?;
+        Ok(serde_json::from_str(&value)?)
+    }
 }
 
 struct Keys {
@@ -127,7 +135,7 @@ mod runtime {
             .unwrap_or_default()
             .split(',')
             .find_map(|part| part.trim().strip_prefix("max-age=")?.parse::<u64>().ok())
-            .unwrap_or(0)
+            .unwrap_or(CERTIFICATE_CACHE_SECONDS)
             .min(86_400);
         let bytes = response.bytes().await.map_err(|_| IdentityError::Unavailable)?;
         if bytes.len() > 256 * 1024 {
@@ -169,13 +177,6 @@ mod tests {
     use serde_json::{Value, json};
     use std::sync::OnceLock;
     const NOW: u64 = 1_700_000_000;
-    #[test]
-    fn creator_authorization_distinguishes_denial_from_identity_outage() {
-        assert_eq!(creator_authorization(Ok("owner".into()), "owner"), CreatorAuthorization::Allowed);
-        assert_eq!(creator_authorization(Ok("other".into()), "owner"), CreatorAuthorization::Denied);
-        assert_eq!(creator_authorization(Err(IdentityError::Denied), "owner"), CreatorAuthorization::Denied);
-        assert_eq!(creator_authorization(Err(IdentityError::Unavailable), "owner"), CreatorAuthorization::Unavailable);
-    }
     fn keys() -> &'static (EncodingKey, DecodingKey) {
         static KEYS: OnceLock<(EncodingKey, DecodingKey)> = OnceLock::new();
         KEYS.get_or_init(|| {
@@ -198,21 +199,31 @@ mod tests {
         encode(&header, claims, &keys().0).unwrap()
     }
     #[test]
+    fn firebase_identity_accepts_small_clock_skew() {
+        let mut changed = claims();
+        changed["iat"] = json!(NOW + 60);
+        changed["auth_time"] = json!(NOW + 60);
+        assert!(verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).is_ok());
+        changed = claims();
+        changed["exp"] = json!(NOW - 59);
+        assert!(verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).is_ok());
+    }
+    #[test]
     fn firebase_identity_requires_signature_project_times_and_nonempty_subject() {
         let signed = token(&claims(), "current");
         assert_eq!(key_id(&signed).unwrap(), "current");
         assert_eq!(verify(&signed, "hitslopapp", &keys().1, NOW).unwrap().sub, "test-user");
         assert!(verify(&signed, "another-project", &keys().1, NOW).is_err());
-        assert!(verify(&signed, "hitslopapp", &keys().1, NOW + 3600).is_err());
+        assert!(verify(&signed, "hitslopapp", &keys().1, NOW + 3660).is_err());
         for (field, value) in [
             ("sub", json!("")),
             ("sub", json!("x".repeat(129))),
             ("aud", json!("other")),
             ("iss", json!("https://attacker.example")),
-            ("iat", json!(NOW + 1)),
-            ("auth_time", json!(NOW + 1)),
+            ("iat", json!(NOW + 61)),
+            ("auth_time", json!(NOW + 61)),
             ("auth_time", json!("invalid")),
-            ("exp", json!(NOW)),
+            ("exp", json!(NOW - 60)),
         ] {
             let mut changed = claims();
             changed[field] = value;
@@ -231,15 +242,18 @@ mod tests {
         assert!(verify(&forged.join("."), "hitslopapp", &keys().1, NOW).is_err());
     }
     #[test]
-    fn verified_anonymous_identity_may_join_but_cannot_create() {
+    fn verified_identity_requires_named_sign_in_and_carries_expiry() {
         for provider in ["apple.com", "google.com", "password"] {
             let mut changed = claims();
             changed["firebase"]["sign_in_provider"] = json!(provider);
-            assert!(verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).unwrap().may_create());
+            let identity =
+                VerifiedIdentity::from(verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).unwrap());
+            assert_eq!(identity.uid, "test-user");
+            assert_eq!(identity.expires, NOW + 3600);
         }
         let mut changed = claims();
         changed["firebase"]["sign_in_provider"] = json!("anonymous");
-        assert!(!verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).unwrap().may_create());
+        assert!(verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).is_err());
         let mut changed = claims();
         changed.as_object_mut().unwrap().remove("firebase");
         assert!(verify(&token(&changed, "current"), "hitslopapp", &keys().1, NOW).is_err());

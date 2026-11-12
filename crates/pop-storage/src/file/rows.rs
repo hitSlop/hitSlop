@@ -4,23 +4,10 @@
 //! runs, `inspect` and the asset reader read the tables directly.
 
 use super::Artwork;
-#[cfg(not(target_arch = "wasm32"))]
 use super::assets::Encoding;
-#[cfg(not(target_arch = "wasm32"))]
-use crate::app::AppDefinition;
 use crate::error::{Result, sqlite};
+use pop_core::app::AppDefinition;
 use rusqlite::{Connection, OptionalExtension, params};
-
-/// Stable inventory of app resource keys; host policy filters private programs.
-#[cfg(not(target_arch = "wasm32"))]
-pub(crate) fn asset_keys(conn: &Connection) -> Result<Vec<String>> {
-    conn.prepare_cached("SELECT key FROM assets ORDER BY key")
-        .map_err(sqlite("list app resources"))?
-        .query_map([], |row| row.get(0))
-        .map_err(sqlite("list app resources"))?
-        .map(|row| row.map_err(sqlite("list app resources")))
-        .collect()
-}
 
 /// The history's first row, a snapshot, and the updates saved after it, in order: streamed
 /// straight from SQLite's buffers by the store's load.
@@ -60,7 +47,7 @@ pub(crate) fn append_history(conn: &Connection, bytes: &[u8]) -> Result<()> {
 /// The document row that makes a copy of a template a document.
 pub(crate) fn add_document(conn: &Connection) -> Result<()> {
     let mut bytes = [0u8; 16];
-    crate::random(&mut bytes);
+    crate::random(&mut bytes).expect("random bytes");
     bytes[6] = (bytes[6] & 0x0f) | 0x40;
     bytes[8] = (bytes[8] & 0x3f) | 0x80;
     let hex = crate::hex(&bytes);
@@ -143,7 +130,7 @@ pub(crate) fn read_artwork(conn: &Connection, name: Artwork) -> Result<Option<Ve
         .prepare_cached("SELECT length(png) FROM artwork WHERE name=?")
         .and_then(|mut s| s.query_row([name], |r| r.get(0)).optional())
         .map_err(sqlite("read artwork"))?;
-    if length.is_none_or(|n| n as usize > crate::ASSET_FILE_BYTES) {
+    if length.is_none_or(|n| n as usize > pop_contracts::wire::ASSET_FILE_BYTES) {
         return Ok(None);
     }
     let png: Option<Vec<u8>> = conn
@@ -153,7 +140,6 @@ pub(crate) fn read_artwork(conn: &Connection, name: Artwork) -> Result<Option<Ve
     Ok(png.filter(|png| crate::images::header(png).is_ok()))
 }
 /// Writes one artwork image, in place of any by that name.
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn put_artwork(conn: &Connection, name: Artwork, png: &[u8]) -> Result<()> {
     conn.execute(
         "INSERT INTO artwork(name, png) VALUES(?,?) ON CONFLICT(name) DO UPDATE SET png=excluded.png",
@@ -163,13 +149,11 @@ pub(crate) fn put_artwork(conn: &Connection, name: Artwork, png: &[u8]) -> Resul
     .map_err(sqlite("write artwork"))
 }
 /// Deletes every artwork image.
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn clear_artwork(conn: &Connection) -> Result<()> {
     conn.execute_batch("DELETE FROM artwork").map_err(sqlite("clear artwork"))
 }
 
 /// The `app` row `pack` writes once.
-#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn put_app(conn: &Connection, app: &AppDefinition, package_format: u64, runtime_abi: u64) -> Result<()> {
     use super::category::category_column as column;
     let m = app.metadata();
@@ -180,7 +164,6 @@ pub(super) fn put_app(conn: &Connection, app: &AppDefinition, package_format: u6
     ).map(|_| ()).map_err(sqlite("write app"))
 }
 /// One asset, before the app row seals the inventory.
-#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn put_asset(
     conn: &Connection,
     key: &str,
@@ -205,7 +188,7 @@ pub(super) fn put_asset(
 /// bytes: empty for null, i64 big-endian for integers, IEEE-754 bits big-endian for
 /// reals, or the stored text/blob bytes. Each table ends with 0xfd. Fetch SQL and
 /// physical column order are not encoded; no document state or metadata is included.
-pub(crate) fn app_digest(conn: &Connection) -> Result<[u8; 32]> {
+pub(crate) fn app_digest(conn: &Connection) -> Result<pop_contracts::AppDigest> {
     use sha2::{Digest, Sha256};
     let mut digest = Sha256::new();
     digest.update(b"pop-app-1");
@@ -253,7 +236,7 @@ pub(crate) fn app_digest(conn: &Connection) -> Result<[u8; 32]> {
         }
         digest.update([0xfd]);
     }
-    Ok(digest.finalize().into())
+    Ok(pop_contracts::AppDigest::from_bytes(digest.finalize().into()))
 }
 
 #[cfg(test)]
@@ -275,7 +258,7 @@ mod digest_tests {
     #[test]
     fn app_digest_encoding_has_a_stable_vector() {
         assert_eq!(
-            crate::hex(&app_digest(&fixture()).unwrap()),
+            crate::hex(app_digest(&fixture()).unwrap().as_bytes()),
             "9e994f21579cb37a51d42196ec57305bf4b9b0702daab8121a6ee27724cc9071"
         );
     }
@@ -311,27 +294,4 @@ mod digest_tests {
         .unwrap();
         assert_eq!(app_digest(&conn).unwrap(), original);
     }
-}
-
-/// Streams pages from the caller's read transaction without retaining the file in memory.
-#[cfg(target_arch = "wasm32")]
-pub(crate) fn export_pages(conn: &Connection, mut write: impl FnMut(&[u8]) -> Result<()>) -> Result<()> {
-    use crate::error::failed;
-    let count: i64 = conn.query_row("PRAGMA page_count", [], |r| r.get(0)).map_err(sqlite("export"))?;
-    let mut statement = conn.prepare("SELECT pgno,data FROM sqlite_dbpage ORDER BY pgno").map_err(sqlite("export"))?;
-    let mut rows = statement.query([]).map_err(sqlite("export"))?;
-    let mut expected = 1;
-    while let Some(row) = rows.next().map_err(sqlite("export"))? {
-        let page: i64 = row.get(0).map_err(sqlite("export"))?;
-        if page != expected {
-            return Err(failed("Missing export page"));
-        }
-        let data = row.get_ref(1).map_err(sqlite("export"))?;
-        write(data.as_blob().map_err(failed)?)?;
-        expected += 1;
-    }
-    if expected != count + 1 {
-        return Err(failed("Incomplete export"));
-    }
-    Ok(())
 }

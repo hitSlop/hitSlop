@@ -48,7 +48,7 @@ Call `getEnvironment()` while a component initializes, the same way you call
 `layout` is `"compact"` when the editor is under 640 CSS pixels wide and `"regular"`
 otherwise. It follows the real window, so a narrow Mac window is compact too. `platform`
 (`"ios"`, `"macos"`, `"unknown"`, ...) and `device` (`"phone"`, `"tablet"`, `"desktop"`,
-`"unknown"`) describe the host. Browser copies report `"unknown"`. Treat
+`"unknown"`) describe the host. The `pop dev` Browser preset reports `"unknown"`. Treat
 them as presentation hints, not as permission checks.
 
 The same values reach CSS as attributes on `<html>`:
@@ -230,7 +230,7 @@ Never call it from a document observer, while typing or while rendering, or from
 that is not on screen. The calls return `void`: do not await them, and never make an
 edit depend on one.
 
-On Mac and in browsers the calls do nothing, and no capability or
+On Mac and in the `pop dev` preview the calls do nothing, and no capability or
 permission is involved. People can turn **Haptic Feedback** off in the iPhone app's Settings. A
 framework-neutral app can reach the same service as `ctx.haptics`.
 

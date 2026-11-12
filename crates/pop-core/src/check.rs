@@ -56,23 +56,23 @@ pub(super) fn stored(node: &Node, value: Option<ValueOrContainer>) -> Result<()>
         || err(Code::InvalidBytes, "Saved state does not match the document's schema; keep the file for recovery");
     match (node, value) {
         (Node::Optional { .. }, None) => Ok(()),
-        (Node::Optional { inner }, value) if !is_scalar(inner) => stored_slot(inner, value),
-        (Node::Optional { inner }, value) => stored(inner, value),
+        (Node::Optional { inner, .. }, value) if !is_scalar(inner) => stored_slot(inner, value),
+        (Node::Optional { inner, .. }, value) => stored(inner, value),
         (node, None) if is_scalar(node) && node.default_value().is_some() => Ok(()),
-        (Node::Text {}, Some(ValueOrContainer::Container(Container::Text(_)))) => Ok(()),
-        (Node::Counter {}, Some(ValueOrContainer::Container(Container::Counter(counter)))) => {
+        (Node::Text { .. }, Some(ValueOrContainer::Container(Container::Text(_)))) => Ok(()),
+        (Node::Counter { .. }, Some(ValueOrContainer::Container(Container::Counter(counter)))) => {
             if counter.get_value().is_finite() { Ok(()) } else { Err(invalid()) }
         }
         (node, Some(ValueOrContainer::Value(value))) if is_scalar(node) => {
             scalar(node, &json(value)).map_err(|_| invalid())
         }
-        (Node::Object { properties }, Some(ValueOrContainer::Container(Container::Map(map)))) => {
+        (Node::Object { properties, .. }, Some(ValueOrContainer::Container(Container::Map(map)))) => {
             if map.keys().any(|key| !properties.contains_key(&*key)) {
                 return Err(invalid());
             }
             properties.iter().try_for_each(|(key, child)| stored(child, map.get(key)))
         }
-        (Node::Record { value: entry }, Some(ValueOrContainer::Container(Container::Map(map)))) => {
+        (Node::Record { value: entry, .. }, Some(ValueOrContainer::Container(Container::Map(map)))) => {
             let keys: Vec<String> = map.keys().map(|key| key.to_string()).collect();
             keys.iter().try_for_each(|key| {
                 if !valid_key(key) {
@@ -85,7 +85,9 @@ pub(super) fn stored(node: &Node, value: Option<ValueOrContainer>) -> Result<()>
                 }
             })
         }
-        (Node::List { item }, Some(ValueOrContainer::Container(Container::MovableList(list)))) if is_scalar(item) => {
+        (Node::List { item, .. }, Some(ValueOrContainer::Container(Container::MovableList(list))))
+            if is_scalar(item) =>
+        {
             let mut result = Ok(());
             list.for_each(|element| {
                 if result.is_ok() {
@@ -97,7 +99,7 @@ pub(super) fn stored(node: &Node, value: Option<ValueOrContainer>) -> Result<()>
             });
             result
         }
-        (Node::List { item }, Some(ValueOrContainer::Container(Container::Map(map)))) if !is_scalar(item) => {
+        (Node::List { item, .. }, Some(ValueOrContainer::Container(Container::Map(map)))) if !is_scalar(item) => {
             if map.keys().any(|key| !["rows", "order"].contains(&&*key)) {
                 return Err(invalid());
             }

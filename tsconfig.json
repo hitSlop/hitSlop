@@ -20,7 +20,6 @@
     "allowImportingTsExtensions": true
   },
   "include": [
-    "apps/sharing/http.ts",
     "packages/pop/src/**/*.ts",
     "packages/pop/tests/**/*.ts",
     "scripts/**/*.ts",

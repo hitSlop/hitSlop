@@ -13,7 +13,6 @@ pub enum DocumentRole {
 pub struct AccessState {
     pub document: String,
     pub sharing: bool,
-    pub generation: u64,
     pub capability: Option<String>,
     pub role: DocumentRole,
 }
@@ -31,10 +30,13 @@ pub struct UpdateDocument {
     pub template_id: String,
 }
 
+/// Membership and metadata returned by the invitation exchange.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-pub struct DocumentMetadata {
+pub struct JoinedDocument {
+    #[serde(flatten)]
+    pub access: AccessState,
     pub title: String,
     pub template_id: String,
 }

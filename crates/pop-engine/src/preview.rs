@@ -1,39 +1,33 @@
 //! A disposable development page runs against the production owner and command path.
 mod transport;
-use pop_core::{
-    Code,
-    browser_wire::BrowserSaveStatus,
-    page_wire::{HostAction, HostReply, SpeechOutcome},
-    preview::{PreviewEvent, PreviewRequest, PreviewResource},
-};
-use pop_runtime::{
-    command::{self, PageDispatch},
-    owner::{Event, Owner, Reply, Request, SaveStatus},
-};
-use pop_storage::{file::ResourceRoute, store::Mode};
-use serde_json::{Value, value::RawValue};
-use std::{
-    path::Path,
-    process::ExitCode,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-        mpsc,
-    },
-    time::{Duration, Instant},
-};
+use pop_contracts::resources::ResourceRoute;
+use pop_contracts::wire::Code;
+use pop_contracts::wire::page::{HostAction, HostReply, SpeechOutcome};
+use pop_contracts::wire::preview::{PreviewEvent, PreviewRequest, PreviewResource, PreviewSaveStatus};
+use pop_runtime::command;
+use pop_runtime::command::PageDispatch;
+use pop_runtime::owner::{CallOptions, Event, Owner, SaveStatus};
+use pop_storage::store::Mode;
+use serde_json::Value;
+use serde_json::value::RawValue;
+use std::path::Path;
+use std::process::ExitCode;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, mpsc};
+use std::time::{Duration, Instant};
 
 fn close(owner: &Owner, deadline: Instant) -> Result<(), String> {
     let (sender, receiver) = mpsc::channel();
-    owner.submit(
-        Request::Close { preview: None, icon: None },
+    owner.close(
         None,
+        None,
+        CallOptions::default(),
         Box::new(move |reply| {
             let _ = sender.send(reply);
         }),
     );
     match receiver.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-        Ok(Ok(Reply::Unit)) => Ok(()),
+        Ok(Ok(())) => Ok(()),
         Ok(Err(e)) => Err(e.message),
         _ => Err("Preview close timed out".into()),
     }
@@ -57,9 +51,9 @@ pub fn serve(path: &Path) -> ExitCode {
                         },
                         Event::SaveStatus { status, failure, .. } => PreviewEvent::Save {
                             status: match status {
-                                SaveStatus::Saved => BrowserSaveStatus::Saved,
-                                SaveStatus::Saving => BrowserSaveStatus::Saving,
-                                SaveStatus::Failed => BrowserSaveStatus::Failed,
+                                SaveStatus::Saved => PreviewSaveStatus::Saved,
+                                SaveStatus::Saving => PreviewSaveStatus::Saving,
+                                SaveStatus::Failed => PreviewSaveStatus::Failed,
                             },
                             error: failure.map(|f| f.message),
                         },
@@ -89,7 +83,8 @@ pub fn serve(path: &Path) -> ExitCode {
                         };
                         send.send(PreviewEvent::Reply {
                             id: id.try_into().map_err(|_| "Invalid preview request ID")?,
-                            reply: crate::rejected(Code::InvalidRequest, error),
+                            reply: serde_json::to_string(&crate::rejected(Code::InvalidRequest, error))
+                                .expect("serializable failure"),
                         });
                         continue;
                     }
@@ -101,7 +96,7 @@ pub fn serve(path: &Path) -> ExitCode {
                             .map(|info| PreviewEvent::Resource {
                                 id,
                                 plan: info.map(|info| {
-                                    pop_storage::file::resource_response(
+                                    pop_contracts::resources::resource_response(
                                         &info,
                                         ResourceRoute::Attachment,
                                         range.as_deref(),
@@ -154,7 +149,7 @@ pub fn serve(path: &Path) -> ExitCode {
                                 PageDispatch::Reply { json, .. } => json,
                                 PageDispatch::Host { action } => match action {
                                     HostAction::Environment => HostReply::Environment {
-                                        environment: pop_core::page_wire::HostEnvironment::unknown(),
+                                        environment: pop_contracts::wire::page::HostEnvironment::unknown(),
                                     },
                                     HostAction::WindowResize { width, height } => {
                                         HostReply::WindowResize { width: width.into(), height: height.into() }
@@ -188,7 +183,7 @@ pub fn serve(path: &Path) -> ExitCode {
     })();
     let mut failed = result.is_err();
     if let Err(error) = result {
-        let error = serde_json::from_str(&crate::rejected(Code::InvalidRequest, error)).expect("serialized failure");
+        let error = crate::rejected(Code::InvalidRequest, error);
         send.send(PreviewEvent::Fatal { error });
     }
     drop(send);

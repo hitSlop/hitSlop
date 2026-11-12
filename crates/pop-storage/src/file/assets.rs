@@ -1,20 +1,22 @@
 //! The app's assets: their paths, how `pack` stores them and how a page reads them back.
 
 use crate::error::{Result, failed, invalid, sqlite};
-use crate::wire::ASSET_PATH_BYTES;
+use pop_contracts::wire::ASSET_PATH_BYTES;
 use rusqlite::{Connection, MAIN_DB, OptionalExtension};
-#[cfg(not(target_arch = "wasm32"))]
 use std::borrow::Cow;
 use std::io::Read;
 
 /// The asset budget, as packing reads a stage and as every open finds it stored.
 pub(super) fn assets_within(count: usize, largest: usize, total: usize) -> Result<()> {
-    if count > crate::ASSET_COUNT || largest > crate::ASSET_FILE_BYTES || total > crate::ASSET_BYTES {
+    if count > pop_contracts::wire::ASSET_COUNT
+        || largest > pop_contracts::wire::ASSET_FILE_BYTES
+        || total > pop_contracts::wire::ASSET_BYTES
+    {
         return Err(invalid(format!(
             "The app exceeds {} assets, {} MiB per asset or {} MiB",
-            crate::ASSET_COUNT,
-            crate::ASSET_FILE_BYTES >> 20,
-            crate::ASSET_BYTES >> 20
+            pop_contracts::wire::ASSET_COUNT,
+            pop_contracts::wire::ASSET_FILE_BYTES >> 20,
+            pop_contracts::wire::ASSET_BYTES >> 20
         )));
     }
     Ok(())
@@ -30,7 +32,11 @@ pub fn valid_asset_path(path: &str) -> bool {
 /// The content type a served asset carries, by its extension.
 pub fn content_type(path: &str) -> &'static str {
     let extension = path.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
-    if extension == "html" { "text/html; charset=utf-8" } else { crate::media::asset_type(&extension).media_type }
+    if extension == "html" {
+        "text/html; charset=utf-8"
+    } else {
+        pop_contracts::media::asset_type(&extension).media_type
+    }
 }
 /// A program or stylesheet with content, or media named by its SHA-256. `pack` verifies
 /// the address and the app row seals it, so serving never re-hashes app media; skins
@@ -81,7 +87,6 @@ pub(super) fn read_asset(conn: &Connection, key: &str) -> Result<Option<Vec<u8>>
 /// anything else as it is, so media ranges read straight from the file. Quality 10 stores
 /// within a page or so of 11 in half the time; past 4 MiB it takes seconds, so larger
 /// assets use 9.
-#[cfg(not(target_arch = "wasm32"))]
 pub(super) fn encode<'a>(key: &str, bytes: &'a [u8]) -> Result<(Encoding, Cow<'a, [u8]>)> {
     let kind = content_type(key);
     if kind.starts_with("text/") || matches!(kind, "application/json" | "image/svg+xml" | "application/wasm") {
@@ -92,7 +97,7 @@ pub(super) fn encode<'a>(key: &str, bytes: &'a [u8]) -> Result<(Encoding, Cow<'a
             ..Default::default()
         };
         let mut compressed = Vec::new();
-        brotli::BrotliCompress(&mut &bytes[..], &mut compressed, &params).map_err(failed)?;
+        brotli::BrotliCompress(&mut &bytes[..], &mut compressed, &params).map_err(crate::error::from_error)?;
         if compressed.len() < bytes.len() {
             return Ok((Encoding::Brotli, Cow::Owned(compressed)));
         }
@@ -106,22 +111,25 @@ fn decode(encoding: Encoding, size: usize, stored: Vec<u8>) -> Result<Vec<u8>> {
         Encoding::Brotli => {
             let mut bytes = Vec::with_capacity(size);
             let read = brotli::Decompressor::new(stored.as_slice(), 4096).take(size as u64 + 1).read_to_end(&mut bytes);
-            if read.is_ok() && bytes.len() == size {
-                Ok(bytes)
-            } else {
-                Err(failed("An app asset is damaged; keep the file for recovery"))
+            read.map_err(|error| crate::error::caused("An app asset is damaged; keep the file for recovery", error))?;
+            if bytes.len() != size {
+                return Err(failed("An app asset is damaged; keep the file for recovery"));
             }
+            Ok(bytes)
         }
     }
 }
 
-pub use pop_contracts::resources::{ResourceInfo, ResourceRoute, ResourceSpan, ResponsePlan, resource_response};
+use pop_contracts::resources::{ResourceInfo, ResourceRoute};
 
 struct ResourceRow {
     id: i64,
     encoding: Encoding,
     info: ResourceInfo,
 }
+
+/// How much of an attachment verification hashes per read.
+const ATTACHMENT_VERIFY_CHUNK: usize = 1 << 20;
 
 /// One query-only connection, with first-touch attachment verification and decoded text
 /// caching. Identity media ranges use SQLite BLOB reads without loading the whole asset.
@@ -133,21 +141,17 @@ pub(crate) struct ResourceCache {
 }
 pub struct ResourceReader<C = Connection> {
     conn: C,
-    cache: std::sync::Arc<std::sync::Mutex<ResourceCache>>,
+    cache: std::sync::Mutex<ResourceCache>,
 }
 impl<C: std::borrow::Borrow<Connection>> ResourceReader<C> {
-    #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn new(conn: C) -> Self {
-        Self::with_cache(conn, Default::default())
-    }
-    pub(crate) fn with_cache(conn: C, cache: std::sync::Arc<std::sync::Mutex<ResourceCache>>) -> Self {
-        Self { conn, cache }
+        Self { conn, cache: Default::default() }
     }
     fn row(&self, route: ResourceRoute, key: &str) -> Result<Option<ResourceRow>> {
         let row = match route {
             ResourceRoute::App => {
-                if matches!(key, "commands.js" | "widget.js" | "icon.js" | "export.js" | "preview.js")
-                    || crate::media::asset_key(key).is_none()
+                if pop_contracts::media::program(key).is_some_and(|program| !program.public)
+                    || pop_contracts::media::asset_key(key).is_none()
                 {
                     return Ok(None);
                 }
@@ -167,7 +171,7 @@ impl<C: std::borrow::Borrow<Connection>> ResourceReader<C> {
                     .map_err(sqlite("read asset"))?
             }
             ResourceRoute::Attachment => {
-                if !crate::wire::valid_attachment_id(key) {
+                if !pop_contracts::wire::valid_attachment_id(key) {
                     return Ok(None);
                 }
                 self.conn
@@ -189,9 +193,9 @@ impl<C: std::borrow::Borrow<Connection>> ResourceReader<C> {
         let Some(row) = row else { return Ok(None) };
         if row.info.size
             > if route == ResourceRoute::App {
-                crate::ASSET_FILE_BYTES as u64
+                pop_contracts::wire::ASSET_FILE_BYTES as u64
             } else {
-                crate::ATTACHMENT_FILE_BYTES as u64
+                pop_contracts::wire::ATTACHMENT_FILE_BYTES as u64
             }
         {
             return Err(invalid("Resource exceeds its byte limit"));
@@ -204,12 +208,13 @@ impl<C: std::borrow::Borrow<Connection>> ResourceReader<C> {
                 .borrow()
                 .blob_open(MAIN_DB, "attachments", "bytes", row.id, true)
                 .map_err(sqlite("verify attachment"))?;
-            let media = crate::media::attachment_type_stream(&mut blob, row.info.size as usize).map_err(failed)?;
-            blob.seek(SeekFrom::Start(0)).map_err(failed)?;
+            let media = crate::media::attachment_type_stream(&mut blob, row.info.size as usize)
+                .map_err(crate::error::from_error)?;
+            blob.seek(SeekFrom::Start(0)).map_err(crate::error::from_error)?;
             let mut hash = Sha256::new();
-            let mut chunk = vec![0; crate::wire::browser::TRANSFER_BYTES];
+            let mut chunk = vec![0; ATTACHMENT_VERIFY_CHUNK];
             loop {
-                let count = blob.read(&mut chunk).map_err(failed)?;
+                let count = blob.read(&mut chunk).map_err(crate::error::from_error)?;
                 if count == 0 {
                     break;
                 }
@@ -227,7 +232,7 @@ impl<C: std::borrow::Borrow<Connection>> ResourceReader<C> {
             crate::lock(&self.cache).verified.insert(key.into());
         }
         if route == ResourceRoute::App
-            && crate::media::asset_key(key).is_none_or(|kind| kind.media_type != row.info.media_type)
+            && pop_contracts::media::asset_key(key).is_none_or(|kind| kind.media_type != row.info.media_type)
         {
             return Err(invalid("Invalid resource media type"));
         }
@@ -235,21 +240,32 @@ impl<C: std::borrow::Borrow<Connection>> ResourceReader<C> {
     }
     fn decoded<T>(&self, key: &str, read: impl FnOnce(&[u8]) -> T) -> Result<T> {
         const CACHE_BYTES: usize = 32 << 20;
+        let cached = {
+            let mut cache = crate::lock(&self.cache);
+            cache.decoded.iter().position(|(name, _)| name == key).map(|index| {
+                let entry = cache.decoded.remove(index).expect("cached entry");
+                cache.bytes -= entry.1.len();
+                entry
+            })
+        };
+        let entry = match cached {
+            Some(entry) => entry,
+            None => {
+                let bytes = read_asset(self.conn.borrow(), key)?.ok_or_else(|| invalid("Missing resource"))?;
+                check_resource(key, &bytes, false)?;
+                (key.into(), bytes)
+            }
+        };
+        let result = read(&entry.1);
         let mut cache = crate::lock(&self.cache);
-        let entry = if let Some(index) = cache.decoded.iter().position(|(name, _)| name == key) {
-            cache.decoded.remove(index).expect("cached entry")
-        } else {
-            let bytes = read_asset(self.conn.borrow(), key)?.ok_or_else(|| invalid("Missing resource"))?;
-            check_resource(key, &bytes, false)?;
-            while cache.bytes + bytes.len() > CACHE_BYTES {
+        if !cache.decoded.iter().any(|(name, _)| name == key) && entry.1.len() <= CACHE_BYTES {
+            while cache.bytes + entry.1.len() > CACHE_BYTES {
                 let Some((_, old)) = cache.decoded.pop_front() else { break };
                 cache.bytes -= old.len();
             }
-            cache.bytes += bytes.len();
-            (key.into(), bytes)
-        };
-        let result = read(&entry.1);
-        cache.decoded.push_back(entry);
+            cache.bytes += entry.1.len();
+            cache.decoded.push_back(entry);
+        }
         Ok(result)
     }
     pub fn info(&self, route: ResourceRoute, key: &str) -> Result<Option<ResourceInfo>> {

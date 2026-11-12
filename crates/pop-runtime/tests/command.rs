@@ -1,19 +1,17 @@
 //! Shared live/closed command routing and bounded Unix transport. Fault peers exercise
 //! real socket loss and identity checks, not private call ordering.
 use crate::support;
-use pop_runtime::{
-    command::{self, ExportCompletion, ExportHandler, ExportRequest},
-    file,
-    owner::{Failure, Owner, Reply, Request},
-    registry,
-    socket::{self, Server},
-    store::{Mode, Store},
-};
+use pop_runtime::owner::{CallOptions, Failure, Owner, Reading};
+use pop_runtime::socket::Server;
+use pop_runtime::{command, socket};
+use pop_storage::store::{Mode, Store};
+use pop_storage::{file, registry};
+use pop_testkit::owner::{call, close, open};
 use serde_json::{Value, json};
 use std::io::{BufRead, BufReader, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, mpsc};
+use std::sync::{Arc, mpsc};
 use std::time::{Duration, Instant};
 const SCHEMA: &str = r#"{"kind":"object","properties":{"title":{"kind":"text"},"hits":{"kind":"counter"}}}"#;
 fn document() -> (tempfile::TempDir, PathBuf) {
@@ -37,7 +35,7 @@ fn document_declaring(capabilities: &[&str]) -> (tempfile::TempDir, PathBuf) {
     (dir, path)
 }
 /// The command protocol these requests are written in.
-const PROTOCOL: u64 = pop_runtime::ENGINE_PROTOCOL;
+const PROTOCOL: u64 = pop_contracts::wire::ENGINE_PROTOCOL;
 fn request(path: &Path, method: &str) -> Value {
     json!({"protocol":PROTOCOL,"method":method,"documentPath":std::fs::canonicalize(path).unwrap()})
 }
@@ -46,8 +44,27 @@ fn batch(path: &Path) -> Value {
     r["batch"] = json!({"intents":[{"type":"increment","path":["hits"],"by":1}]});
     r
 }
-fn checked(text: String) -> Value {
-    assert!(serde_json::from_str::<pop_runtime::EngineReply>(&text).is_ok(), "invalid reply: {text}");
+trait ReplyJson {
+    fn json(self) -> String;
+}
+impl ReplyJson for String {
+    fn json(self) -> String {
+        self
+    }
+}
+impl ReplyJson for command::DocumentResult {
+    fn json(self) -> String {
+        command::encode_reply(self)
+    }
+}
+impl ReplyJson for command::CommandReply {
+    fn json(self) -> String {
+        command::encode_reply(self)
+    }
+}
+fn checked(reply: impl ReplyJson) -> Value {
+    let text = reply.json();
+    assert!(serde_json::from_str::<pop_contracts::wire::engine::EngineReply>(&text).is_ok(), "invalid reply: {text}");
     serde_json::from_str(&text).unwrap()
 }
 fn socket_request(mut value: Value) -> String {
@@ -58,23 +75,6 @@ fn run(mut value: Value) -> Value {
     value.as_object_mut().unwrap().remove("protocol");
     checked(command::request(&value.to_string(), PROTOCOL))
 }
-fn call(owner: &Owner, request: Request) -> std::result::Result<Reply, Failure> {
-    let (tx, rx) = mpsc::channel();
-    owner.submit(
-        request,
-        None,
-        Box::new(move |r| {
-            tx.send(r).unwrap();
-        }),
-    );
-    rx.recv_timeout(Duration::from_secs(5)).unwrap()
-}
-fn close(owner: &Owner) {
-    call(owner, Request::Close { preview: None, icon: None }).unwrap();
-}
-fn open(path: &Path) -> Arc<Owner> {
-    Arc::new(Owner::open(path, Mode::Document, Arc::new(|_| {})).unwrap())
-}
 
 #[test]
 fn document_commands_refuse_a_link_with_the_regular_file_reason() {
@@ -82,7 +82,7 @@ fn document_commands_refuse_a_link_with_the_regular_file_reason() {
     let saved = std::fs::read(&path).unwrap();
     let link = dir.path().join("link.pop");
     std::os::unix::fs::symlink(&path, &link).unwrap();
-    for method in ["get", "describe", "batch", "call", "copy", "export"] {
+    for method in ["get", "describe", "batch", "call", "export"] {
         // Do not canonicalize the supplied leaf before sending the request.
         let mut request = json!({"method":method,"documentPath":link});
         match method {
@@ -91,11 +91,9 @@ fn document_commands_refuse_a_link_with_the_regular_file_reason() {
                 request["command"] = "missing".into();
                 request["args"] = json!({});
             }
-            "copy" | "export" => {
+            "export" => {
                 request["output"] = json!(dir.path().join("output.pop"));
-                if method == "export" {
-                    request["format"] = "png".into();
-                }
+                request["format"] = "png".into();
             }
             _ => {}
         }
@@ -109,41 +107,12 @@ fn document_commands_refuse_a_link_with_the_regular_file_reason() {
 }
 
 #[test]
-fn browser_snapshot_is_a_clean_independent_document_and_never_overwrites() {
-    let (dir, path) = document();
-    assert_eq!(run(batch(&path))["ok"], true);
-    let before = std::fs::read(&path).unwrap();
-    let output = dir.path().join("browser.pop");
-    let copy = json!({"method":"copy","documentPath":path,"output":output});
-    assert_eq!(run(copy.clone())["ok"], true);
-    let original = file::open(&path, true).unwrap();
-    let copied = file::open(&output, true).unwrap();
-    assert_ne!(original.document_uuid, copied.document_uuid);
-    assert_eq!(run(request(&output, "get"))["state"]["value"]["hits"], 1);
-    assert_eq!(std::fs::read(&path).unwrap(), before);
-    let saved = std::fs::read(&output).unwrap();
-    assert_eq!(run(copy)["ok"], false);
-    assert_eq!(std::fs::read(&output).unwrap(), saved);
-}
-struct NoExport;
-impl ExportHandler for NoExport {
-    fn export(&self, _: ExportRequest, completion: Arc<ExportCompletion>) {
-        completion.complete(Err(Failure {
-            kind: pop_runtime::owner::FailureKind::Rejected,
-            message: "No export".into(),
-            reason: None,
-            op_index: None,
-        }));
-    }
-}
-
-#[test]
 fn protocol_preflight_refuses_a_newer_large_payload_without_writing() {
     let reply = checked(command::request("not this protocol's JSON", PROTOCOL + 1));
     assert_eq!(reply["reason"], "requires_update");
     let (_dir, path) = document();
-    let owner = open(&path);
-    let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
+    let owner = Arc::new(open(&path, Mode::Document).0);
+    let server = Server::start(owner.clone(), None).unwrap();
     let discovery: Value = serde_json::from_str(&registry::discovery(&path).unwrap().unwrap()).unwrap();
     let socket = Path::new(discovery["socket"].as_str().unwrap());
     let before = std::fs::read(&path).unwrap();
@@ -161,7 +130,7 @@ fn protocol_preflight_refuses_a_newer_large_payload_without_writing() {
 #[test]
 fn future_socket_protocol_is_refused_before_interpreting_its_payload() {
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     let before = std::fs::read(&path).unwrap();
     // Valid JSON whose number is outside this build's value representation. It
     // belongs to the future protocol, not to this build's request decoder.
@@ -229,8 +198,8 @@ fn closed_commands_edit_theme_data_and_attachments_then_reopen() {
 #[test]
 fn live_commands_use_the_owner_and_discovery_can_withdraw_and_republish() {
     let (_dir, path) = document();
-    let owner = open(&path);
-    let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
+    let owner = Arc::new(open(&path, Mode::Document).0);
+    let server = Server::start(owner.clone(), None).unwrap();
     assert!(registry::discovery(&path).unwrap().is_some());
     assert_eq!(run(batch(&path))["ok"], true);
     assert_eq!(run(request(&path, "get"))["state"]["value"]["hits"], 1);
@@ -263,8 +232,8 @@ fn live_commands_use_the_owner_and_discovery_can_withdraw_and_republish() {
 #[test]
 fn malformed_unsupported_and_expired_commands_never_mutate() {
     let (_dir, path) = document();
-    let owner = open(&path);
-    let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
+    let owner = Arc::new(open(&path, Mode::Document).0);
+    let server = Server::start(owner.clone(), None).unwrap();
     let malformed =
         checked(socket::call(server.path(), &json!({"protocol":PROTOCOL,"method":"surprise"}).to_string()).unwrap());
     assert_eq!(malformed["code"], "rejected");
@@ -298,8 +267,8 @@ fn malformed_unsupported_and_expired_commands_never_mutate() {
 #[test]
 fn partial_frames_and_oversized_requests_are_bounded() {
     let (_dir, path) = document();
-    let owner = open(&path);
-    let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
+    let owner = Arc::new(open(&path, Mode::Document).0);
+    let server = Server::start(owner.clone(), None).unwrap();
     let get = socket_request(request(&path, "get"));
     let mut stream = UnixStream::connect(server.path()).unwrap();
     for byte in get.bytes().chain([b'\n']) {
@@ -318,10 +287,10 @@ fn partial_frames_and_oversized_requests_are_bounded() {
 #[test]
 fn the_socket_client_limit_is_bounded() {
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     // A reply can arrive before its worker releases its slot. Start with no previous
     // clients, so none of these partial frames is rejected by a finishing worker.
-    let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
+    let server = Server::start(owner.clone(), None).unwrap();
     let get = socket_request(request(&path, "get"));
     let mut partial = Vec::new();
     for _ in 0..16 {
@@ -352,7 +321,7 @@ fn line(stream: &mut UnixStream) -> String {
 }
 fn peer_reply(hello: Value, response: &str) -> (String, usize) {
     let (dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     let saved = std::fs::read(&path).unwrap();
     let listener = mock(&owner, dir.path());
     listener.set_nonblocking(true).unwrap();
@@ -398,11 +367,11 @@ fn peer_reply(hello: Value, response: &str) -> (String, usize) {
 }
 
 #[test]
-fn live_owner_lineage_is_checked_before_any_document_payload_is_sent() {
-    let current = pop_contracts::lineage::DOCUMENT_LINEAGE;
+fn live_owner_application_id_is_checked_before_any_document_payload_is_sent() {
+    let current = pop_contracts::format::APPLICATION_ID;
     for (hello, reason) in [
-        (json!({"ok":true,"method":"hello","documentLineage":current - 1}), "invalid_request"),
-        (json!({"ok":true,"method":"hello","documentLineage":current + 1}), "requires_update"),
+        (json!({"ok":true,"method":"hello","applicationId":current - 1}), "invalid_request"),
+        (json!({"ok":true,"method":"hello","applicationId":current + 1}), "invalid_request"),
     ] {
         // The real owner holds the writer lease and publishes a fake peer discovery.
         // An unsafe client would transmit the batch and receive this success response.
@@ -412,9 +381,9 @@ fn live_owner_lineage_is_checked_before_any_document_payload_is_sent() {
         assert_eq!(refusal["code"], "rejected");
         assert_eq!(refusal["reason"], reason);
     }
-    // A hello that does not state its lineage proves nothing: it is refused, payload unsent.
+    // A hello that does not state its application ID proves nothing: it is refused, payload unsent.
     let (answer, commands) = peer_reply(json!({"ok":true,"method":"hello"}), r#"{"ok":true,"method":"batch"}"#);
-    assert_eq!(commands, 0, "an owner of unproven lineage received a document payload");
+    assert_eq!(commands, 0, "an owner of unproven identity received a document payload");
     assert_eq!(checked(answer)["ok"], false);
 }
 
@@ -423,7 +392,7 @@ fn peer_outcomes_are_forwarded_unchanged_without_disk_changes() {
     for code in ["rejected", "owner_replaced", "closing", "save_failed", "unknown_outcome"] {
         let refusal = json!({"ok":false,"error":"Peer refusal","code":code}).to_string();
         let (answer, commands) = peer_reply(
-            json!({"ok":true,"method":"hello","documentLineage":pop_contracts::lineage::DOCUMENT_LINEAGE}),
+            json!({"ok":true,"method":"hello","applicationId":pop_contracts::format::APPLICATION_ID}),
             &refusal,
         );
         assert_eq!(answer, refusal);
@@ -439,7 +408,7 @@ fn peer_outcomes_are_forwarded_unchanged_without_disk_changes() {
 fn peer_hello_reply_accepts_unknown_members() {
     let response = r#"{ "method": "batch", "ok": true }"#;
     let (answer, commands) = peer_reply(
-        json!({"ok":true,"method":"hello","documentLineage":pop_contracts::lineage::DOCUMENT_LINEAGE,"features":[]}),
+        json!({"ok":true,"method":"hello","applicationId":pop_contracts::format::APPLICATION_ID,"features":[]}),
         response,
     );
     assert_eq!(answer, response);
@@ -449,10 +418,8 @@ fn peer_hello_reply_accepts_unknown_members() {
 #[test]
 fn peer_unfamiliar_outcome_is_forwarded_byte_for_byte() {
     let response = r#"{ "ok": false, "code": "future_outcome", "error": "Future peer message" }"#;
-    let (answer, commands) = peer_reply(
-        json!({"ok":true,"method":"hello","documentLineage":pop_contracts::lineage::DOCUMENT_LINEAGE}),
-        response,
-    );
+    let (answer, commands) =
+        peer_reply(json!({"ok":true,"method":"hello","applicationId":pop_contracts::format::APPLICATION_ID}), response);
     assert_eq!(answer, response);
     assert_eq!(commands, 1);
 }
@@ -460,7 +427,7 @@ fn peer_unfamiliar_outcome_is_forwarded_byte_for_byte() {
 #[test]
 fn a_lost_mutation_reply_is_unknown_and_is_never_replayed() {
     let (dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     let listener = mock(&owner, dir.path());
     let actor = owner.clone();
     let peer = std::thread::spawn(move || {
@@ -469,7 +436,7 @@ fn a_lost_mutation_reply_is_unknown_and_is_never_replayed() {
         writeln!(
             hello,
             "{}",
-            json!({"ok":true,"method":"hello","documentLineage":pop_contracts::lineage::DOCUMENT_LINEAGE})
+            json!({"ok":true,"method":"hello","applicationId":pop_contracts::format::APPLICATION_ID})
         )
         .unwrap();
         drop(hello);
@@ -483,7 +450,7 @@ fn a_lost_mutation_reply_is_unknown_and_is_never_replayed() {
     assert_eq!(answer["code"], "unknown_outcome");
     assert!(!answer["error"].as_str().unwrap().contains("was accepted"));
     peer.join().unwrap();
-    let Reply::State { reading, .. } = call(&owner, Request::State).unwrap() else { panic!() };
+    let Reading { reading, .. } = call(&owner, Owner::state).unwrap();
     let json = serde_json::to_string(&reading).unwrap();
     assert_eq!(serde_json::from_str::<Value>(&json).unwrap()["value"]["hits"], 1);
     close(&owner);
@@ -495,14 +462,14 @@ fn a_lost_mutation_reply_is_unknown_and_is_never_replayed() {
 #[test]
 fn a_batch_discarded_before_its_save_confirms_reports_an_unknown_outcome() {
     let (_dir, path) = document();
-    let owner = open(&path);
-    let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
+    let owner = Arc::new(open(&path, Mode::Document).0);
+    let server = Server::start(owner.clone(), None).unwrap();
     let lock = rusqlite::Connection::open(&path).unwrap();
     lock.execute_batch("BEGIN EXCLUSIVE").unwrap();
     let request = batch(&path);
     let client = std::thread::spawn(move || run(request));
     let hits = |owner: &Owner| {
-        let Reply::State { reading, .. } = call(owner, Request::State).unwrap() else { panic!() };
+        let Reading { reading, .. } = call(owner, Owner::state).unwrap();
         let json = serde_json::to_string(&reading).unwrap();
         serde_json::from_str::<Value>(&json).unwrap()["value"]["hits"].clone()
     };
@@ -512,7 +479,7 @@ fn a_batch_discarded_before_its_save_confirms_reports_an_unknown_outcome() {
         std::thread::sleep(Duration::from_millis(5));
     }
     let (tx, discarded) = mpsc::channel();
-    owner.submit(Request::Discard, None, Box::new(move |r| tx.send(r).unwrap()));
+    (Owner::discard)(&owner, CallOptions { view: None, deadline: None }, Box::new(move |r| tx.send(r).unwrap()));
     let reply = client.join().unwrap();
     assert_eq!(reply["code"], "unknown_outcome");
     assert!(reply["error"].as_str().unwrap().contains("could not be confirmed"));
@@ -537,13 +504,13 @@ fn page_json(reply: &command::PageDispatch) -> Value {
 #[test]
 fn page_configuration_flood_is_bounded_and_flush_still_progresses() {
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     owner.attach("page".into());
     let (entered, blocked) = mpsc::sync_channel(1);
     let (release, gate) = mpsc::channel();
-    owner.submit(
-        Request::State,
-        None,
+    (Owner::state)(
+        &owner,
+        CallOptions { view: None, deadline: None },
         Box::new(move |_| {
             entered.send(()).unwrap();
             let _ = gate.recv();
@@ -569,9 +536,9 @@ fn page_configuration_flood_is_bounded_and_flush_still_progresses() {
     }
     assert!(refused, "page configuration requests must share bounded owner admission");
     let (sent, flush) = mpsc::channel();
-    owner.submit(
-        Request::Flush,
-        None,
+    (Owner::flush)(
+        &owner,
+        CallOptions { view: None, deadline: None },
         Box::new(move |result| {
             let _ = sent.send(result);
         }),
@@ -581,7 +548,7 @@ fn page_configuration_flood_is_bounded_and_flush_still_progresses() {
     for reply in accepted {
         assert_eq!(page_json(&reply.recv_timeout(Duration::from_secs(5)).unwrap())["ok"], true);
     }
-    assert!(matches!(flush.recv_timeout(Duration::from_secs(5)).unwrap().unwrap(), Reply::Unit));
+    assert!(matches!(flush.recv_timeout(Duration::from_secs(5)).unwrap().unwrap(), ()));
     assert_eq!(page_json(&page(&owner, "page", r#"{"method":"config"}"#))["ok"], true);
     close(&owner);
 }
@@ -589,9 +556,10 @@ fn page_configuration_flood_is_bounded_and_flush_still_progresses() {
 #[test]
 fn typed_page_requests_keep_validation_and_the_owner_view_fence() {
     use command::PageDispatch;
-    use pop_runtime::page_wire::{HostAction, PageRequest};
+    use pop_contracts::wire::page::HostAction;
+    use pop_contracts::wire::page::PageRequest;
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     owner.attach("page".into());
     let request = |view: &str, width| {
         let (tx, rx) = mpsc::channel();
@@ -614,7 +582,7 @@ fn typed_page_requests_keep_validation_and_the_owner_view_fence() {
     assert!(matches!(
         page(&owner, "page", r#"{"method":"haptics.play","feedback":{"kind":"selection"}}"#),
         PageDispatch::Host {
-            action: HostAction::HapticsPlay { feedback: pop_runtime::page_wire::HapticFeedback::Selection {} }
+            action: HostAction::HapticsPlay { feedback: pop_contracts::wire::page::HapticFeedback::Selection {} }
         }
     ));
     assert_eq!(
@@ -628,7 +596,7 @@ fn typed_page_requests_keep_validation_and_the_owner_view_fence() {
 #[test]
 fn page_requests_answer_the_page_and_refuse_what_it_may_not_do() {
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     owner.attach("page".into());
     let opened = page_json(&page(&owner, "page", r#"{"method":"open"}"#));
     assert_eq!(opened["ok"], true);
@@ -645,7 +613,9 @@ fn page_requests_answer_the_page_and_refuse_what_it_may_not_do() {
     assert_eq!(put["byteLength"], 3);
     let reader = owner.resource_reader().unwrap();
     assert_eq!(
-        reader.read_range(pop_runtime::file::ResourceRoute::Attachment, put["id"].as_str().unwrap(), 0, 3).unwrap(),
+        reader
+            .read_range(pop_contracts::resources::ResourceRoute::Attachment, put["id"].as_str().unwrap(), 0, 3)
+            .unwrap(),
         Some(b"abc".to_vec())
     );
     assert_eq!(page_json(&page(&owner, "page", r#"{"method":"flush"}"#)), json!({"ok":true,"method":"flush"}));
@@ -690,7 +660,7 @@ fn page_requests_answer_the_page_and_refuse_what_it_may_not_do() {
         );
     }
     assert_eq!(page_json(&page(&owner, "page", "not json"))["code"], "rejected");
-    let Reply::State { reading, .. } = call(&owner, Request::State).unwrap() else { panic!() };
+    let Reading { reading, .. } = call(&owner, Owner::state).unwrap();
     let json = serde_json::to_string(&reading).unwrap();
     assert_eq!(serde_json::from_str::<Value>(&json).unwrap()["value"]["hits"], 2);
     close(&owner);
@@ -720,86 +690,6 @@ fn an_agents_text_set_from_its_read_keeps_text_written_since() {
     set("Second typed", Some(&again["value"]["title"]));
     assert_eq!(read()["value"]["title"], "Second typed!");
 }
-struct Delayed(Mutex<mpsc::Sender<Arc<ExportCompletion>>>);
-impl ExportHandler for Delayed {
-    fn export(&self, _: ExportRequest, completion: Arc<ExportCompletion>) {
-        self.0.lock().unwrap().send(completion).unwrap();
-    }
-}
-#[test]
-fn stopping_server_and_closing_owner_preserves_an_admitted_export_reply() {
-    let (_dir, path) = document();
-    let owner = open(&path);
-    let (tx, rx) = mpsc::channel();
-    let server = Server::start(owner.clone(), Arc::new(Delayed(Mutex::new(tx)))).unwrap();
-    let mut export = request(&path, "export");
-    export["format"] = "png".into();
-    export["output"] = "/tmp/result.png".into();
-    let socket = server.path().to_owned();
-    let client = std::thread::spawn(move || checked(socket::call(&socket, &socket_request(export.clone())).unwrap()));
-    let completion = rx.recv_timeout(Duration::from_secs(2)).unwrap();
-    assert!(completion.is_active());
-    close(&owner);
-    server.stop();
-    assert!(registry::Lease::acquire(&path).is_ok());
-    assert!(completion.is_active());
-    completion.complete(Ok("/tmp/result.png".into()));
-    assert_eq!(client.join().unwrap()["output"], "/tmp/result.png");
-    assert!(!completion.is_active());
-}
-#[test]
-fn an_expired_export_callback_cannot_publish_late() {
-    let (_dir, path) = document();
-    let owner = open(&path);
-    let (tx, rx) = mpsc::channel();
-    let exporter: Arc<dyn ExportHandler> = Arc::new(Delayed(Mutex::new(tx)));
-    let mut export = request(&path, "export");
-    export["format"] = "png".into();
-    export["output"] = "/tmp/result.png".into();
-    let actor = owner.clone();
-    let worker = std::thread::spawn(move || {
-        command::serve(
-            &actor,
-            &socket_request(export.clone()),
-            Some(&exporter),
-            Instant::now() + Duration::from_millis(100),
-        )
-    });
-    let completion = rx.recv_timeout(Duration::from_secs(2)).unwrap();
-    let answer = checked(worker.join().unwrap());
-    assert_eq!(answer["code"], "unknown_outcome");
-    assert!(!completion.is_active());
-    completion.complete(Ok("/tmp/late.png".into()));
-    close(&owner);
-}
-struct Panics;
-impl ExportHandler for Panics {
-    fn export(&self, _: ExportRequest, _: Arc<ExportCompletion>) {
-        panic!("a renderer fault");
-    }
-}
-// Failure: a client whose request panicked kept its place, so after sixteen such faults the
-// socket dropped every connection unanswered. Oracle: the next request is answered.
-#[test]
-fn a_client_that_panics_frees_its_place() {
-    let (_dir, path) = document();
-    let owner = open(&path);
-    let server = Server::start(owner.clone(), Arc::new(Panics)).unwrap();
-    let mut export = request(&path, "export");
-    export["format"] = "png".into();
-    export["output"] = "/tmp/result.png".into();
-    for _ in 0..16 {
-        assert!(
-            socket::call(server.path(), &socket_request(export.clone())).is_err(),
-            "a panicked request has no reply"
-        );
-    }
-    let answer = socket::call(server.path(), &socket_request(request(&path, "get")));
-    assert_eq!(checked(answer.expect("a place is free"))["method"], "get");
-    close(&owner);
-    server.stop();
-}
-
 // Failure: a closed export without a renderer did not refuse cleanly, or a closed export
 // took the writer lock to render. Oracle: a refusal, the live owner's own answer, and the
 // saved state exported while another writer holds the lock with no session to ask.
@@ -813,9 +703,13 @@ fn exports_reach_a_live_owner_or_render_a_closed_documents_saved_state() {
     // `command::request` has no evaluator to render with.
     let refused = run(export.clone());
     assert_eq!((refused["code"].as_str(), refused["reason"].as_str()), (Some("rejected"), Some("invalid_request")));
-    let owner = open(&path);
-    let server = Server::start(owner.clone(), Arc::new(NoExport)).unwrap();
-    assert_eq!(run(export.clone())["error"], "No export", "the live owner's renderer answers");
+    let owner = Arc::new(open(&path, Mode::Document).0);
+    let server = Server::start(owner.clone(), None).unwrap();
+    assert_eq!(
+        run(export.clone())["error"],
+        "Export requires the capture renderer",
+        "the live owner requires its evaluator"
+    );
     close(&owner);
     server.stop();
     assert!(!output.exists());
@@ -824,7 +718,7 @@ fn exports_reach_a_live_owner_or_render_a_closed_documents_saved_state() {
         let busy = registry::Lease::acquire(&path).unwrap();
         let pdf = b"%PDF-1.7\n%%EOF".to_vec();
         export.as_object_mut().unwrap().remove("protocol");
-        let request = pop_runtime::EngineRequest::parse(&export.to_string()).unwrap();
+        let request = pop_contracts::wire::engine::DocumentRequest::parse(&export.to_string()).unwrap();
         let rendered = command::request_with_evaluator(request, PROTOCOL, Some(support::renderer(":", &pdf)));
         assert_eq!(checked(rendered), json!({"ok":true,"method":"export","output":output}));
         assert_eq!(std::fs::read(&output).unwrap(), pdf);
@@ -836,9 +730,9 @@ fn exports_reach_a_live_owner_or_render_a_closed_documents_saved_state() {
 #[test]
 fn page_config_and_native_actions_share_the_owners_lifecycle_fence() {
     use command::PageDispatch;
-    use pop_runtime::page_wire::HostAction;
+    use pop_contracts::wire::page::HostAction;
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     owner.attach("page".into());
     let config = page_json(&page(&owner, "page", r#"{"method":"config"}"#));
     assert_eq!(config["ok"], true);
@@ -865,19 +759,19 @@ fn page_config_and_native_actions_share_the_owners_lifecycle_fence() {
 #[test]
 fn speech_requests_reach_the_host_only_when_the_app_declared_speech() {
     use command::PageDispatch;
-    use pop_runtime::page_wire::HostAction;
+    use pop_contracts::wire::page::HostAction;
     let id = "0123456789abcdef".repeat(4);
     let request = json!({"method":"speech.transcribe","attachment":id,"locale":"en-US"}).to_string();
 
     let (_dir, path) = document();
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     owner.attach("page".into());
     let undeclared = page(&owner, "page", &request);
     assert!(matches!(undeclared, PageDispatch::Reply { failure: None, .. }), "a definite answer, not a fault");
     let outcome = &page_json(&undeclared)["outcome"];
     assert_eq!((outcome["status"].as_str(), outcome["reason"].as_str()), (Some("unavailable"), Some("notDeclared")));
     assert!(outcome["message"].as_str().unwrap().contains("capabilities"));
-    let typed = pop_runtime::page_wire::PageRequest::decode(&request).unwrap();
+    let typed = pop_contracts::wire::page::PageRequest::decode(&request).unwrap();
     let (reply, received) = mpsc::channel();
     command::page_typed(&owner, "page".into(), typed, move |dispatch| reply.send(dispatch).unwrap());
     let typed = received.recv_timeout(Duration::from_secs(5)).unwrap();
@@ -887,7 +781,7 @@ fn speech_requests_reach_the_host_only_when_the_app_declared_speech() {
     assert_eq!(page_json(&page(&owner, "page", &request))["code"], "closing");
 
     let (_dir, path) = document_declaring(&["speech"]);
-    let owner = open(&path);
+    let owner = Arc::new(open(&path, Mode::Document).0);
     owner.attach("page".into());
     match page(&owner, "page", &request) {
         PageDispatch::Host { action: HostAction::SpeechTranscribe { attachment, locale } } => {
@@ -914,18 +808,81 @@ fn speech_requests_reach_the_host_only_when_the_app_declared_speech() {
 }
 
 #[test]
-fn browser_envelopes_refuse_invalid_fields_before_dispatch() {
-    use pop_runtime::browser_wire::{BrowserRequest, TRANSFER_BYTES};
-    let valid = json!({"type":"resource","id":"r","route":"app","key":"ui.js","offset":0,"length":TRANSFER_BYTES});
-    assert!(BrowserRequest::decode(&valid.to_string()).is_ok());
-    for invalid in [
-        json!({"type":"flush","id":"r","extra":true}),
-        json!({"type":"resource","id":"r","route":"app","key":"ui.js","offset":-1,"length":1}),
-        json!({"type":"resource","id":"r","route":"app","key":"ui.js","offset":0,"length":TRANSFER_BYTES + 1}),
-        json!({"type":"resource","id":"r","route":"app","key":"ui.js","offset":0,"length":null}),
-        json!({"type":"evaluated","output":"{}","error":"both"}),
-        json!({"type":"open","copy":"------------------------------------","source":null}),
-    ] {
-        assert!(BrowserRequest::decode(&invalid.to_string()).is_err(), "{invalid}");
+fn the_permanent_protocol_refusal_keeps_its_exact_bytes() {
+    let error = pop_contracts::Error {
+        code: pop_contracts::wire::Code::RequiresUpdate,
+        message: "Update pop".into(),
+        op_index: None,
+        path: vec![],
     }
+    .into();
+    assert_eq!(
+        pop_runtime::command::failure(error, false, false),
+        r#"{"ok":false,"error":"Update pop","code":"rejected","reason":"requires_update"}"#
+    );
+}
+
+#[test]
+fn a_dead_owners_discovery_does_not_block_saved_export() {
+    let (dir, path) = document();
+    let lease = registry::Lease::acquire(&path).unwrap();
+    let (dev, ino) = lease.file();
+    drop(lease);
+    let discovery = support::registry_folder().join(format!("{dev:x}-{ino:x}.json"));
+    std::fs::write(
+        &discovery,
+        json!({"documentPath":std::fs::canonicalize(&path).unwrap(),"socket":dir.path().join("dead.sock")}).to_string(),
+    )
+    .unwrap();
+    let output = dir.path().join("saved.pdf");
+    let request = pop_contracts::wire::engine::DocumentRequest::Export {
+        document_path: path.to_str().unwrap().into(),
+        format: pop_contracts::wire::engine::ExportFormat::Pdf,
+        output: output.to_str().unwrap().into(),
+    };
+    let pdf = b"%PDF-1.7\n%%EOF";
+    let reply = checked(command::request_with_evaluator(request, PROTOCOL, Some(support::renderer(":", pdf))));
+    assert_eq!(reply, json!({"ok":true,"method":"export","output":output}));
+    assert_eq!(std::fs::read(output).unwrap(), pdf);
+    assert!(!discovery.exists());
+}
+
+#[test]
+fn live_export_drains_page_edits_and_renders_saved_source_after_owner_close() {
+    struct Page(Arc<Owner>);
+    impl command::PageBarrier for Page {
+        fn settle(&self, completion: Arc<command::PageSettlement>) {
+            let batch = pop_contracts::wire::Batch::decode(
+                r#"{"intents":[{"type":"set","path":["title"],"value":"Page draft"}]}"#,
+            )
+            .unwrap();
+            let result = call(&self.0, |owner, options, callback| {
+                owner.apply(batch, pop_core::Origin::Page, options, callback);
+            });
+            completion.complete(result.map(|_| ()));
+        }
+        fn resume(&self) {
+            close(&self.0);
+        }
+    }
+    let (dir, path) = document();
+    let output = dir.path().join("live.pdf");
+    let inputs = dir.path().join("capture-inputs");
+    let pdf = b"%PDF-1.7\n%%EOF";
+    let evaluator = support::renderer(&format!("printf '%s\\n' \"$input\" >> '{}'", inputs.display()), pdf);
+    let owner = Arc::new(Owner::open_with_evaluator(&path, Mode::Document, Arc::new(|_| {}), Some(evaluator)).unwrap());
+    let server = Server::start(owner.clone(), Some(Arc::new(Page(owner.clone())))).unwrap();
+    let mut export = request(&path, "export");
+    export["format"] = "pdf".into();
+    export["output"] = json!(output);
+    assert_eq!(run(export), json!({"ok":true,"method":"export","output":output}));
+    assert_eq!(std::fs::read(&output).unwrap(), pdf);
+    assert!(registry::Lease::acquire(&path).is_ok(), "the source outlives the owner");
+    let saved = Store::open(&path, Mode::Snapshot).unwrap();
+    assert_eq!(saved.document().unwrap().reading().unwrap().value["title"], "Page draft");
+    let input = std::fs::read_to_string(inputs).unwrap();
+    let job: Value = serde_json::from_str(input.lines().next().unwrap()).unwrap();
+    let rendered: Value = serde_json::from_str(job["request"].as_str().unwrap()).unwrap();
+    assert_eq!(rendered["snapshot"]["title"], "Page draft");
+    server.stop();
 }

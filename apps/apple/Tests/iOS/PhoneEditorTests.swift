@@ -23,24 +23,11 @@ final class PhoneEditorTests: XCTestCase {
     }
   }
 
-  func testSharedRecentUsesEmbeddedTitleWithoutRenamingItsCanonicalFile() throws {
-    let folder = try outputFolder().appendingPathComponent("SharedDocuments", isDirectory: true)
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    let file = folder.appendingPathComponent(UUID().uuidString.lowercased() + ".pop")
-    _ = try PopFile.importCopy(from: input("host-probe"), to: file)
-    let expected = try PopSummary(url: file).metadata.title
-    XCTAssertEqual(PhoneRecent.localTitle(file), expected)
-    XCTAssertTrue(FileManager.default.fileExists(atPath: file.path))
-    XCTAssertEqual(PhoneRecent.localTitle(file), expected)
-  }
-
-  func testLocalRecentPreservesFilenameAndSharedUnreadableFileHasFriendlyFallback() throws {
+  func testLocalRecentPreservesFilename() throws {
     let folder = try outputFolder()
     XCTAssertEqual(PhoneRecent.localTitle(folder.appendingPathComponent("My notes-a1b2c3d4.pop")), "My notes")
     let uuid = UUID().uuidString.lowercased()
     XCTAssertEqual(PhoneRecent.localTitle(folder.appendingPathComponent(uuid + ".pop")), uuid)
-    let shared = folder.appendingPathComponent("SharedDocuments", isDirectory: true)
-    XCTAssertEqual(PhoneRecent.localTitle(shared.appendingPathComponent(uuid + ".pop")), "Shared pop")
   }
 
   /// Leaving returns to the library at once and saves behind it: the page's last typing is
@@ -454,8 +441,7 @@ final class PhoneEditorTests: XCTestCase {
     add(report)
     // Prepare the app container for the subsequent UI test using the same minimal
     // infrastructure fixture. No fixture or launch argument ships in the preview app.
-    let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-      .appendingPathComponent("Documents", isDirectory: true)
+    let support = PopLibrary.managedFolder.appendingPathComponent("documents", isDirectory: true)
     let seed = support.appendingPathComponent("Editor fixture with icon.pop")
     // A fresh copy every run: neither an earlier run's edits nor a file an earlier build
     // wrote carries over into the UI tests.
@@ -541,7 +527,7 @@ final class PhoneEditorTests: XCTestCase {
     let sources = try FileManager.default.contentsOfDirectory(at: fixtures, includingPropertiesForKeys: nil).filter {
       $0.lastPathComponent.hasPrefix("released-") && $0.pathExtension == "pop"
     }
-    // Lineage 2 has no published corpus until its first release freezes one.
+    // No published corpus exists until the first release freezes one.
     try XCTSkipIf(sources.isEmpty, "No released compatibility documents are published yet")
     let folder = try outputFolder()
     for source in sources {

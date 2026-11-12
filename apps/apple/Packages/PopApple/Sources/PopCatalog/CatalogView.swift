@@ -109,7 +109,9 @@ public struct CatalogView: View {
       .onReceive(NotificationCenter.default.publisher(for: .popJoinSharedPop)) { notification in
         if let link = notification.object as? String {
           Task {
-            do { try await joinSharedLink(link) } catch { sharingError = sharingMessage(error) }
+            do { try await joinSharedLink(link) } catch is CancellationError {
+              // Cancelling sign-in drops this invitation.
+            } catch { sharingError = sharingMessage(error) }
           }
         } else {
           showJoin = true

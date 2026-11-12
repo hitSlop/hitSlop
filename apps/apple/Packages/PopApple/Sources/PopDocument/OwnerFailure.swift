@@ -3,15 +3,19 @@ import PopCore
 import PopCoreBinding
 
 extension OwnerFailure {
-  static var closed: Self { .init(kind: .closed, message: "Document owner is closed", reason: nil, opIndex: nil) }
-  static var closing: Self { .init(kind: .closing, message: "Document is closing", reason: nil, opIndex: nil) }
+  static var closed: Self {
+    .init(kind: .closed, message: "Document owner is closed", reason: nil, opIndex: nil, path: [])
+  }
+  static var closing: Self {
+    .init(kind: .closing, message: "Document is closing", reason: nil, opIndex: nil, path: [])
+  }
   static var replaced: Self {
     .init(
       kind: .replaced, message: "The document or page was replaced; the request was not applied", reason: nil,
-      opIndex: nil)
+      opIndex: nil, path: [])
   }
   static func rejected(_ message: String) -> Self {
-    .init(kind: .rejected, message: message, reason: .invalidRequest, opIndex: nil)
+    .init(kind: .rejected, message: message, reason: .invalidRequest, opIndex: nil, path: [])
   }
 
   /// Keep typed core failures intact when a native host operation returns to the owner.
@@ -19,8 +23,8 @@ extension OwnerFailure {
     switch error {
     case let failure as OwnerFailure, CoreError.Failure(let failure): self = failure
     case is PopRequiresUpdate:
-      self.init(kind: .rejected, message: error.localizedDescription, reason: .requiresUpdate, opIndex: nil)
-    default: self.init(kind: .failed, message: error.localizedDescription, reason: nil, opIndex: nil)
+      self.init(kind: .rejected, message: error.localizedDescription, reason: .requiresUpdate, opIndex: nil, path: [])
+    default: self.init(kind: .failed, message: error.localizedDescription, reason: nil, opIndex: nil, path: [])
     }
   }
 }

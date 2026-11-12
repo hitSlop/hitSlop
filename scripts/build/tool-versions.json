@@ -1,5 +1,4 @@
 {
   "wasmBindgen": "0.2.129",
-  "uniffi": "0.32.2",
-  "binaryen": "132"
+  "uniffi": "0.32.2"
 }

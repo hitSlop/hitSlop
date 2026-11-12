@@ -25,7 +25,7 @@ pub enum Category {
 
 impl Category {
     pub fn name(self) -> String {
-        serde_json::to_value(self).expect("category").as_str().expect("string category").into()
+        crate::enum_name(self)
     }
     pub fn parse(value: String) -> Result<Self> {
         serde_json::from_value(Value::String(value)).map_err(|_| err(Code::InvalidRequest, "Unknown category"))
@@ -70,7 +70,7 @@ pub struct AppMetadata {
 }
 
 /// A device or host service an app declares it uses. The host admits a request only for a
-/// declared capability; the OS or browser permission still applies. Authoring refuses any
+/// declared capability; the OS permission still applies. Authoring refuses any
 /// value not listed here.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -110,14 +110,12 @@ pub enum Background {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
 pub struct ThemeInput {
     pub token: String,
     pub color: String,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
 pub struct CommandInput {
     pub name: String,
@@ -126,7 +124,6 @@ pub struct CommandInput {
     pub args: Value,
 }
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "app.generated.ts"))]
 pub struct Views {
     pub preview: bool,
@@ -138,7 +135,7 @@ pub struct Views {
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
+#[serde(rename_all = "camelCase")]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "app.generated.ts"))]
 pub struct WidgetOptions {
     #[serde(default, deserialize_with = "present_option", skip_serializing_if = "Option::is_none")]

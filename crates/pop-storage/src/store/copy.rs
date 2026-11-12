@@ -1,8 +1,6 @@
 //! Native clean copies, sharing seeds, capture sources, backups and artwork.
 use super::*;
 
-const RESOURCE_HASH_CHUNK_BYTES: u64 = 1 << 20;
-
 impl Store {
     /// Files import reads one accepted snapshot without owning or modifying the source.
     /// The destination gets an independent identity, retaining the imported file's
@@ -10,7 +8,7 @@ impl Store {
     pub fn import_copy(source: &Path, dest: &Path) -> Result<()> {
         file::document_destination(dest)?;
         if let Some(folder) = dest.parent().filter(|folder| !folder.as_os_str().is_empty()) {
-            std::fs::create_dir_all(folder).map_err(failed)?;
+            std::fs::create_dir_all(folder).map_err(crate::error::from_error)?;
         }
         let conn = file::reader(source)?;
         let read = conn.unchecked_transaction().map_err(sqlite("read"))?;
@@ -32,7 +30,7 @@ impl Store {
     pub fn set_artwork(&self, artwork: &[(Artwork, &[u8])]) -> Result<()> {
         self.check(true)?;
         let optimized = optimized_artwork(artwork)?;
-        self.connected(&mut lock(&self.backing).conn, |conn| {
+        self.connected(&mut self.backing.borrow_mut().conn, |conn| {
             let tx = file::begin_write(conn, "write artwork")?;
             for (name, png) in &optimized {
                 rows::put_artwork(&tx, *name, png)?;
@@ -64,10 +62,7 @@ impl Store {
         theme: &std::collections::BTreeMap<String, String>,
     ) -> Result<()> {
         file::document_destination(dest)?;
-        let dest = file::resolve(dest)?;
-        if std::fs::symlink_metadata(&dest).is_ok() {
-            return Err(rejected(crate::Code::Exists, "A file already exists there"));
-        }
+        let dest = file::new_output(dest)?;
         let staged = file::Staged::beside(&dest)?;
         self.copy_clean_unplaced(staged.path(), state, artwork)?;
         let unusable = |why: String| failed(format!("The copy cannot replace this document: {why}"));
@@ -92,48 +87,6 @@ impl Store {
         let app = self.app.app.spec();
         self.read(|conn| {
             file::copy(conn, dest, false, true, Some(&|staged: &Connection| clean(staged, app, state, &artwork)))
-        })
-    }
-
-    /// The public app resource inventory from one accepted SQLite snapshot, hashed
-    /// through the bounded resource reader.
-    pub fn sharing_manifest(&self) -> Result<pop_sharing_protocol::resources::Manifest> {
-        use pop_sharing_protocol::resources::{self, Manifest, Resource};
-        self.check(false)?;
-        self.read(|connection| {
-            let read = connection.unchecked_transaction().map_err(sqlite("read sharing resources"))?;
-            let connection: &Connection = &read;
-            let reader = file::ResourceReader::with_cache(connection, Default::default());
-            let mut inventory = Vec::new();
-            for key in rows::asset_keys(&read)? {
-                if !resources::asset_key(&key) {
-                    continue;
-                }
-                let info = reader
-                    .info(file::ResourceRoute::App, &key)?
-                    .ok_or_else(|| failed("Missing public app resource"))?;
-                let mut hash = Sha256::new();
-                let mut offset = 0;
-                while offset < info.size {
-                    let length = (info.size - offset).min(RESOURCE_HASH_CHUNK_BYTES);
-                    let bytes = reader
-                        .read_range(file::ResourceRoute::App, &key, offset, length)?
-                        .ok_or_else(|| failed("Missing app resource bytes"))?;
-                    if bytes.len() as u64 != length {
-                        return Err(failed("Incomplete app resource bytes"));
-                    }
-                    hash.update(&bytes);
-                    offset += length;
-                }
-                inventory.push(Resource {
-                    key,
-                    hash: crate::hex(&hash.finalize()),
-                    size: info.size,
-                    media_type: info.media_type,
-                });
-            }
-            resources::validate(&inventory, false).map_err(failed)?;
-            Ok(Manifest { app: crate::hex(&rows::app_digest(&read)?), resources: inventory })
         })
     }
 
@@ -225,7 +178,7 @@ fn optimized_artwork(artwork: &[(Artwork, &[u8])]) -> Result<Vec<(Artwork, Vec<u
 }
 /// A copy's state made its own, in one transaction: the current state without history,
 /// the attachments it references, and `artwork` in place of the original's.
-fn clean(conn: &Connection, app: &crate::AppSpec, state: &[u8], artwork: &[(Artwork, Vec<u8>)]) -> Result<()> {
+fn clean(conn: &Connection, app: &pop_core::AppSpec, state: &[u8], artwork: &[(Artwork, Vec<u8>)]) -> Result<()> {
     let doc = Document::open(app, state, &[]).map_err(load_failure)?;
     let state = doc.clean_checkpoint().map_err(load_failure)?;
     if !within(0, checkpoint_row(state.len())) {

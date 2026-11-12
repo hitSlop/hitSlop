@@ -69,7 +69,7 @@ test("CI skips unrelated edits and selects affected boundaries", () => {
   expect(affected("apps/landing/src/pages/index.astro")).toEqual(["landing"]);
   expect(affected("apps/apple/Packages/PopApple/Tests/PopCoreTests/LibraryOwnerTests.swift")).toEqual(["swift", "native"]);
   expect(affected("tools/pop-bindgen/src/main.rs")).toEqual(affected("crates/pop-storage/src/store/mod.rs"));
-  expect(affected("crates/pop-storage/src/store/mod.rs")).toEqual(["contracts", "bun", "cli", "render", "browser", "rust", "sharing", "packed", "swift", "native"]);
+  expect(affected("crates/pop-storage/src/store/mod.rs")).toEqual(["contracts", "bun", "cli", "render", "webkit", "rust", "sharing", "packed", "swift", "native"]);
   for (const path of ["packages/pop/src/sdk/context.ts", "packages/pop/src/shell/boot.js"])
     expect(affected(path)).toEqual(expect.arrayContaining(["bun", "cli", "packed", "swift", "native"]));
   for (const path of [".github/workflows/ci.yml", "bun.lock", "package.json", "scripts/lib/verification-inputs.ts"])
@@ -81,12 +81,10 @@ test("a pull request qualifies sharing for every input of the sharing tier, and 
     "crates/pop-runtime/src/owner/actor/sync.rs",
     "crates/pop-core/src/document/mod.rs",
     "Cargo.lock",
-    "crates/pop-sharing-client/src/transport.rs",
+    "crates/pop-cloud/src/transport/mod.rs",
     "apps/sharing/src/lib.rs",
     ".github/workflows/sharing.yml",
     "scripts/sharing/check-accounts.ts",
-    "packages/pop/src/browser/host.ts",
-    "packages/pop/src/sharing/worker.ts",
   ])
     expect(touchesSharing([path])).toBe(true);
   for (const path of ["docs/testing.md", "README.md", "apps/landing/src/pages/index.astro", "apps/apple/App/iOS/PhoneDocuments.swift", "packages/pop/src/sdk/context.ts"])
@@ -122,7 +120,7 @@ test("nightly, manual and release branches select the full suite; ordinary chang
     expect(() => verificationArgs(env)).toThrow();
 });
 
-test("required CI keeps document compatibility and packaging, without browser qualification or duplicated portable checks", () => {
+test("required CI keeps document compatibility and packaging, without WebKit qualification or duplicated portable checks", () => {
   const jobs = (paths: string[], event = "pull_request") => ciJobs(affected(...paths), event, true, affectedTiers(paths, ["app"]).length > 0);
   const core = jobs(["crates/pop-storage/src/store/mod.rs"]);
   expect(core.native).toBe("swift,native");
@@ -146,14 +144,14 @@ test("required CI keeps document compatibility and packaging, without browser qu
   expect(jobs(["docs/testing.md"])).toEqual({ fast: "", ...none });
   for (const path of ["tests/native/render.native.test.ts", "tests/native/landing.native.test.ts", "packages/pop/tests/cli/build.native.test.ts"])
     expect(jobs([path])).toEqual({ fast: "types,render", ...none });
-  expect(jobs(["packages/pop/tests/sdk/editable-text.browser.test.ts"])).toEqual({ fast: "types", ...none });
-  expect(jobs(["packages/pop/src/browser/worker.ts"]).fast.split(",")).toContain("packed");
+  expect(jobs(["packages/pop/tests/sdk/editable-text.webkit.test.ts"])).toEqual({ fast: "types", ...none });
+  expect(jobs(["packages/pop/src/shell/boot.ts"]).fast.split(",")).toContain("packed");
   for (const event of ["pull_request", "push", "schedule", "workflow_dispatch"]) {
     const all = ciJobs(candidates, event);
     for (const job of [all.fast, all.native, all.nativeRust, all.rust]) {
-      expect(job.split(",")).not.toContain("browser");
+      expect(job.split(",")).not.toContain("webkit");
     }
-    expect(all.qualification).toBe(["schedule", "workflow_dispatch"].includes(event) ? "browser,cli,packed" : "");
+    expect(all.qualification).toBe(["schedule", "workflow_dispatch"].includes(event) ? "webkit,cli,packed" : "");
   }
 });
 
@@ -223,15 +221,15 @@ test("Git selection includes both sides of renames, deleted files and fails on a
 });
 
 test("test discovery assigns each boundary and refuses unclassified tests", () => {
-  const files = ["tests/packed/packed.test.ts", "packages/pop/tests/cli/build.test.ts", "packages/pop/tests/sdk/errors.test.ts", "packages/pop/tests/sdk/editable-text.browser.test.ts", "tests/verification/runner.test.ts", "tests/native/render.native.test.ts", "tests/native/landing.native.test.ts", "packages/pop/tests/cli/build.native.test.ts"];
+  const files = ["tests/packed/packed.test.ts", "packages/pop/tests/cli/build.test.ts", "packages/pop/tests/sdk/errors.test.ts", "packages/pop/tests/sdk/editable-text.webkit.test.ts", "tests/verification/runner.test.ts", "tests/native/render.native.test.ts", "tests/native/landing.native.test.ts", "packages/pop/tests/cli/build.native.test.ts"];
   const groups = testInventory(files);
   expect(Object.values(groups).flat().sort()).toEqual(files.sort());
   expect(groups.render).toEqual(["packages/pop/tests/cli/build.native.test.ts", "tests/native/landing.native.test.ts", "tests/native/render.native.test.ts"]);
   expect(groups.cli).toEqual(["packages/pop/tests/cli/build.test.ts"]);
-  expect(groups.browser).toEqual(["packages/pop/tests/sdk/editable-text.browser.test.ts"]);
+  expect(groups.webkit).toEqual(["packages/pop/tests/sdk/editable-text.webkit.test.ts"]);
   expect(groups.tooling).toEqual(["tests/verification/runner.test.ts"]);
   expect(() => testInventory(["tests/forgotten/a.test.ts"])).toThrow("Unclassified");
-  for (const file of ["tests/examples/one.test.ts", "tests/examples/two.native.test.ts", "tests/examples/three.browser.test.ts", "pop/one/ui.test.ts"])
+  for (const file of ["tests/examples/one.test.ts", "tests/examples/two.native.test.ts", "tests/examples/three.webkit.test.ts", "pop/one/ui.test.ts"])
     expect(() => testInventory([file])).toThrow("Per-example tests");
 });
 
@@ -268,7 +266,7 @@ test("Swift success requires at least one executed test", () => {
 test("formatter and lint policy changes select the tier that enforces them", () => {
   for (const path of [".prettierrc.json", ".prettierignore", ".oxlintrc.json"])
     expect(affected(path)).toEqual(["types"]);
-  for (const path of ["sdk/base.css", "shell/boot.js", "browser/index.html"])
+  for (const path of ["sdk/base.css", "shell/boot.js", "cli/preview.html"])
     expect(affected(`packages/pop/src/${path}`)).toContain("types");
   expect(affected("rustfmt.toml")).toContain("rust");
   for (const path of ["apps/apple/.swift-format", "scripts/lib/swift-format.ts"]) {
@@ -282,7 +280,7 @@ test("example changes select authoring checks; infrastructure fixtures select th
   for (const path of ["pop/one/App.svelte", "pop/one/styles.css", "pop/one/pop.ts"])
     expect(affected(path)).toEqual(["types"]);
   expect(affected("pop/one/README.md")).toEqual([]);
-  expect(affected("tests/apps/document/App.svelte")).toEqual(expect.arrayContaining(["types", "cli", "browser", "swift", "native"]));
-  expect(affected("packages/pop/tests/sdk/editable-text.browser.test.ts")).toEqual(["types", "browser"]);
-  expect(affected("packages/pop/templates/checklist/App.svelte")).toEqual(expect.arrayContaining(["types", "cli", "browser", "packed"]));
+  expect(affected("tests/apps/document/App.svelte")).toEqual(expect.arrayContaining(["types", "cli", "webkit", "swift", "native"]));
+  expect(affected("packages/pop/tests/sdk/editable-text.webkit.test.ts")).toEqual(["types", "webkit"]);
+  expect(affected("packages/pop/templates/checklist/App.svelte")).toEqual(expect.arrayContaining(["types", "cli", "webkit", "packed"]));
 });

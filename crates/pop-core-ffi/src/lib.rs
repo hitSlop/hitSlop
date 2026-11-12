@@ -1,13 +1,15 @@
 //! The Swift adapter. Core types that reach the host unchanged cross as UniFFI remote
 //! types: each is restated here once, checked against its definition at compile time, and
-//! named for Swift in `uniffi.toml`.
+//! named for Swift at their boundary declarations.
 uniffi::setup_scaffolding!();
 
+use pop_contracts::catalog::TemplateSource;
+use pop_contracts::shape::{Length, Segment, Silhouette};
 use pop_core::Origin;
-use pop_core::shape::{Length, Segment, Silhouette};
 use pop_runtime::owner::Failure;
-use pop_storage::file::{self, Artwork, Kind, TemplateSource};
-use pop_storage::store::{self, Attachment, Mode};
+use pop_storage::file::{Artwork, Kind};
+use pop_storage::store::Mode;
+use pop_storage::{file, store};
 
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -31,8 +33,8 @@ impl From<store::Error> for CoreError {
         Failure::from(e).into()
     }
 }
-impl From<pop_core::Error> for CoreError {
-    fn from(e: pop_core::Error) -> Self {
+impl From<pop_contracts::Error> for CoreError {
+    fn from(e: pop_contracts::Error) -> Self {
         Failure::from(e).into()
     }
 }
@@ -56,12 +58,14 @@ impl From<pop_core::theme::ThemeState> for ThemeState {
 
 /// A window corner length: points, or a percentage of the window's width or height.
 #[uniffi::remote(Record)]
+#[uniffi(name = "SilhouetteLength")]
 pub struct Length {
     pub value: f64,
     pub percent: bool,
 }
 /// Absolute path commands in SVG's y-down coordinates.
 #[uniffi::remote(Enum)]
+#[uniffi(name = "SilhouetteSegment")]
 pub enum Segment {
     Move { x: f64, y: f64 },
     Line { x: f64, y: f64 },
@@ -70,6 +74,7 @@ pub enum Segment {
 }
 /// A parsed manifest window shape; see `pop_core::shape`.
 #[uniffi::remote(Enum)]
+#[uniffi(name = "WindowSilhouette")]
 pub enum Silhouette {
     Radii { horizontal: Vec<Length>, vertical: Vec<Length> },
     Path { segments: Vec<Segment>, view_box_width: f64, view_box_height: f64, even_odd: bool },
@@ -78,6 +83,7 @@ pub enum Silhouette {
 /// Who made a change: the person, in the page or the window's own controls (the theme
 /// panel), or an agent through the CLI or socket.
 #[uniffi::remote(Enum)]
+#[uniffi(name = "EditOrigin")]
 pub enum Origin {
     Page,
     Window,
@@ -99,21 +105,16 @@ pub fn core_build_id() -> String {
 }
 
 #[uniffi::remote(Enum)]
+#[uniffi(name = "StoreMode")]
 pub enum Mode {
     /// Owns the document: holds the writer lock and persists writes.
     Document,
     /// Reads the saved state without the lock and writes nothing.
     Snapshot,
 }
-/// A stored attachment: its identity (SHA-256, hex) and size in bytes.
-#[uniffi::remote(Record)]
-pub struct Attachment {
-    pub media_type: String,
-    pub id: String,
-    pub bytes: u64,
-}
 
 #[uniffi::remote(Enum)]
+#[uniffi(name = "FileKind")]
 pub enum Kind {
     Template,
     Document,
@@ -121,6 +122,7 @@ pub enum Kind {
 /// Complete acceptance, for rendering or editing the embedded app.
 #[derive(uniffi::Record)]
 pub struct OpenedFile {
+    pub document_id: Option<String>,
     pub kind: Kind,
     pub package_format: u64,
     pub runtime_abi: u64,
@@ -131,6 +133,7 @@ pub struct OpenedFile {
 impl From<&file::OpenedApp> for OpenedFile {
     fn from(p: &file::OpenedApp) -> Self {
         Self {
+            document_id: p.document_uuid.clone(),
             kind: p.kind,
             package_format: p.package_format,
             runtime_abi: p.runtime_abi,
@@ -143,6 +146,16 @@ impl From<&file::OpenedApp> for OpenedFile {
 #[uniffi::export]
 pub fn open_file(path: String) -> Result<OpenedFile, CoreError> {
     Ok((&file::open(Path::new(&path), false)?).into())
+}
+/// The application ID identifying pop files.
+#[uniffi::export]
+pub fn file_application_id() -> u32 {
+    pop_contracts::format::APPLICATION_ID
+}
+/// A saved document's identity, without taking ownership.
+#[uniffi::export]
+pub fn file_document_id(path: String) -> Result<Option<String>, crate::sharing::SharingError> {
+    pop_cloud::local_document(Path::new(&path)).map_err(crate::sharing::failure)
 }
 /// Cheap display metadata. This is not a validity certificate for the embedded app.
 #[uniffi::export]
@@ -195,25 +208,6 @@ pub fn import_document(source: String, destination: String) -> Result<(), CoreEr
 pub fn delete_document(path: String) -> Result<(), CoreError> {
     Ok(file::delete_document(Path::new(&path))?)
 }
-#[derive(uniffi::Record)]
-pub struct RelocatedDocument {
-    pub path: String,
-    pub cleanup_error: Option<String>,
-}
-/// An explicit local move, preserving document identity and all retained history.
-#[uniffi::export]
-pub fn relocate_document(source: String, folder: String) -> Result<RelocatedDocument, CoreError> {
-    #[cfg(target_os = "macos")]
-    {
-        let moved = file::relocate_document(Path::new(&source), Path::new(&folder))?;
-        Ok(RelocatedDocument { path: moved.path.to_string_lossy().into_owned(), cleanup_error: moved.cleanup_error })
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        let _ = (source, folder);
-        Err(store::Error::Failed("Moving a cloud document is unavailable on this platform".into()).into())
-    }
-}
 /// A pop's preview or icon artwork.
 #[uniffi::remote(Enum)]
 pub enum Artwork {
@@ -264,17 +258,21 @@ pub fn content_type(path: String) -> String {
 pub struct ResourceReader(Mutex<file::ResourceReader>);
 #[uniffi::export]
 impl ResourceReader {
-    pub fn info(&self, route: file::ResourceRoute, key: String) -> Result<Option<file::ResourceInfo>, CoreError> {
-        Ok(self.0.lock().unwrap_or_else(|e| e.into_inner()).info(route, &key)?)
+    pub fn info(
+        &self,
+        route: pop_contracts::resources::ResourceRoute,
+        key: String,
+    ) -> Result<Option<pop_contracts::resources::ResourceInfo>, CoreError> {
+        Ok(pop_core::lock(&self.0).info(route, &key)?)
     }
     pub fn read_range(
         &self,
-        route: file::ResourceRoute,
+        route: pop_contracts::resources::ResourceRoute,
         key: String,
         offset: u64,
         length: u64,
     ) -> Result<Option<Vec<u8>>, CoreError> {
-        Ok(self.0.lock().unwrap_or_else(|e| e.into_inner()).read_range(route, &key, offset, length)?)
+        Ok(pop_core::lock(&self.0).read_range(route, &key, offset, length)?)
     }
 }
 

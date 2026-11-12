@@ -13,10 +13,16 @@
     "type": "OpenRoom",
     "name": "open request",
     "input": {
-      "seedSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      "seed": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "version": [],
+      "app": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "attachments": []
     },
     "canonical": {
-      "seedSha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+      "seed": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "version": [],
+      "app": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "attachments": []
     }
   },
   {
@@ -171,14 +177,12 @@
     "input": {
       "document": "00000000-0000-4000-8000-000000000001",
       "sharing": true,
-      "generation": 2,
       "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "role": "owner"
     },
     "canonical": {
       "document": "00000000-0000-4000-8000-000000000001",
       "sharing": true,
-      "generation": 2,
       "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "role": "owner"
     }
@@ -189,7 +193,6 @@
     "input": {
       "document": "00000000-0000-4000-8000-000000000001",
       "sharing": true,
-      "generation": 2,
       "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "role": "owner",
       "futureHint": {
@@ -199,7 +202,6 @@
     "canonical": {
       "document": "00000000-0000-4000-8000-000000000001",
       "sharing": true,
-      "generation": 2,
       "capability": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "role": "owner"
     }
@@ -210,14 +212,12 @@
     "input": {
       "document": "00000000-0000-4000-8000-000000000001",
       "sharing": false,
-      "generation": 3,
       "capability": null,
       "role": "owner"
     },
     "canonical": {
       "document": "00000000-0000-4000-8000-000000000001",
       "sharing": false,
-      "generation": 3,
       "capability": null,
       "role": "owner"
     }
@@ -228,14 +228,12 @@
     "input": {
       "document": "00000000-0000-4000-8000-000000000001",
       "sharing": true,
-      "generation": 2,
       "capability": null,
       "role": "editor"
     },
     "canonical": {
       "document": "00000000-0000-4000-8000-000000000001",
       "sharing": true,
-      "generation": 2,
       "capability": null,
       "role": "editor"
     }
@@ -246,7 +244,6 @@
     "input": {
       "document": "00000000-0000-4000-8000-000000000001",
       "sharing": true,
-      "generation": 2,
       "capability": null,
       "role": "editor",
       "futureHint": {
@@ -256,7 +253,6 @@
     "canonical": {
       "document": "00000000-0000-4000-8000-000000000001",
       "sharing": true,
-      "generation": 2,
       "capability": null,
       "role": "editor"
     }
@@ -274,30 +270,46 @@
     "canonical": "editor"
   },
   {
-    "type": "DocumentMetadata",
+    "type": "JoinedDocument",
     "name": "catalog metadata",
     "input": {
       "title": "Weekly plan",
-      "templateId": "planner"
+      "templateId": "planner",
+      "document": "00000000-0000-4000-8000-000000000001",
+      "sharing": true,
+      "capability": null,
+      "role": "editor"
     },
     "canonical": {
       "title": "Weekly plan",
-      "templateId": "planner"
+      "templateId": "planner",
+      "document": "00000000-0000-4000-8000-000000000001",
+      "sharing": true,
+      "capability": null,
+      "role": "editor"
     }
   },
   {
-    "type": "DocumentMetadata",
+    "type": "JoinedDocument",
     "name": "catalog metadata with unknown field",
     "input": {
       "title": "Weekly plan",
       "templateId": "planner",
       "futureHint": {
         "ignored": true
-      }
+      },
+      "document": "00000000-0000-4000-8000-000000000001",
+      "sharing": true,
+      "capability": null,
+      "role": "editor"
     },
     "canonical": {
       "title": "Weekly plan",
-      "templateId": "planner"
+      "templateId": "planner",
+      "document": "00000000-0000-4000-8000-000000000001",
+      "sharing": true,
+      "capability": null,
+      "role": "editor"
     }
   },
   {
@@ -336,61 +348,6 @@
     }
   },
   {
-    "type": "Manifest",
-    "name": "manifest",
-    "input": {
-      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "resources": [
-        {
-          "key": "ui.js",
-          "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-          "size": 18,
-          "media_type": "text/javascript"
-        }
-      ]
-    },
-    "canonical": {
-      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "resources": [
-        {
-          "key": "ui.js",
-          "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-          "size": 18,
-          "media_type": "text/javascript"
-        }
-      ]
-    }
-  },
-  {
-    "type": "Manifest",
-    "name": "manifest with unknown field",
-    "input": {
-      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "resources": [
-        {
-          "key": "ui.js",
-          "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-          "size": 18,
-          "media_type": "text/javascript"
-        }
-      ],
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "resources": [
-        {
-          "key": "ui.js",
-          "hash": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-          "size": 18,
-          "media_type": "text/javascript"
-        }
-      ]
-    }
-  },
-  {
     "type": "ResourceList",
     "name": "blob inventory",
     "input": [
@@ -409,29 +366,6 @@
         "media_type": "application/octet-stream"
       }
     ]
-  },
-  {
-    "type": "ResourceGrant",
-    "name": "resource grant",
-    "input": {
-      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-    },
-    "canonical": {
-      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-    }
-  },
-  {
-    "type": "ResourceGrant",
-    "name": "resource grant with unknown field",
-    "input": {
-      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "app": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
-    }
   },
   {
     "type": "EmptyReply",
@@ -734,204 +668,6 @@
     "canonical": {
       "code": "future_code",
       "message": "The sharing service refused this request"
-    }
-  },
-  {
-    "type": "ConnectionPlan",
-    "name": "browser connection",
-    "input": {
-      "document": "00000000-0000-4000-8000-000000000001",
-      "size": 512
-    },
-    "canonical": {
-      "document": "00000000-0000-4000-8000-000000000001",
-      "size": 512
-    }
-  },
-  {
-    "type": "ConnectionPlan",
-    "name": "browser connection with unknown field",
-    "input": {
-      "document": "00000000-0000-4000-8000-000000000001",
-      "size": 512,
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "document": "00000000-0000-4000-8000-000000000001",
-      "size": 512
-    }
-  },
-  {
-    "type": "SharingControl",
-    "name": "join invitation",
-    "input": {
-      "type": "joinInvitation",
-      "invitation": "https://share.dotpop.click/join#00000000-0000-4000-8000-000000000001.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-    },
-    "canonical": {
-      "type": "joinInvitation",
-      "invitation": "https://share.dotpop.click/join#00000000-0000-4000-8000-000000000001.bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-    }
-  },
-  {
-    "type": "SharingControl",
-    "name": "open local",
-    "input": {
-      "type": "openLocal"
-    },
-    "canonical": {
-      "type": "openLocal"
-    }
-  },
-  {
-    "type": "SharingEvent",
-    "name": "identity attention",
-    "input": {
-      "type": "identityAttention",
-      "message": "Sign in again to keep editing"
-    },
-    "canonical": {
-      "type": "identityAttention",
-      "message": "Sign in again to keep editing"
-    }
-  },
-  {
-    "type": "SharingEvent",
-    "name": "resources ready",
-    "input": {
-      "type": "resourcesReady"
-    },
-    "canonical": {
-      "type": "resourcesReady"
-    }
-  },
-  {
-    "type": "SharingEvent",
-    "name": "resources ready with unknown field",
-    "input": {
-      "type": "resourcesReady",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "type": "resourcesReady"
-    }
-  },
-  {
-    "type": "SharingEvent",
-    "name": "files",
-    "input": {
-      "type": "files",
-      "status": "Files ready"
-    },
-    "canonical": {
-      "type": "files",
-      "status": "Files ready"
-    }
-  },
-  {
-    "type": "SharingEvent",
-    "name": "files with unknown field",
-    "input": {
-      "type": "files",
-      "status": "Files ready",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "type": "files",
-      "status": "Files ready"
-    }
-  },
-  {
-    "type": "SharingEvent",
-    "name": "sync offline",
-    "input": {
-      "type": "sync",
-      "status": "Shown to a person",
-      "phase": "offline"
-    },
-    "canonical": {
-      "type": "sync",
-      "status": "Shown to a person",
-      "phase": "offline"
-    }
-  },
-  {
-    "type": "SharingEvent",
-    "name": "sync syncing",
-    "input": {
-      "type": "sync",
-      "status": "Shown to a person",
-      "phase": "syncing"
-    },
-    "canonical": {
-      "type": "sync",
-      "status": "Shown to a person",
-      "phase": "syncing"
-    }
-  },
-  {
-    "type": "SharingEvent",
-    "name": "sync synced",
-    "input": {
-      "type": "sync",
-      "status": "Shown to a person",
-      "phase": "synced"
-    },
-    "canonical": {
-      "type": "sync",
-      "status": "Shown to a person",
-      "phase": "synced"
-    }
-  },
-  {
-    "type": "SharingEvent",
-    "name": "sync paused",
-    "input": {
-      "type": "sync",
-      "status": "Shown to a person",
-      "phase": "paused"
-    },
-    "canonical": {
-      "type": "sync",
-      "status": "Shown to a person",
-      "phase": "paused"
-    }
-  },
-  {
-    "type": "SharingEvent",
-    "name": "sync paused with unknown field",
-    "input": {
-      "type": "sync",
-      "status": "Shown to a person",
-      "phase": "paused",
-      "futureHint": {
-        "ignored": true
-      }
-    },
-    "canonical": {
-      "type": "sync",
-      "status": "Shown to a person",
-      "phase": "paused"
-    }
-  },
-  {
-    "type": "SharingEvent",
-    "name": "sync ended",
-    "input": {
-      "type": "sync",
-      "status": "Shown to a person",
-      "phase": "ended"
-    },
-    "canonical": {
-      "type": "sync",
-      "status": "Shown to a person",
-      "phase": "ended"
     }
   }
 ]

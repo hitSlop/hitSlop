@@ -1,9 +1,7 @@
 //! Account library metadata. Entries describe discovery and never authorize document access.
-use crate::{CONTROL_BYTES, Code, Result, document::DocumentRole, err, limits};
+use crate::{CONTROL_BYTES, document::DocumentRole, limits};
+use pop_contracts::{Code, Error, Result};
 use serde::{Deserialize, Serialize};
-
-/// WebSocket subprotocol for complete library snapshots followed by changes.
-pub const SOCKET_PROTOCOL: &str = "pop.library.v1";
 
 /// A server-maintained projection of one document into an account's library.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,11 +33,11 @@ impl AccountEntry {
     /// # Errors
     /// Returns an error for invalid identity, revision or oversized metadata.
     pub fn validate(&self) -> Result<()> {
-        if !crate::valid_room(&self.document) || self.revision == 0 {
-            return Err(err(Code::InvalidBytes, "Invalid library document or revision"));
+        if !pop_contracts::identity::valid_document_id(&self.document) || self.revision == 0 {
+            return Err(Error::new(Code::InvalidBytes, "Invalid library document or revision"));
         }
         if self.title.len() > limits::TITLE_BYTES || self.template_id.len() > limits::TEMPLATE_ID_BYTES {
-            return Err(err(Code::TooLarge, "Library metadata exceeds its limit"));
+            return Err(Error::new(Code::TooLarge, "Library metadata exceeds its limit"));
         }
         Ok(())
     }
@@ -52,9 +50,9 @@ impl LibraryFrame {
     /// Returns an error for invalid entries or a frame exceeding the control budget.
     pub fn encode(&self) -> Result<String> {
         self.validate()?;
-        let json = serde_json::to_string(self).map_err(|e| err(Code::InvalidBytes, e.to_string()))?;
+        let json = serde_json::to_string(self).map_err(|e| Error::new(Code::InvalidBytes, e.to_string()))?;
         if json.len() > CONTROL_BYTES {
-            return Err(err(Code::TooLarge, "Library frame exceeds its limit"));
+            return Err(Error::new(Code::TooLarge, "Library frame exceeds its limit"));
         }
         Ok(json)
     }
@@ -65,9 +63,9 @@ impl LibraryFrame {
     /// Returns an error for malformed, oversized or invalid frames.
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         if bytes.len() > CONTROL_BYTES {
-            return Err(err(Code::TooLarge, "Library frame exceeds its limit"));
+            return Err(Error::new(Code::TooLarge, "Library frame exceeds its limit"));
         }
-        let frame: Self = serde_json::from_slice(bytes).map_err(|e| err(Code::InvalidBytes, e.to_string()))?;
+        let frame: Self = serde_json::from_slice(bytes).map_err(|e| Error::new(Code::InvalidBytes, e.to_string()))?;
         frame.validate()?;
         Ok(frame)
     }
@@ -76,14 +74,14 @@ impl LibraryFrame {
         match self {
             Self::Snapshot { entries, .. } => {
                 if entries.len() > limits::ACCOUNT_SNAPSHOT_PAGE {
-                    return Err(err(Code::TooLarge, "Too many library entries in one page"));
+                    return Err(Error::new(Code::TooLarge, "Too many library entries in one page"));
                 }
                 entries.iter().try_for_each(AccountEntry::validate)
             }
             Self::Upsert { entry } => entry.validate(),
             Self::Remove { document } => {
-                if !crate::valid_room(document) {
-                    return Err(err(Code::InvalidBytes, "Invalid library document"));
+                if !pop_contracts::identity::valid_document_id(document) {
+                    return Err(Error::new(Code::InvalidBytes, "Invalid library document"));
                 }
                 Ok(())
             }
@@ -103,14 +101,14 @@ pub fn snapshot_pages(entries: impl IntoIterator<Item = AccountEntry>) -> Result
     let mut page = Vec::new();
     // A false final marker is one byte larger than true; reserve its exact envelope.
     let envelope = serde_json::to_string(&LibraryFrame::Snapshot { entries: vec![], last: false })
-        .map_err(|e| err(Code::InvalidBytes, e.to_string()))?
+        .map_err(|e| Error::new(Code::InvalidBytes, e.to_string()))?
         .len();
     let mut size = envelope;
     for entry in entries {
         entry.validate()?;
-        let bytes = serde_json::to_vec(&entry).map_err(|e| err(Code::InvalidBytes, e.to_string()))?.len();
+        let bytes = serde_json::to_vec(&entry).map_err(|e| Error::new(Code::InvalidBytes, e.to_string()))?.len();
         if envelope + bytes > CONTROL_BYTES {
-            return Err(err(Code::TooLarge, "Library entry cannot fit in a frame"));
+            return Err(Error::new(Code::TooLarge, "Library entry cannot fit in a frame"));
         }
         let comma = usize::from(!page.is_empty());
         if page.len() == limits::ACCOUNT_SNAPSHOT_PAGE || size + comma + bytes > CONTROL_BYTES {

@@ -1,16 +1,14 @@
 //! Typed app interpretation. Storage checks resources separately before publishing an
 //! opened app. A summary uses only the scalar metadata checker, never this decoder.
 pub(crate) mod format;
-mod identity;
 
 use crate::arguments::Arguments;
-use crate::build::BuildDeclaration;
 use crate::{AppSpec, Result};
+use pop_contracts::wire::build::BuildDeclaration;
 
-pub use pop_contracts::StateContractId;
-pub use pop_contracts::app::*;
+use pop_contracts::app::{AppMetadata, Capability, ThemeInput, Views, WindowDefinition, requirements};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, serde::Serialize)]
 pub struct CommandDefinition {
     pub name: String,
     pub description: String,
@@ -22,14 +20,13 @@ pub struct CommandDefinition {
 #[derive(Clone, Debug)]
 pub struct AppDefinition {
     metadata: AppMetadata,
-    stored: format::Definition,
-    window: WindowDefinition,
-    theme: Vec<ThemeInput>,
+    window: format::Window,
+    // Descriptor spelling participates in the app digest and is delivered unchanged to the page.
+    document_encoding: Box<serde_json::value::RawValue>,
     views: Views,
     commands: Vec<CommandDefinition>,
-    capabilities: Vec<Capability>,
+    capabilities: Vec<String>,
     spec: AppSpec,
-    state_contract_id: std::sync::OnceLock<StateContractId>,
 }
 
 impl AppDefinition {
@@ -51,11 +48,15 @@ impl AppDefinition {
     pub fn metadata(&self) -> &AppMetadata {
         &self.metadata
     }
-    pub fn window(&self) -> &WindowDefinition {
-        &self.window
+    pub fn window(&self) -> WindowDefinition {
+        format::window(&self.window).expect("accepted app window")
     }
-    pub fn theme(&self) -> &[ThemeInput] {
-        &self.theme
+    pub fn theme(&self) -> Vec<ThemeInput> {
+        self.spec
+            .theme_tokens()
+            .iter()
+            .map(|(token, color)| ThemeInput { token: token.clone(), color: color.clone() })
+            .collect()
     }
     pub fn views(&self) -> Views {
         self.views
@@ -65,44 +66,40 @@ impl AppDefinition {
     }
     /// The declared capabilities this host knows, sorted and without repeats. A saved
     /// value this build does not know is never granted, so it is left out here.
-    pub fn capabilities(&self) -> &[Capability] {
-        &self.capabilities
+    pub fn capabilities(&self) -> Vec<Capability> {
+        let mut known: Vec<_> = self.capabilities.iter().filter_map(|name| format::stored_capability(name)).collect();
+        known.sort();
+        known.dedup();
+        known
     }
-    /// Identity of the interpreted schema, slug, and unordered theme defaults.
-    /// Presentation, commands, descriptions, and embedded resources are not part of it.
-    pub fn state_contract_id(&self) -> StateContractId {
-        *self.state_contract_id.get_or_init(|| identity::state_contract_id(self))
-    }
-
     pub fn spec(&self) -> &AppSpec {
         &self.spec
     }
 
-    /// Original descriptor representation for the bundled SDK's mount check. Never
-    /// serialize the parsed Node here: that would discard descriptions.
+    /// Original descriptor encoding for app identity and the bundled SDK's mount check.
     pub fn document_raw(&self) -> &serde_json::value::RawValue {
-        &self.stored.document
+        &self.document_encoding
     }
     pub fn document_json(&self) -> &str {
-        self.stored.document.get()
+        self.document_encoding.get()
     }
     /// CLI inspection retains authored geometry. Hosts use `window()` for resolved
     /// semantics and the normalized silhouette. Skin references are package URLs.
-    pub fn page_window(&self) -> crate::build::WindowInput {
+    pub fn page_window(&self) -> pop_contracts::wire::build::WindowInput {
         use format::Window;
-        match &self.stored.window {
+        match &self.window {
             Window::Standard { width, height, fullscreenable, resizable, lock_aspect, background, shape } => {
-                crate::build::WindowInput::Standard {
+                pop_contracts::wire::build::WindowInput::Standard {
                     width: *width,
                     height: *height,
                     fullscreenable: *fullscreenable,
                     resizable: *resizable,
                     lock_aspect: *lock_aspect,
-                    background: background.map(Into::into),
-                    shape: shape.clone().map(Into::into),
+                    background: *background,
+                    shape: shape.clone(),
                 }
             }
-            Window::Skin { width, height, fullscreenable, skin } => crate::build::WindowInput::Skin {
+            Window::Skin { width, height, fullscreenable, skin } => pop_contracts::wire::build::WindowInput::Skin {
                 width: *width,
                 height: *height,
                 fullscreenable: *fullscreenable,
@@ -123,7 +120,7 @@ impl AppDefinition {
         )
     }
     pub fn definition_json(&self) -> String {
-        crate::encode(&self.stored)
+        format::encode_definition(self)
     }
 }
 
@@ -133,4 +130,5 @@ pub fn validate_metadata(metadata: &AppMetadata) -> Result<()> {
 }
 
 // Format 1 freezes with the first public release; a newer format adds its own reader.
-const _: () = assert!(crate::PACKAGE_FORMAT == 1, "add a package reader and keep the released format's reader");
+const _: () =
+    assert!(pop_contracts::wire::PACKAGE_FORMAT == 1, "add a package reader and keep the released format's reader");

@@ -1,5 +1,8 @@
-use pop_core::app::{AppDefinition, Capability, StandardFrame, WindowFrame};
-use pop_core::{Code, Document, build::BuildDeclaration};
+use pop_contracts::app::{Capability, StandardFrame, WindowFrame};
+use pop_contracts::wire::Code;
+use pop_contracts::wire::build::BuildDeclaration;
+use pop_core::Document;
+use pop_core::app::AppDefinition;
 use serde_json::{Value, json};
 
 fn metadata() -> Value {
@@ -16,11 +19,11 @@ fn definition() -> Value {
         }}]
     })
 }
-fn read(metadata: &Value, definition: &Value) -> Result<AppDefinition, pop_core::Error> {
+fn read(metadata: &Value, definition: &Value) -> Result<AppDefinition, pop_contracts::Error> {
     AppDefinition::decode(1, 1, &metadata.to_string(), &definition.to_string())
 }
 /// Today's authoring rules for new metadata; a saved file's is only bounded (`read`).
-fn author(metadata: &Value) -> Result<(), pop_core::Error> {
+fn author(metadata: &Value) -> Result<(), pop_contracts::Error> {
     pop_core::app::validate_metadata(&serde_json::from_value(metadata.clone()).unwrap())
 }
 
@@ -43,67 +46,6 @@ fn accepted_definition_keeps_order_and_reopens_with_the_same_document_contract()
     let reopened = Document::open(reread.spec(), &document.checkpoint().unwrap(), &[]).unwrap();
     assert_eq!(document.state().unwrap(), reopened.state().unwrap());
     assert_eq!(app.definition_json(), reread.definition_json());
-}
-
-#[test]
-fn state_contract_identity_tracks_replica_semantics_and_ignores_presentation() {
-    let metadata = metadata();
-    let mut definition = definition();
-    definition["document"] = json!({"kind":"object","properties":{
-        "number":{"kind":"number","min":-0.0,"max":10.0,"default":0.0},
-        "title":{"kind":"string"},
-        "choice":{"kind":"enum","values":["first","second"]},
-        "nested":{"kind":"record","value":{"kind":"number","min":-0.0}}
-    }});
-    let original = read(&metadata, &definition).unwrap();
-    let mut cases = Vec::new();
-    let mut presentation = definition.clone();
-    presentation["window"]["width"] = json!(480);
-    presentation["commands"][0]["description"] = json!("Different help");
-    presentation["commands"][0]["args"]["properties"]["title"]["minLength"] = json!(2);
-    presentation["document"]["properties"]["title"]["description"] = json!("Different field help");
-    presentation["theme"].as_array_mut().unwrap().reverse();
-    let mut cosmetic_metadata = metadata.clone();
-    cosmetic_metadata["title"] = json!("A different title");
-    cosmetic_metadata["description"] = json!("Different app help");
-    cosmetic_metadata["author"]["name"] = json!("Another author");
-    cases.push(("presentation and theme order", cosmetic_metadata, presentation, true));
-
-    let mut spelling = definition.clone();
-    spelling["document"]["properties"]["number"]["min"] = json!(0);
-    spelling["document"]["properties"]["number"]["max"] = json!(10);
-    spelling["document"]["properties"]["number"]["default"] = json!(-0.0);
-    spelling["document"]["properties"]["nested"]["value"]["min"] = json!(0.0);
-    cases.push(("integer spelling and both zero signs", metadata.clone(), spelling, true));
-
-    let mut slug = metadata.clone();
-    slug["slug"] = json!("other-fixture");
-    cases.push(("slug", slug, definition.clone(), false));
-    for (label, pointer, value) in [
-        ("number bound", "/document/properties/number/max", json!(11)),
-        ("number default", "/document/properties/number/default", json!(1)),
-        ("absent versus present length", "/document/properties/title/minLength", json!(0)),
-        ("absent versus present default", "/document/properties/title/default", json!("")),
-        ("enum order", "/document/properties/choice/values", json!(["second", "first"])),
-        ("theme default", "/theme/0/color", json!("#888888")),
-    ] {
-        let mut changed = definition.clone();
-        let (parent, key) = pointer.rsplit_once('/').unwrap();
-        changed.pointer_mut(parent).unwrap().as_object_mut().unwrap().insert(key.into(), value);
-        cases.push((label, metadata.clone(), changed, false));
-    }
-    let mut absent_bound = definition.clone();
-    absent_bound["document"]["properties"]["number"].as_object_mut().unwrap().remove("min");
-    cases.push(("absent versus present numeric bound", metadata.clone(), absent_bound, false));
-    for (label, metadata, definition, expected) in cases {
-        let other = read(&metadata, &definition).unwrap();
-        assert_eq!(original.state_contract_id() == other.state_contract_id(), expected, "{label}");
-    }
-    let encoded = definition.to_string();
-    let reordered = encoded.replace(r#""max":10.0,"min":-0.0"#, r#""min":-0.0,"max":10.0"#);
-    assert_ne!(encoded, reordered, "fixture must change JSON property order");
-    let reordered = AppDefinition::decode(1, 1, &metadata.to_string(), &reordered).unwrap();
-    assert_eq!(original.state_contract_id(), reordered.state_contract_id());
 }
 
 #[test]
@@ -178,10 +120,12 @@ fn newer_markers_win_before_unknown_fields_or_unrepresentable_numbers() {
     assert_eq!(AppDefinition::decode(1, 0, "{}", "{}").unwrap_err().code, Code::InvalidRequest);
     for (format, abi) in [(2, 1), (1, 2)] {
         let future = format!(r#"{{"packageFormat":{format},"runtimeABI":{abi},"unknown":1e999}}"#);
-        assert_eq!(pop_core::build::BuildInput::decode(&future).unwrap_err().code, Code::RequiresUpdate);
+        assert_eq!(pop_contracts::wire::build::BuildInput::decode(&future).unwrap_err().code, Code::RequiresUpdate);
     }
     assert_eq!(
-        pop_core::build::BuildInput::decode(r#"{"packageFormat":1,"runtimeABI":1,"unknown":1e999}"#).unwrap_err().code,
+        pop_contracts::wire::build::BuildInput::decode(r#"{"packageFormat":1,"runtimeABI":1,"unknown":1e999}"#)
+            .unwrap_err()
+            .code,
         Code::InvalidRequest
     );
 }
@@ -384,8 +328,8 @@ fn fullscreen_is_opt_in_for_both_window_kinds_and_survives_the_page_and_file_pro
             // Authoring input has the same optional-boolean rule, including skins.
             let mut invalid = page.clone();
             invalid["fullscreenable"] = Value::Null;
-            assert!(serde_json::from_value::<pop_core::build::WindowInput>(invalid).is_err());
-            assert!(serde_json::from_value::<pop_core::build::WindowInput>(page).is_ok());
+            assert!(serde_json::from_value::<pop_contracts::wire::build::WindowInput>(invalid).is_err());
+            assert!(serde_json::from_value::<pop_contracts::wire::build::WindowInput>(page).is_ok());
         }
     }
 }
@@ -522,13 +466,13 @@ fn capabilities_are_declared_canonically_refused_unknown_at_authoring_and_ignore
             "roles":{"ui":"ui.js"},"resources":[],"artwork":{}})
         .to_string()
     };
-    assert!(pop_core::build::BuildInput::decode(&input(json!(["speech"]))).is_ok());
+    assert!(pop_contracts::wire::build::BuildInput::decode(&input(json!(["speech"]))).is_ok());
     for bad in [json!(["camera", "telepathy"]), json!(["Camera"]), json!([null]), json!("camera")] {
         assert!(declare(bad.clone()).is_err(), "{bad}");
-        let error = pop_core::build::BuildInput::decode(&input(bad.clone())).unwrap_err();
+        let error = pop_contracts::wire::build::BuildInput::decode(&input(bad.clone())).unwrap_err();
         assert_eq!(error.code, Code::InvalidRequest, "{bad}");
     }
-    let error = pop_core::build::BuildInput::decode(&input(json!(["telepathy"]))).unwrap_err();
+    let error = pop_contracts::wire::build::BuildInput::decode(&input(json!(["telepathy"]))).unwrap_err();
     assert!(error.message.contains("telepathy") && error.message.contains("microphone"), "{}", error.message);
     // Opening never grants what it does not know: a later build's capability is left out,
     // the rest are sorted and unique, and the saved spelling is kept as it was.

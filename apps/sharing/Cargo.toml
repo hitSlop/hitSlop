@@ -13,7 +13,7 @@ pop-contracts = { path = "../../crates/pop-contracts" }
 pop-sharing-protocol = { path = "../../crates/pop-sharing-protocol" }
 serde.workspace = true
 serde_json.workspace = true
-sha2 = "=0.11.0"
+sha2.workspace = true
 jsonwebtoken = { version = "=11.1.0", features = ["rust_crypto"] }
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 worker = "=0.8.7"

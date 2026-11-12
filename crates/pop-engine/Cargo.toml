@@ -11,14 +11,14 @@ workspace = true
 # The file engine `pop` runs: it builds and reads `.pop` files on any platform, by
 # the rules the app opens them with.
 [dependencies]
-pop-core = { path = "../pop-core", features = ["acceptance"] }
+pop-contracts = { path = "../pop-contracts" }
+pop-core = { path = "../pop-core" }
 pop-storage = { path = "../pop-storage" }
 pop-runtime = { path = "../pop-runtime" }
-pop-capture = { path = "../pop-capture", features = ["desktop"] }
 serde_json.workspace = true
-pop-runner = { path = "../pop-runner" }
-libc = "0.2"
-data-encoding = { version = "=2.11.1" }
+pop-runner = { path = "../pop-runner", features = ["child", "capture"] }
+libc.workspace = true
+data-encoding = { workspace = true }
 
 [features]
 # SQLite's own amalgamation, for platforms without a system SQLite (release builds only:
@@ -26,5 +26,5 @@ data-encoding = { version = "=2.11.1" }
 bundled-sqlite = ["pop-storage/bundled-sqlite"]
 
 [dev-dependencies]
-tempfile = "3"
-png = "=0.18.1"
+tempfile.workspace = true
+png.workspace = true

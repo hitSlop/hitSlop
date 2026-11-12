@@ -3,10 +3,10 @@
 // part of its change. Oracle: literal values, identity proven by later edits, and the
 // page's view equal to a fresh snapshot after every publication.
 use crate::support;
-use pop_core::{Applied, Code, Document, Origin};
+use pop_contracts::wire::Code;
+use pop_core::{Applied, Document, Origin};
 use serde_json::{Value, json};
-use support::ApplyJson;
-use support::{View, app, fixture, type_text, value};
+use support::{ApplyJson, View, app, fixture, type_text, value};
 
 const A: &str = "00000000000000000000000000000001";
 const B: &str = "00000000000000000000000000000002";

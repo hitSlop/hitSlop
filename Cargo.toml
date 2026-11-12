@@ -1,5 +1,20 @@
 [workspace]
-members = ["crates/pop-storage", "crates/pop-runtime", "crates/pop-capture", "crates/pop-contracts", "crates/pop-core", "crates/pop-core-ffi", "crates/pop-core-wasm", "crates/pop-engine", "crates/pop-library", "crates/pop-renderer", "crates/pop-runner", "crates/pop-sharing-protocol", "apps/sharing", "crates/pop-sharing-client", "crates/pop-sync", "tools/pop-bindgen"]
+members = [
+    "apps/sharing",
+    "crates/pop-cloud",
+    "crates/pop-contracts",
+    "crates/pop-core",
+    "crates/pop-core-ffi",
+    "crates/pop-core-wasm",
+    "crates/pop-engine",
+    "crates/pop-runner",
+    "crates/pop-runtime",
+    "crates/pop-sharing-protocol",
+    "crates/pop-storage",
+    "crates/pop-testkit",
+    "tools/pop-bindgen",
+    "tools/pop-compat",
+]
 resolver = "2"
 
 [workspace.package]
@@ -8,11 +23,19 @@ rust-version = "1.96"
 publish = false
 
 [workspace.dependencies]
+brotli = "=9.0.0"
+data-encoding = "=2.11.1"
+libc = "0.2"
 # Exact release: 1.17.1 contains the former main pin (c00c9fa) plus arena, import and undo fixes.
 loro = "=1.17.1"
+png = "=0.18.1"
+rusqlite = "=0.40.2"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha2 = "=0.11.0"
+tempfile = "3"
 thiserror = "2.0"
+ts-rs = "=12.0.1"
 
 [workspace.lints.rust]
 unsafe_op_in_unsafe_fn = "deny"
@@ -49,8 +72,3 @@ debug = "line-tables-only"
 [profile.dev.package."*"]
 opt-level = 2
 debug = false
-
-[profile.wasm]
-inherits = "dist"
-opt-level = "z"
-panic = "abort"

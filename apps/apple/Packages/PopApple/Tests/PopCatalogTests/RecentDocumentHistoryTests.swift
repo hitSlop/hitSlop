@@ -193,14 +193,14 @@ import Testing
   #expect(opening.model.documents.isEmpty)
 }
 
-/// Recents can name a file an older version of pop wrote. It is reachable, so it must say why
+/// Recents can name a foreign file. It is reachable, so it must say why
 /// it can't open (the core's refusal), not look openable or unreachable, and leave Recents on
 /// request without the file changing.
-@Test @MainActor func recentDocumentFromAnOlderVersionSaysSoAndCanLeaveRecents() async throws {
+@Test @MainActor func recentForeignDocumentIsRefusedAndCanLeaveRecents() async throws {
   let folder = try Fixtures.folder()
   defer { try? FileManager.default.removeItem(at: folder) }
   let older = try Fixtures.document(at: folder.appendingPathComponent("older.pop"))
-  // An older lineage's application ID.
+  // A foreign application ID.
   try Fixtures.sql(older, "PRAGMA application_id = \(0x504F_5000)")
   let bytes = try Data(contentsOf: older)
   let current = try Fixtures.document(at: folder.appendingPathComponent("current.pop"))
@@ -216,7 +216,7 @@ import Testing
   #expect(!entry.isUnavailable, "The file is reachable")
   #expect(entry.needsAttention)
   let refusal = try #require(entry.refusal)
-  #expect(refusal.contains("made by an older version of pop and can't be opened"))
+  #expect(refusal.contains("not a pop document"))
   #expect(refusal.hasSuffix(". The file is unchanged."))
   #expect(catalog.recents.last?.refusal == nil)
 

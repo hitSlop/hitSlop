@@ -12,13 +12,12 @@ import Testing
     defer { try? FileManager.default.removeItem(at: folder) }
     let template = try Fixtures.template(stage: Fixtures.stage())
     defer { try? FileManager.default.removeItem(at: template.deletingLastPathComponent()) }
-    let owners = LibraryOwners()
-    let library = PopLibrary(root: folder, owners: owners)
+    let library = PopLibrary(root: folder)
     let local = try await library.create(template: template, title: "Offline first")
     #expect(local.localOnly)
     let owner = try DocumentOwner(url: URL(fileURLWithPath: local.path))
     #expect(owner.documentID == local.id)
-    try owners.register(owner.native)
+    try library.registerOwner(owner.native)
     _ = try await owner.apply(batch: #"{"intents":[{"type":"increment","path":["hits"],"by":3}]}"#)
     try await library.setAccount("first-account")
     try await library.setAccount("")
@@ -33,11 +32,10 @@ import Testing
     defer { try? FileManager.default.removeItem(at: folder) }
     let source = try Fixtures.document(stage: Fixtures.stage())
     defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
-    let owners = LibraryOwners()
-    let library = PopLibrary(root: folder, owners: owners)
+    let library = PopLibrary(root: folder)
     try await library.setAccount("owner")
     let owner = try DocumentOwner(url: source)
-    try owners.register(owner.native)
+    try library.registerOwner(owner.native)
     let id = try #require(owner.documentID)
     let inode = try FileManager.default.attributesOfItem(atPath: source.path)[.systemFileNumber] as? NSNumber
     _ = try await owner.apply(batch: #"{"intents":[{"type":"increment","path":["hits"],"by":3}]}"#)
@@ -67,7 +65,7 @@ import Testing
     let document = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
     func state(_ sharing: Bool) -> AccessState {
       AccessState(
-        document: document, sharing: sharing, generation: 1,
+        document: document, sharing: sharing,
         capability: sharing ? String(repeating: "b", count: 64) : nil, role: .owner)
     }
     var calls: [Bool] = []
@@ -113,7 +111,7 @@ import Testing
 
   @Test @MainActor func accountChangesClearSharingAccessAndFenceQueuedOldAccountControls() async throws {
     let old = AccessState(
-      document: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", sharing: false, generation: 1, capability: nil, role: .owner)
+      document: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa", sharing: false, capability: nil, role: .owner)
     @MainActor final class Identity { var account = "account-a" }
     let identity = Identity()
     var calls: [String] = []
@@ -153,10 +151,9 @@ import Testing
     defer { try? FileManager.default.removeItem(at: folder) }
     let template = try Fixtures.template(stage: Fixtures.stage())
     defer { try? FileManager.default.removeItem(at: template.deletingLastPathComponent()) }
-    let owners = LibraryOwners()
-    let library = PopLibrary(root: folder, owners: owners)
+    let library = PopLibrary(root: folder)
     try await library.setAccount("")
-    let native = try #require(owners.library)
+    let native = try #require(library.nativeLibrary)
     let created = try await PopPreparation.run {
       try native.create(template: template.path, title: "Callback document")
     }
@@ -169,39 +166,14 @@ import Testing
     #expect(library.lastError == nil)
   }
 
-  @Test @MainActor func guestCloudCreationRefusesBeforeAdoptingAnExternalFile() async throws {
-    let folder = try Fixtures.folder()
-    defer { try? FileManager.default.removeItem(at: folder) }
-    let source = try Fixtures.document(stage: Fixtures.stage())
-    defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
-    let before = try Data(contentsOf: source)
-    let library = PopLibrary(root: folder)
-    try await library.setAccount("guest-account")
-    library.allowsCloudCreation = false
-    library.tokenProvider = { throw PopFailure("A guest must not need a request to refuse creation") }
-    await #expect(throws: (any Error).self) {
-      try await library.enableSync(source: source, title: "Guest external file")
-    }
-    await library.refresh()
-    #expect(library.entries.isEmpty)
-    #expect(try Data(contentsOf: source) == before)
-    let owner = try DocumentOwner(url: source)
-    _ = try await owner.apply(batch: #"{"intents":[{"type":"increment","path":["hits"],"by":1}]}"#)
-    try await owner.close()
-  }
-
   @Test @MainActor func accountActivationDoesNotRequireCredentialsOrStartSync() async throws {
     let folder = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: folder) }
     let library = PopLibrary(root: folder)
     library.tokenProvider = { throw PopFailure("Account activation must not acquire credentials") }
-    try await library.connectAccount("account-a", anonymous: false)
+    try await library.connectAccount("account-a")
     #expect(library.isReady && library.accountIdentity == "account-a")
-    #expect(library.allowsCloudCreation)
     #expect(library.lastError == nil, "Activation must finish independently of token acquisition")
-    try await library.connectAccount("account-a", anonymous: true)
-    #expect(!library.allowsCloudCreation)
-    #expect(library.lastError == nil)
   }
 
   @Test @MainActor func lateTokenCallbacksCannotReopenTheOldAccount() async throws {
@@ -244,7 +216,7 @@ import Testing
     let created = try await library.create(template: template, title: "Private")
     let id = created.id
     let native = try NativeLibrary.open(root: folder.path, account: "owner")
-    _ = try? native.enableSync(id: id, token: "")
+    _ = try? native.enableSync(account: "owner", id: id, token: "")
     await library.refresh()
     library.closeAccountDocuments = { _ in throw PopFailure("Recover unsaved text first") }
     await #expect(throws: (any Error).self) { try await library.setAccount("") }

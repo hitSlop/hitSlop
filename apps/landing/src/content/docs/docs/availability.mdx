@@ -26,7 +26,8 @@ Signing out hides account documents and pauses sync while retaining downloaded f
 and pending edits. Independent local copies remain available.
 
 Keep active standalone `.pop` files outside iCloud Drive and other file-sync folders.
-On Mac, a document there offers **Move to ~/pop and Open** before editing.
+On Mac, choose **Save Copy and Open** to save a local copy in `~/pop` and edit it.
+The original stays where it is.
 
 macOS desktop widgets display saved document images in small, medium and large sizes
 when the embedded app includes a widget view. The iPhone app adds Home Screen
@@ -34,14 +35,8 @@ widgets for library pop with a widget view, rendered on the phone; tap to open t
 pop. iPhone widgets also refresh in the background when iOS allows. See
 [widget setup and refresh behavior](/docs/guides/icons-and-exports/#design-a-widget).
 
-**Live collaboration** is available in the Mac app and the iPhone app on TestFlight. Share a live link so anyone with it can edit in pop on Mac or iPhone,
-or in Chrome at share.dotpop.click. See [live sharing](/docs/guides/live-sharing/)
-for sign-in, browser copies and stopping a link.
-
-Local browser copies, opened with `pop open --browser`, are in beta. They open
-independent document copies in Chrome on desktop with local browser storage and
-download a complete `.pop` file through Save As. A copy does not connect to the
-original Mac document. Safari and mobile browsers remain unqualified.
+**Live collaboration** is available in the Mac app and the iPhone app on TestFlight. Share a live link so anyone who signs in with Apple can edit in pop on Mac or iPhone.
+See [live sharing](/docs/guides/live-sharing/) for sign-in and stopping a link.
 
 Camera, microphone and speech recognition depend on the host. See
 [capabilities and permissions](/docs/guides/capabilities/) for the support matrix.
@@ -51,8 +46,6 @@ a document history view, and app/schema upgrades. Windows, Android and Linux nat
 apps are longer-term directions without release dates. Per-pop permission decisions
 tied to an app's code and additional device capabilities remain proposals.
 
-Starting with public 2.0.0, newer pop opens documents written by every public release
-in document lineage 2. Pre-launch documents carry no compatibility guarantee. Files
-from earlier products or document lineages are refused rather than converted. SQLite
-may recover a hot journal from an interrupted transaction before that refusal. Installing a newer host never
+Starting with 3.0.0, newer pop opens documents written by every public release of this
+format. Files from 2.0.0 cannot be opened or converted. Installing a newer host never
 automatically replaces the app embedded in an existing document.

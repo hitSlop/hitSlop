@@ -25,11 +25,11 @@ extension HostTests {
       #expect(try await command("batch", url: root, setTitle("Widget saved")).ok)
       let images = try await PopRenderer.widgetImages(session: session)
       #expect(images.count == 3)
-      for viewport in widgetViewports() {
-        let image = try #require(images.first { $0.family == WidgetImageFamily(viewport.family) })
+      for (family, width, height) in [(WidgetImageFamily.small, 164, 164), (.medium, 344, 164), (.large, 344, 344)] {
+        let image = try #require(images.first { $0.family == family })
         let bitmap = try #require(NSBitmapImageRep(data: image.png))
-        #expect(bitmap.pixelsWide == Int(viewport.width) * 2)
-        #expect(bitmap.pixelsHigh == Int(viewport.height) * 2)
+        #expect(bitmap.pixelsWide == width * 2)
+        #expect(bitmap.pixelsHigh == height * 2)
         let color = try #require(
           bitmap.colorAt(x: bitmap.pixelsWide / 2, y: bitmap.pixelsHigh / 2)?.usingColorSpace(.deviceRGB))
         #expect(color.redComponent > 0.95 && color.blueComponent < 0.05)
@@ -44,66 +44,47 @@ extension HostTests {
     await #expect(throws: (any Error).self) { try await PopRenderer.widgetImages(url: unsupported) }
   }
 
-  @Test @MainActor func widgetCacheKeepsCompleteGenerationsAndTracksFilesAcrossRename() throws {
+  @Test @MainActor func widgetCacheKeepsCompleteGenerationsForLibraryDocuments() throws {
     let folder = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: folder) }
     let cache = WidgetCache(root: folder.appendingPathComponent("cache"))
-    let source = folder.appendingPathComponent("First.pop")
-    try Data("document".utf8).write(to: source)
+    let id = UUID().uuidString
     let png = try Fixtures.png(width: 32, height: 32) {
       NSColor.red.setFill()
       $0.fill()
     }
-    let images = widgetViewports().map { WidgetImage(family: WidgetImageFamily($0.family), png: png) }
+    let images = WidgetImageFamily.allCases.map { WidgetImage(family: $0, png: png) }
     let time = Date()
-    let first = try cache.publish(url: source, title: "First", images: images, capturedAt: time, refreshMinutes: nil)
+    let first = try cache.publish(
+      libraryID: id, title: "First", images: images, capturedAt: time, sourceVersion: "saved")
     #expect(cache.records().count == 1)
-    let linkedFolder = folder.appendingPathComponent("linked-parent")
-    try FileManager.default.createSymbolicLink(at: linkedFolder, withDestinationURL: folder)
-    #expect(try !cache.refreshLocation(id: first.id, url: linkedFolder.appendingPathComponent("First.pop")))
     #expect(WidgetCache.selectionID(from: WidgetCache.openURL(id: first.id)) == first.id)
     #expect(WidgetCache.selectionID(from: URL(string: "dotpop://widget/../../other")!) == nil)
     #expect(throws: (any Error).self) {
       try cache.publish(
-        url: source, title: "Incomplete", images: Array(images.prefix(2)), capturedAt: time.addingTimeInterval(1),
-        refreshMinutes: nil)
+        libraryID: id, title: "Incomplete", images: Array(images.prefix(2)), capturedAt: time.addingTimeInterval(1),
+        sourceVersion: "saved")
     }
     #expect(cache.record(id: first.id)?.generation == first.generation)
     let older = try cache.publish(
-      url: source, title: "Older", images: images, capturedAt: time.addingTimeInterval(-1), refreshMinutes: nil)
+      libraryID: id, title: "Older", images: images, capturedAt: time.addingTimeInterval(-1), sourceVersion: "saved")
     #expect(older.generation == first.generation)
     let next = try cache.publish(
-      url: source, title: "Next", images: images, capturedAt: time.addingTimeInterval(1), refreshMinutes: nil)
+      libraryID: id, title: "Next", images: images, capturedAt: time.addingTimeInterval(1), sourceVersion: "saved")
     let newest = try cache.publish(
-      url: source, title: "Newest", images: images, capturedAt: time.addingTimeInterval(2), refreshMinutes: nil)
+      libraryID: id, title: "Newest", images: images, capturedAt: time.addingTimeInterval(2), sourceVersion: "saved")
     #expect(!FileManager.default.fileExists(atPath: cache.imageURL(first, .small).path))
     #expect(FileManager.default.fileExists(atPath: cache.imageURL(next, .small).path))
     #expect(cache.imageData(first, .small) == png, "a reader with an expired pointer retries the current generation")
     #expect(cache.record(id: first.id)?.generation == newest.generation)
-    let copy = folder.appendingPathComponent("Copy.pop")
-    try FileManager.default.copyItem(at: source, to: copy)
-    let second = try cache.publish(url: copy, title: "Copy", images: images, capturedAt: time, refreshMinutes: nil)
+    let otherID = UUID().uuidString
+    let second = try cache.publish(
+      libraryID: otherID, title: "Other", images: images, capturedAt: time, sourceVersion: "saved")
     #expect(second.id != first.id)
-    let renamed = folder.appendingPathComponent("Renamed.pop")
-    try FileManager.default.moveItem(at: source, to: renamed)
-    #expect(try cache.resolve(first).resolvingSymlinksInPath() == renamed.resolvingSymlinksInPath())
-    #expect(cache.record(for: renamed)?.id == first.id)
-    #expect(try cache.refreshLocation(id: first.id, url: renamed))
-    #expect(cache.record(id: first.id)?.title == "Renamed")
-    #expect(cache.record(id: first.id)?.generation == newest.generation)
-    #expect(FileManager.default.fileExists(atPath: cache.imageURL(next, .small).path))
-    #expect(try !cache.refreshLocation(id: first.id, url: renamed))
-    #expect(throws: (any Error).self) { try cache.refreshLocation(id: first.id, url: copy) }
-    #expect(cache.record(id: first.id)?.title == "Renamed")
-    try FileManager.default.removeItem(at: renamed)
-    try Data("replacement".utf8).write(to: renamed)
-    #expect(throws: (any Error).self) { try cache.resolve(first) }
-    #expect(throws: (any Error).self) { try cache.refreshLocation(id: first.id, url: renamed) }
-    #expect(cache.pruneUnavailable())
+    try cache.remove(libraryID: first.id)
     #expect(cache.record(id: first.id) == nil)
     #expect(cache.record(id: second.id) != nil)
-    try FileManager.default.removeItem(at: copy)
-    #expect(cache.pruneUnavailable())
+    try cache.remove(libraryID: second.id)
     #expect(cache.records().isEmpty)
   }
 
@@ -119,8 +100,7 @@ extension HostTests {
     let images = WidgetImageFamily.allCases.map { WidgetImage(family: $0, png: png) }
     let time = Date()
     let first = try cache.publish(libraryID: id, title: "Library", images: images, capturedAt: time, sourceVersion: "1")
-    #expect(first.id == id && first.fileIdentity == nil)
-    #expect(!FileManager.default.fileExists(atPath: cache.root.appendingPathComponent(id + "/document.bookmark").path))
+    #expect(first.id == id)
     #expect(cache.imageData(first, .large) == png)
     #expect(throws: (any Error).self) {
       try cache.publish(

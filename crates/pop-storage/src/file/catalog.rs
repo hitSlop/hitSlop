@@ -2,14 +2,14 @@
 //! template named for its slug. The app's catalog, the engine's `templates` and
 //! `create --from SLUG` share this rule.
 
-use super::places::TemplateSource;
 use super::{Kind, Summary, summary};
 use crate::error::{Result, invalid};
+use pop_contracts::catalog::TemplateSource;
 use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub use pop_contracts::catalog::{Catalog, Folder, Template};
+use pop_contracts::catalog::{Catalog, Folder, Template};
 
 fn template(path: &Path) -> Result<Summary> {
     let summary = summary(path)?;

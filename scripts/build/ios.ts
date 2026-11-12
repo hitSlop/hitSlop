@@ -25,7 +25,7 @@ export async function buildCoreIOS() {
   await buildCoreNative();
   const targets = ["aarch64-apple-ios", "aarch64-apple-ios-sim"];
   for (const target of targets) {
-    await run(["cargo", "build", "--locked", "--profile", cargoProfile(), "-p", "pop-core-ffi", "--no-default-features", "--features", "mobile-capture", "--target", target]);
+    await run(["cargo", "build", "--locked", "--profile", cargoProfile(), "-p", "pop-core-ffi", "--target", target]);
   }
   const generated = join(repository, "apps/apple/Packages/PopApple/Generated");
   const temporary = await mkdtemp(join(tmpdir(), "pop-ios-framework-"));
@@ -89,8 +89,6 @@ export async function iphoneStarterSlugs(): Promise<string[]> {
 }
 
 if (import.meta.main) {
-  const icons = join(repository, "apps/apple/App/Shared/Assets.xcassets/AppIcon.appiconset");
-  await run(["swift", join(repository, "scripts/build/ios-icon.swift"), join(icons, "appicon-1024.png"), join(icons, "appicon-ios-1024.png")]);
   await buildCoreIOS();
   // The app bundles the page shell; a device build carries the current one.
   await buildShell();

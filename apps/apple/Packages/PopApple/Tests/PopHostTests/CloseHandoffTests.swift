@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import PopCore
+import PopCoreBinding
 import PopTestSupport
 import PopWidgets
 import Testing
@@ -18,23 +19,23 @@ extension HostTests {
     }
     let capture = try await PopRenderer.widgetCapture(url: root)
     let cache = WidgetCache(root: folder)
-    let identity = try WidgetCache.identity(root)
+    let entry = widgetEntry(root)
     let session = try await DocumentSession.open(url: root)
     let options = try #require(session.file.views.widget)
     try await session.close()
     var reloads = 0
     let publisher = PopWidgetPublisher.shared
-    publisher.start(cache: cache, reload: { reloads += 1 }, openSession: { _ in nil })
+    publisher.start(cache: cache, entries: [entry], reload: { reloads += 1 }, openSession: { _ in nil })
     defer { publisher.stop() }
-    await publisher.capture(url: root, identity: identity, capturedAt: Date(), options: options) { capture }
-    let first = try #require(cache.record(for: root))
+    await publisher.capture(url: root, capturedAt: Date(), options: options) { capture }
+    let first = try #require(cache.record(id: entry.id))
     // Two completed renders can deliver the same accepted source across close and save.
-    await publisher.capture(url: root, identity: identity, capturedAt: Date(), options: options) { capture }
-    #expect(cache.record(for: root)?.generation == first.generation)
+    await publisher.capture(url: root, capturedAt: Date(), options: options) { capture }
+    #expect(cache.record(id: entry.id)?.generation == first.generation)
     #expect(reloads == 1)
     try FileManager.default.removeItem(at: cache.imageURL(first, .small))
-    await publisher.capture(url: root, identity: identity, capturedAt: Date(), options: options) { capture }
-    let repaired = try #require(cache.record(for: root))
+    await publisher.capture(url: root, capturedAt: Date(), options: options) { capture }
+    let repaired = try #require(cache.record(id: entry.id))
     #expect(repaired.generation != first.generation)
     #expect(reloads == 2)
     for family in WidgetImageFamily.allCases { #expect(cache.imageData(repaired, family) != nil) }
@@ -47,19 +48,20 @@ extension HostTests {
     let folder = try Fixtures.folder()
     defer { try? FileManager.default.removeItem(at: folder) }
     let cache = WidgetCache(root: folder)
-    PopWidgetPublisher.shared.start(cache: cache) { _ in nil }
+    let entry = widgetEntry(root)
+    PopWidgetPublisher.shared.start(cache: cache, entries: [entry]) { _ in nil }
     defer { PopWidgetPublisher.shared.stop() }
     let before = try Data(contentsOf: root)
     let modified = try root.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
     for edited in [false, false, true] {
-      let previous = cache.record(for: root)?.generation
+      let previous = cache.record(id: entry.id)?.generation
       let controller = try await PopDocumentWindowController.open(url: root)
       controller.window?.moveOffScreen()
       controller.showWindow(nil)
       await controller.waitForPresentation()
       if edited { #expect(try await command("batch", url: root, setTitle("Changed widget")).ok) }
       try await controller.finishClose()
-      let record = try #require(cache.record(for: root))
+      let record = try #require(cache.record(id: entry.id))
       if edited {
         #expect(record.generation != previous)
         break
@@ -80,8 +82,9 @@ extension HostTests {
       try? FileManager.default.removeItem(at: folder)
     }
     let cache = WidgetCache(root: folder)
+    let entry = widgetEntry(root)
     let publisher = PopWidgetPublisher.shared
-    publisher.start(cache: cache) { _ in nil }
+    publisher.start(cache: cache, entries: [entry]) { _ in nil }
     defer { publisher.stop() }
     let session = try await DocumentSession.open(url: root)
     session.load()
@@ -90,11 +93,19 @@ extension HostTests {
       session: session, telemetry: PopTelemetry { _ in }, widgetURL: root)
     #expect(artwork.preview != nil)
     #expect(artwork.icon != nil)
-    #expect((cache.record(for: root) == nil) == brokenWidget)
+    #expect((cache.record(id: entry.id) == nil) == brokenWidget)
     try await session.close(artwork: artwork)
     #expect(!Fixtures.isLocked(root))
     #expect(Fixtures.pixels(PopArtwork.png(root, .preview)) == Fixtures.pixels(artwork.preview))
     #expect(Fixtures.pixels(PopArtwork.png(root, .icon)) == Fixtures.pixels(artwork.icon))
+  }
+
+  private func widgetEntry(_ url: URL) -> LibraryEntry {
+    LibraryEntry(
+      id: UUID().uuidString, title: "Widget", template: "fixture", path: url.path,
+      version: "saved", assetRevision: "", artworkVersion: "", dirty: false, deleted: false,
+      localOnly: true, accountBound: false, downloaded: true, problem: nil, role: nil, revision: 1,
+      sharingEnabled: nil, inbox: false, phase: .offline, pauseKind: nil, detail: "")
   }
 
   private func widgetCloseFixture(brokenRenderer: Bool = false) throws -> URL {
@@ -122,19 +133,20 @@ extension HostTests {
         try? FileManager.default.removeItem(at: folder)
       }
       let cache = WidgetCache(root: folder)
+      let entry = widgetEntry(root)
       let png = try Fixtures.png()
       let images = WidgetImageFamily.allCases.map { WidgetImage(family: $0, png: png) }
       let first = try cache.publish(
-        url: root, title: root.deletingPathExtension().lastPathComponent, images: images,
+        libraryID: entry.id, title: entry.title, images: images,
         capturedAt: Date(timeIntervalSince1970: 1),
         refreshMinutes: nil, sourceVersion: scenario == "missing token" ? nil : "prior-renderer")
       let saved = try Data(contentsOf: root)
       var reloads = 0
       let publisher = PopWidgetPublisher.shared
-      publisher.start(cache: cache, reload: { reloads += 1 }, openSession: { _ in nil })
+      publisher.start(cache: cache, entries: [entry], reload: { reloads += 1 }, openSession: { _ in nil })
       defer { publisher.stop() }
       await publisher.refresh(ids: [first.id], scheduledIDs: [])
-      let current = try #require(cache.record(for: root))
+      let current = try #require(cache.record(id: entry.id))
       if broken {
         #expect(current.generation == first.generation)
         #expect(cache.imageData(current, .small) == images[0].png)
@@ -144,110 +156,11 @@ extension HostTests {
         #expect(current.sourceVersion == (try await PopRenderer.widgetSourceVersion(url: root)))
         #expect(reloads == 1)
         await publisher.refresh(ids: [first.id], scheduledIDs: [])
-        #expect(cache.record(for: root)?.generation == current.generation)
+        #expect(cache.record(id: entry.id)?.generation == current.generation)
         #expect(reloads == 1, "unchanged renderer and document must skip duplicate capture")
       }
       #expect(try Data(contentsOf: root) == saved, "widget refresh must never save or migrate the document")
     }
-  }
-
-  // A rename or move changes the widget choice's label and location even when its
-  // saved-state token is unchanged. Metadata maintenance must not need a working renderer.
-  @Test(arguments: ["move", "rename", "failed capture"]) @MainActor
-  func widgetMovesRefreshMetadataWithoutRecapturing(scenario: String) async throws {
-    _ = NSApplication.shared
-    let root = try widgetCloseFixture(brokenRenderer: true)
-    let folder = try Fixtures.folder()
-    defer {
-      try? FileManager.default.removeItem(at: root)
-      try? FileManager.default.removeItem(at: folder)
-    }
-    let sourceFolder = folder.appendingPathComponent("source", isDirectory: true)
-    let destinationFolder = folder.appendingPathComponent("destination", isDirectory: true)
-    try FileManager.default.createDirectory(at: sourceFolder, withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: destinationFolder, withIntermediateDirectories: true)
-    let source = sourceFolder.appendingPathComponent("Before.pop")
-    try FileManager.default.moveItem(at: root, to: source)
-    let cache = WidgetCache(root: folder.appendingPathComponent("cache", isDirectory: true))
-    let png = try Fixtures.png()
-    let images = WidgetImageFamily.allCases.map { WidgetImage(family: $0, png: png) }
-    let version =
-      scenario == "failed capture" ? "prior-renderer" : try await PopRenderer.widgetSourceVersion(url: source)
-    let first = try cache.publish(
-      url: source, title: "Before", images: images, capturedAt: Date(timeIntervalSince1970: 1),
-      refreshMinutes: 15, sourceVersion: version)
-    let saved = try Data(contentsOf: source)
-    let title = scenario == "move" ? "Before" : "After"
-    let destination = destinationFolder.appendingPathComponent(title + ".pop")
-    try FileManager.default.moveItem(at: source, to: destination)
-    try FileManager.default.removeItem(at: sourceFolder)
-    #expect(try cache.resolve(first).standardizedFileURL == destination.standardizedFileURL)
-    var reloads = 0
-    let publisher = PopWidgetPublisher.shared
-    publisher.start(cache: cache, reload: { reloads += 1 }, openSession: { _ in nil })
-    defer { publisher.stop() }
-    await publisher.refresh(ids: [first.id], scheduledIDs: [])
-    let current = try #require(cache.record(for: destination))
-    #expect(current.title == title)
-    #expect(current.id == first.id)
-    #expect(current.generation == first.generation)
-    #expect(current.updatedAt == first.updatedAt)
-    #expect(current.sourceVersion == first.sourceVersion)
-    #expect(current.refreshMinutes == first.refreshMinutes)
-    for family in WidgetImageFamily.allCases { #expect(cache.imageData(current, family) == png) }
-    #expect(reloads == 1, "location changes must reload the widget without capturing new pixels")
-    await publisher.refresh(ids: [first.id], scheduledIDs: [])
-    #expect(reloads == 1)
-    #expect(try Data(contentsOf: destination) == saved)
-    // Pruning must use the new parent, even after the original parent disappears.
-    try FileManager.default.removeItem(at: destination)
-    #expect(cache.pruneUnavailable())
-    #expect(cache.record(id: first.id) == nil)
-  }
-
-  @Test @MainActor func aWidgetLocationFailureDoesNotSkipChangedSavedPixels() async throws {
-    _ = NSApplication.shared
-    let root = try widgetCloseFixture()
-    let folder = try Fixtures.folder()
-    defer {
-      try? FileManager.default.removeItem(at: root)
-      try? FileManager.default.removeItem(at: folder)
-    }
-    let cache = WidgetCache(root: folder)
-    let capture = try await PopRenderer.widgetCapture(url: root)
-    let first = try cache.publish(
-      url: root, title: "Old location", images: capture.images, capturedAt: Date(),
-      refreshMinutes: nil, sourceVersion: capture.sourceVersion)
-    let before = try #require(cache.imageData(first, .small))
-    #expect(try await command("batch", url: root, setTitle("Widget saved")).ok)
-    let publisher = PopWidgetPublisher.shared
-    let original = publisher.refreshLocation
-    var failedLocation = false
-    publisher.refreshLocation = { cache, id, url in
-      let bookmark = folder.appendingPathComponent(id).appendingPathComponent("document.bookmark")
-      let saved = try Data(contentsOf: bookmark)
-      try FileManager.default.removeItem(at: bookmark)
-      try FileManager.default.createDirectory(at: bookmark, withIntermediateDirectories: false)
-      defer {
-        try? FileManager.default.removeItem(at: bookmark)
-        try? saved.write(to: bookmark)
-      }
-      do { return try cache.refreshLocation(id: id, url: url) } catch {
-        failedLocation = true
-        throw error
-      }
-    }
-    publisher.start(cache: cache, openSession: { _ in nil })
-    defer {
-      publisher.stop()
-      publisher.refreshLocation = original
-    }
-    await publisher.refresh(ids: [first.id], scheduledIDs: [])
-    #expect(failedLocation)
-    let current = try #require(cache.record(for: root))
-    #expect(current.generation != first.generation)
-    #expect(current.sourceVersion == (try await PopRenderer.widgetSourceVersion(url: root)))
-    #expect(Fixtures.pixels(cache.imageData(current, .small)) != Fixtures.pixels(before))
   }
 
   @Test @MainActor func savedEditsPublishNewWidgetPixelsAndRequestReloadWithoutClosing() async throws {
@@ -259,21 +172,22 @@ extension HostTests {
       try? FileManager.default.removeItem(at: folder)
     }
     let cache = WidgetCache(root: folder)
+    let entry = widgetEntry(root)
     var reloads = 0
     let publisher = PopWidgetPublisher.shared
-    publisher.start(cache: cache, reload: { reloads += 1 }, openSession: { _ in nil })
+    publisher.start(cache: cache, entries: [entry], reload: { reloads += 1 }, openSession: { _ in nil })
     defer { publisher.stop() }
     let controller = try await PopDocumentWindowController.open(url: root)
     controller.window?.moveOffScreen()
     controller.showWindow(nil)
     await controller.waitForPresentation()
-    #expect(await eventually(timeout: .seconds(10)) { cache.record(for: root) != nil })
-    let first = try #require(cache.record(for: root))
+    #expect(await eventually(timeout: .seconds(10)) { cache.record(id: entry.id) != nil })
+    let first = try #require(cache.record(id: entry.id))
     let oldImage = try #require(cache.imageData(first, .small))
     let previousReloads = reloads
     #expect(try await command("batch", url: root, setTitle("Widget saved")).ok)
-    #expect(await eventually(timeout: .seconds(10)) { cache.record(for: root)?.generation != first.generation })
-    let newer = try #require(cache.record(for: root))
+    #expect(await eventually(timeout: .seconds(10)) { cache.record(id: entry.id)?.generation != first.generation })
+    let newer = try #require(cache.record(id: entry.id))
     #expect(Fixtures.pixels(cache.imageData(newer, .small)) != Fixtures.pixels(oldImage))
     #expect(reloads > previousReloads)
     #expect(controller.session.isReady, "refresh must not close the editor")
@@ -289,9 +203,12 @@ extension HostTests {
       try? FileManager.default.removeItem(at: folder)
     }
     let cache = WidgetCache(root: folder)
+    let entry = widgetEntry(root)
     let publisher = PopWidgetPublisher.shared
     var reloads = 0
-    func start() { publisher.start(cache: cache, reload: { reloads += 1 }, openSession: { _ in nil }) }
+    func start() {
+      publisher.start(cache: cache, entries: [entry], reload: { reloads += 1 }, openSession: { _ in nil })
+    }
     start()
     defer { publisher.stop() }
     let controller = try await PopDocumentWindowController.open(url: root)
@@ -299,32 +216,32 @@ extension HostTests {
     controller.showWindow(nil)
     await controller.waitForPresentation()
     try await controller.finishClose()
-    let first = try #require(cache.record(for: root))
+    let first = try #require(cache.record(id: entry.id))
     let blue = try #require(Fixtures.pixels(cache.imageData(first, .small)))
     let initialReloads = reloads
     #expect(!Fixtures.isLocked(root))
     #expect(try await command("batch", url: root, setTitle("Widget saved")).ok)
     #expect(
       await eventually(timeout: .seconds(10)) {
-        guard let record = cache.record(for: root) else { return false }
+        guard let record = cache.record(id: entry.id) else { return false }
         return Fixtures.pixels(cache.imageData(record, .small)) != blue
       }, "a closed-document CLI save must refresh without a declared interval or open window")
     #expect(reloads > initialReloads)
-    let red = try #require(cache.record(for: root))
+    let red = try #require(cache.record(id: entry.id))
     publisher.stop()
     #expect(try await command("batch", url: root, setTitle("Changed while quit")).ok)
     let saved = try Data(contentsOf: root)
-    #expect(cache.record(for: root)?.generation == red.generation, "quit retains the previous image")
+    #expect(cache.record(id: entry.id)?.generation == red.generation, "quit retains the previous image")
     start()
     #expect(
       await eventually(timeout: .seconds(10)) {
-        guard let record = cache.record(for: root), record.generation != red.generation else { return false }
+        guard let record = cache.record(id: entry.id), record.generation != red.generation else { return false }
         return Fixtures.pixels(cache.imageData(record, .small)) == blue
       }, "startup must catch up even when the widget has no refresh interval")
     #expect(try Data(contentsOf: root) == saved, "background refresh must never write the source")
-    let caughtUp = try #require(cache.record(for: root))
+    let caughtUp = try #require(cache.record(id: entry.id))
     await publisher.refresh(ids: [caughtUp.id])
-    #expect(cache.record(for: root)?.generation == caughtUp.generation, "unchanged state must not render again")
+    #expect(cache.record(id: entry.id)?.generation == caughtUp.generation, "unchanged state must not render again")
   }
 
   // Hold capture work until the window hands off. Ownership must remain with the

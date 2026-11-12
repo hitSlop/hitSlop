@@ -1,16 +1,12 @@
 //! Bounded summaries and fully checked application reads.
 use super::assets::read_asset;
 use super::check::{contents, layout, markers, one};
-#[cfg(not(target_arch = "wasm32"))]
-use super::{Artwork, reader, resolve};
-use super::{Kind, assets, rows};
-use crate::app::{AppDefinition, AppMetadata, Author, WindowFrame};
-#[cfg(not(target_arch = "wasm32"))]
-use crate::error::failed;
+use super::{Artwork, Kind, assets, reader, resolve, rows};
 use crate::error::{Error, Result, invalid, sqlite};
-use crate::wire::MANIFEST_BYTES;
+use pop_contracts::app::{AppMetadata, Author, WindowFrame};
+use pop_contracts::wire::MANIFEST_BYTES;
+use pop_core::app::AppDefinition;
 use rusqlite::Connection;
-#[cfg(not(target_arch = "wasm32"))]
 use std::fs;
 use std::path::Path;
 
@@ -56,7 +52,6 @@ fn summary_on(conn: &Connection, path: &Path) -> Result<Summary> {
     let kind = if one(conn, "SELECT count(*) FROM document")? == 0 { Kind::Template } else { Kind::Document };
     Ok(Summary { kind, package_format, runtime_abi, metadata, bytes: stored_bytes(conn, path)? })
 }
-#[cfg(not(target_arch = "wasm32"))]
 pub fn summary(path: &Path) -> Result<Summary> {
     let conn = reader(path)?;
     let read = conn.unchecked_transaction().map_err(sqlite("read"))?;
@@ -109,14 +104,16 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
         keys.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))).map_err(sqlite("read assets"))?
     {
         let (key, size) = row.map_err(sqlite("read assets"))?;
-        let kind = crate::media::asset_key(&key).ok_or_else(|| invalid("Invalid app asset key"))?;
+        let kind = pop_contracts::media::asset_key(&key).ok_or_else(|| invalid("Invalid app asset key"))?;
         if !key.starts_with("media/") && size == 0 {
             return Err(invalid(format!("Resource {key} is empty")));
         }
         if key == "ui.css" {
             style = true;
         }
-        if key == "ui.js" {
+        if pop_contracts::media::program(&key)
+            .is_some_and(|program| program.role == pop_contracts::media::ProgramRole::Ui)
+        {
             ui = true;
         }
         if let WindowFrame::Skin { skin: skin_key } = &app.window().frame
@@ -134,25 +131,18 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
             .map_err(Error::Rejected)?;
             skin = Some(bytes);
         }
-        if key == "widget.js" {
-            let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing widget program"))?;
-            widget = Some(std::sync::Arc::new(String::from_utf8(bytes).map_err(invalid)?));
-        }
-        if key == "preview.js" {
-            let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing preview program"))?;
-            preview = Some(std::sync::Arc::new(String::from_utf8(bytes).map_err(invalid)?));
-        }
-        if key == "export.js" {
-            let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing export program"))?;
-            export = Some(std::sync::Arc::new(String::from_utf8(bytes).map_err(invalid)?));
-        }
-        if key == "icon.js" {
-            let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing icon program"))?;
-            icon = Some(std::sync::Arc::new(String::from_utf8(bytes).map_err(invalid)?));
-        }
-        if key == "commands.js" {
-            let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid("Missing command program"))?;
-            commands = Some(std::sync::Arc::new(String::from_utf8(bytes).map_err(invalid)?));
+        for program in pop_contracts::media::PROGRAMS.iter().filter(|program| !program.public && program.key == key) {
+            use pop_contracts::media::ProgramRole;
+            let (target, missing) = match program.role {
+                ProgramRole::Widget => (&mut widget, "Missing widget program"),
+                ProgramRole::Preview => (&mut preview, "Missing preview program"),
+                ProgramRole::Export => (&mut export, "Missing export program"),
+                ProgramRole::Icon => (&mut icon, "Missing icon program"),
+                ProgramRole::Commands => (&mut commands, "Missing command program"),
+                ProgramRole::Ui => continue,
+            };
+            let bytes = read_asset(conn, &key)?.ok_or_else(|| invalid(missing))?;
+            *target = Some(std::sync::Arc::new(String::from_utf8(bytes).map_err(invalid)?));
         }
     }
     if !ui {
@@ -180,17 +170,14 @@ pub(crate) fn opened(conn: &Connection, path: &Path, integrity: bool) -> Result<
         bytes: summary.bytes,
     })
 }
-#[cfg(not(target_arch = "wasm32"))]
 pub fn open(path: &Path, integrity: bool) -> Result<OpenedApp> {
     opened(&reader(path)?, path, integrity)
 }
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn checked(path: &Path) -> Result<(Connection, Kind)> {
     let conn = reader(path)?;
     let kind = summary_on(&conn, path)?.kind;
     Ok((conn, kind))
 }
-#[cfg(not(target_arch = "wasm32"))]
 pub fn artwork(path: &Path, preferred: &[Artwork]) -> Result<Option<(Artwork, Vec<u8>)>> {
     let conn = reader(path)?;
     let read = conn.unchecked_transaction().map_err(sqlite("read"))?;
@@ -202,13 +189,11 @@ pub fn artwork(path: &Path, preferred: &[Artwork]) -> Result<Option<(Artwork, Ve
     }
     Ok(None)
 }
-#[cfg(not(target_arch = "wasm32"))]
 pub fn kind(path: &Path) -> Result<Kind> {
     Ok(summary(path)?.kind)
 }
 /// Copies existing cosmetic artwork without running the app or changing its file.
 /// A caller provides a fresh output path; existing files are never overwritten.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn export_artwork(path: &Path, name: Artwork, output: &Path) -> Result<bool> {
     use std::io::Write;
     let Some((_, png)) = artwork(path, &[name])? else {
@@ -218,23 +203,26 @@ pub fn export_artwork(path: &Path, name: Artwork, output: &Path) -> Result<bool>
         .write(true)
         .create_new(true)
         .open(output)
-        .map_err(|e| failed(format!("Create artwork output: {e}")))?;
-    file.write_all(&png).map_err(|e| failed(format!("Write artwork output: {e}")))?;
+        .map_err(|e| crate::error::caused(format!("Create artwork output: {e}"), e))?;
+    file.write_all(&png).map_err(|e| crate::error::caused(format!("Write artwork output: {e}"), e))?;
     Ok(true)
 }
 
 /// A summary for `pop inspect`: kind, markers, assets, artwork and the document's sizes,
 /// of a file every open would accept.
-#[cfg(not(target_arch = "wasm32"))]
-pub fn inspect(path: &Path) -> Result<crate::engine::InspectInfo> {
-    use crate::engine::{AttachmentTotals, FileKind, InspectInfo, NamedSize, StateSizes};
+pub fn inspect(path: &Path) -> Result<pop_contracts::wire::engine::InspectInfo> {
+    use pop_contracts::wire::engine::AttachmentTotals;
+    use pop_contracts::wire::engine::FileKind;
+    use pop_contracts::wire::engine::InspectInfo;
+    use pop_contracts::wire::engine::NamedSize;
+    use pop_contracts::wire::engine::StateSizes;
     let conn = reader(path)?;
     // The summary reads the state the checks passed.
     let conn = conn.unchecked_transaction().map_err(sqlite("read"))?;
     let opened = opened(&conn, path, true)?;
     let (updates, update_bytes, checkpoint_bytes) = rows::state_sizes(&conn)?;
     let (attachments, _, attachment_bytes) = rows::attachment_sizes(&conn)?;
-    let size = |value: i64| u64::try_from(value).map_err(|_| invalid("Negative stored size"));
+    let size = |value: i64| u64::try_from(value).map_err(|error| invalid(format!("Negative stored size: {error}")));
     let list = |sql: &str| -> Result<Vec<NamedSize>> {
         let mut statement = conn.prepare(sql).map_err(sqlite("inspect"))?;
         let rows = statement
@@ -256,7 +244,7 @@ pub fn inspect(path: &Path) -> Result<crate::engine::InspectInfo> {
         metadata: opened.app.metadata().clone(),
         window: opened.app.page_window(),
         views: opened.app.views(),
-        capabilities: opened.app.capabilities().to_vec(),
+        capabilities: opened.app.capabilities(),
         assets: list("SELECT key, size FROM assets ORDER BY key")?,
         artwork: list("SELECT name, length(png) FROM artwork ORDER BY name")?,
         defaults: opened.app.spec().theme_tokens().iter().cloned().collect(),
@@ -271,24 +259,18 @@ pub fn inspect(path: &Path) -> Result<crate::engine::InspectInfo> {
             conn.query_row("SELECT coalesce(sum(length(bytes)),0) FROM assets", [], |r| r.get(0))
                 .map_err(sqlite("inspect"))?,
         )?,
-        app_digest: crate::hex(&rows::app_digest(&conn)?),
+        app_digest: crate::hex(rows::app_digest(&conn)?.as_bytes()),
         live: crate::registry::discovery(path)?.is_some(),
     })
 }
 
 /// The app's descriptor, for `pop schema`, from a file every open would accept.
-#[cfg(not(target_arch = "wasm32"))]
 pub fn descriptor(path: &Path) -> Result<String> {
     Ok(open(path, false)?.app.document_json().into())
 }
 
-#[cfg(not(target_arch = "wasm32"))]
 fn stored_bytes(_: &Connection, path: &Path) -> Result<u64> {
     Ok(fs::metadata(resolve(path)?).map(|m| m.len()).unwrap_or(0))
-}
-#[cfg(target_arch = "wasm32")]
-fn stored_bytes(conn: &Connection, _: &Path) -> Result<u64> {
-    Ok((one(conn, "PRAGMA page_count")? * one(conn, "PRAGMA page_size")?) as u64)
 }
 
 #[cfg(test)]

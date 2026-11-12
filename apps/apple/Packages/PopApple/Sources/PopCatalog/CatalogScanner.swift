@@ -103,7 +103,7 @@ actor CatalogScanner {
         return entry
       }
       var entry = Self.entry(file, source: .recent(url), id: "recent:\(url.path)")
-      entry.savedDocumentID = try? sharingLocalDocument(path: url.path)
+      entry.savedDocumentID = try? fileDocumentId(path: url.path)
       return entry
     }
   }

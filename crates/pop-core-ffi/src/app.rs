@@ -1,12 +1,15 @@
 //! Typed app and catalog projections. Only core's format module decodes stored JSON.
-use pop_core::app::{
-    self, AppMetadata, Author, Background, Capability, Category, StandardFrame, ThemeInput, Views, WidgetOptions,
+use pop_contracts::app::{
+    AppMetadata, Author, Background, Capability, Category, StandardFrame, ThemeInput, Views, WidgetOptions,
     WindowDefinition, WindowFrame,
 };
-use pop_core::shape::Silhouette;
-use pop_storage::file::{Kind, ResourceInfo, ResourceRoute, ResourceSpan, ResponsePlan, Summary};
+use pop_contracts::resources::{ResourceInfo, ResourceRoute, ResourceSpan, ResponsePlan};
+use pop_contracts::shape::Silhouette;
+use pop_core::app;
+use pop_storage::file::{Kind, Summary};
 
 #[uniffi::remote(Enum)]
+#[uniffi(name = "PopCategory")]
 pub enum Category {
     Popular,
     Productivity,
@@ -69,8 +72,11 @@ pub struct StandardFrame {
     pub shape: Silhouette,
 }
 #[uniffi::remote(Record)]
+#[uniffi(name = "ThemeToken")]
 pub struct ThemeInput {
+    #[uniffi(name = "name")]
     pub token: String,
+    #[uniffi(name = "value")]
     pub color: String,
 }
 #[uniffi::remote(Record)]
@@ -85,6 +91,7 @@ pub struct WidgetOptions {
     pub refresh_minutes: Option<u32>,
 }
 #[uniffi::remote(Record)]
+#[uniffi(name = "FileSummary")]
 pub struct Summary {
     pub kind: Kind,
     pub package_format: u64,
@@ -115,7 +122,7 @@ pub struct ResponsePlan {
 }
 #[uniffi::export]
 pub fn resource_response(info: ResourceInfo, route: ResourceRoute, range: Option<String>) -> ResponsePlan {
-    pop_storage::file::resource_response(&info, route, range.as_deref())
+    pop_contracts::resources::resource_response(&info, route, range.as_deref())
 }
 /// The native view of an accepted app. The original descriptor is opaque to Swift.
 #[derive(uniffi::Record)]
@@ -132,28 +139,15 @@ impl From<&app::AppDefinition> for AppDefinition {
     fn from(app: &app::AppDefinition) -> Self {
         Self {
             metadata: app.metadata().clone(),
-            window: app.window().clone(),
-            theme: app.theme().to_vec(),
+            window: app.window(),
+            theme: app.theme(),
             views: app.views(),
-            capabilities: app.capabilities().to_vec(),
+            capabilities: app.capabilities(),
             descriptor_json: app.document_json().into(),
         }
     }
 }
-#[uniffi::export]
-pub fn categories() -> Vec<Category> {
-    Category::ALL.to_vec()
-}
-#[uniffi::export]
-pub fn category_name(category: Category) -> String {
-    category.name()
-}
-#[uniffi::export]
-pub fn parse_category(name: String) -> Option<Category> {
-    Category::parse(name).ok()
-}
-
-use pop_core::HostLimits;
+use pop_contracts::wire::HostLimits;
 #[uniffi::remote(Record)]
 pub struct HostLimits {
     pub error_text: u64,
@@ -175,9 +169,9 @@ pub struct HostLimits {
 }
 #[uniffi::export]
 pub fn host_limits() -> HostLimits {
-    pop_core::host_limits()
+    pop_contracts::wire::host_limits()
 }
 #[uniffi::export]
 pub fn app_resource_policy() -> String {
-    pop_core::NATIVE_RESOURCE_POLICY.into()
+    pop_contracts::policy::NATIVE_RESOURCE_POLICY.into()
 }

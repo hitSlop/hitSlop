@@ -225,7 +225,7 @@ jobs:
           include-hidden-files: true
   # Live sharing: the built relay on Miniflare, proven on macOS (it fails before any check on
   # Linux). A pull request runs it only when it changes the relay, its clients, the sync code,
-  # the WASM adapter or the browser host; master pushes and release tags run it in sharing.yml.
+  # or the WASM adapter; master pushes and release tags run it in sharing.yml.
   sharing:
     needs: select
     if: needs.select.outputs.sharing != ''
@@ -247,7 +247,7 @@ jobs:
           name: sharing-evidence
           path: .pop/evidence
           include-hidden-files: true
-  # Browser qualification and the second-platform portable checks run nightly and on demand,
+  # WebKit qualification and the second-platform portable checks run nightly and on demand,
   # outside required PR jobs.
   qualification:
     needs: select

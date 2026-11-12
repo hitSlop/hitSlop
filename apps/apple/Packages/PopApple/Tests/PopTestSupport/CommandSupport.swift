@@ -10,26 +10,19 @@ import PopDocument
   var request = fields
   request["method"] = method
   request["documentPath"] = url.path
-  return try decodeReply(await DocumentCommand.run(json: JSONSerialization.data(withJSONObject: request)))
+  return try decodeReply(try await DocumentCommand.run(json: JSONSerialization.data(withJSONObject: request)))
 }
 
-/// The core's command entry point, without a restricted evaluator: data commands run
-/// closed or forward to the live owner, and a closed document's export is refused.
+/// Uses the same process boundary as the CLI while the native page remains in this host.
 @MainActor enum DocumentCommand {
-  /// One request written in command `protocol`.
-  static func run(json: Data, protocol version: Int = EngineProtocol.version) async -> Data {
+  static func run(json: Data, protocol version: Int = EngineProtocol.version) async throws -> Data {
     _ = PopRegistry.prepared
-    return await withCheckedContinuation { done in
-      commandRequest(
-        json: String(decoding: json, as: UTF8.self), protocol: UInt64(version),
-        completion: CommandCompletion { done.resume(returning: $0) })
-    }
+    let (status, output, error) = try await Task.detached {
+      try Fixtures.run(Fixtures.engine, ["--client-protocol", String(version)], input: json)
+    }.value
+    guard status == 0 else { throw PopFailure(error) }
+    return Data(output.utf8)
   }
-}
-private final class CommandCompletion: NativeCommandCompletion {
-  private let reply: @Sendable (Data) -> Void
-  init(_ reply: @escaping @Sendable (Data) -> Void) { self.reply = reply }
-  func complete(replyJson: String) { reply(Data(replyJson.utf8)) }
 }
 /// A successful request's state, as JSON data.
 @MainActor public func commandState(_ method: String, url: URL, _ fields: [String: Any] = [:]) async throws -> Data {

@@ -3,38 +3,51 @@
 The document semantics every host uses: the Swift app and the CLI's engine (`pop dev`
 included) use the native Rust core. Bun SDK tests use the WASM adapter.
 
-- `pop-contracts`: passive shared wire, error, limit, app-presentation, media-registry
+- `pop-testkit`: dev-only shared fixtures, generated edits, relay, owner and image helpers.
+  Tests consume it only through dev-dependencies.
+- `pop-contracts`: passive shared wire, error, limit, relay frame, app-presentation, media-registry
   and evaluator types; no Loro, SQLite or renderer.
 - `pop-core`: pure Loro document semantics, app acceptance and sync. It has no storage or
-  runtime features by default; optional `acceptance` codecs and `ts` generation are tooling.
+  runtime features and no cloud dependency; optional `ts` generation is tooling.
 - `pop-storage`: SQLite `.pop` files, file acceptance, registry, attachments and atomic
-  publication. It depends on core and contracts.
-- `pop-capture`: saved-source capture and widgets; it uses storage, core and the restricted
-  runner.
-- `pop-runtime`: owner, command, socket and persistence orchestration; it composes core,
-  storage, capture and runner.
-- `pop-renderer`: Takumi raster/PDF rendering and fonts; no JavaScript or owner.
-- `pop-library`: device-local index of the live account feed, downloaded copies and
-  recovery copies over runtime and storage.
+  publication. Each Store is owned by one persistence thread; owner state caches its
+  save status. It depends on core and contracts, with no cloud dependency.
+- `pop-runtime`: owner, command, socket and persistence orchestration, and its `capture`
+  module (saved-source capture and widgets); it composes core, storage and runner.
+  Typed Owner methods enter one queue bounded by message count and carried bytes.
+  Open-document CLI exports flush accepted edits and render an independent saved source.
+  Platform policy is target-driven: iOS uses in-process capture and the socket stub;
+  other targets use process providers and the socket server.
 - `pop-core-ffi`: UniFFI adapter used by the Apple host and its Quick Look extensions.
-- `pop-core-wasm`: wasm-bindgen adapters for SDK tests and durable browser copies; browser authoring development uses the native owner.
+- `pop-core-wasm`: wasm-bindgen adapter for SDK tests; `pop dev` uses the native owner.
 - `pop-engine`: the document engine the CLI runs on any platform (templates, create,
   pack, inspect, schema, export and document operations); `pack` also renders the artwork
   a build does not supply when asked. On macOS and Linux the engine exports closed documents in its own
   restricted evaluator; on macOS it also opens documents in dotpop.app.
-- `pop-sharing-protocol`: the cloud service's wire types, route table (`ROUTES`), limits
-  and failure table, free of Loro, used by the native and web clients and the Worker.
-- `pop-sharing-client`: native identity-authenticated, event-driven transport, cloud
-  HTTP calls, the account library feed and durable confirmed-version receipts over the existing owner.
-- `pop-sync`: the pure supervisor shared by native and browser drivers (reconnect
-  backoff, fold/compaction decisions, push budgets); no I/O, clocks or Loro, and document
-  replication remains in core.
+- `pop-sharing-protocol`: the cloud service's HTTP and library wire types, limits
+  and failure table, free of Loro, used by the native client and the Worker.
+  Its `supervisor` module is the pure sync supervisor driven by the native sharing client
+  (reconnect backoff, fold/compaction decisions, push budgets); no I/O, clocks or Loro.
+- `pop-cloud`: the native cloud client over the existing owner: identity-authenticated,
+  event-driven transport, cloud HTTP calls, durable confirmed-version receipts and the account
+  feed, composed into the device-local `library` (index of the live account feed, downloaded
+  copies and recovery copies). One shared async runtime handles document and account
+  sockets; one long-lived library switches accounts. Confirmed receipts live in its
+  `index.sqlite`. Callbacks and a managed-folder watcher refresh native snapshots.
 - `pop-runner`: the restricted QuickJS child and its bounded process launcher, with
-  no storage dependency. The engine re-executes itself with `--evaluate-command`; the
-  `pop-evaluator` binary provides the same child for native-host integration.
+  no storage dependency. Its `capture` feature includes the `render` module (Takumi
+  raster/PDF rendering and fonts; no owner). The engine re-executes itself with `--evaluate-command`; the Mac app
+  bundles and signs that same `pop-engine` binary.
+  Its features are `child` (sandbox and evaluator entry point), `capture` (QuickJS and renderer),
+  and `in-process` (caller-thread capture for iOS); defaults are empty.
+  Native process launching compiles on non-iOS targets without a feature flag.
+
+`tools/pop-bindgen` generates TypeScript contracts with ts-rs.
+`tools/pop-compat` captures release acceptance vectors and limits, and replays recorded
+acceptance and limits in its tests. It is never shipped with the document engine.
 
 `apps/sharing` is the Cloudflare Worker built on `pop-sharing-protocol`;
-Rust clients share its protocol types directly; ts-rs exports the browser types.
+Rust clients share its protocol types directly; ts-rs exports its TypeScript types.
 
 The root toolchain/lockfile pin Rust 1.96.1 (edition 2024, with clippy and rustfmt),
 Loro 1.17.1 (the exact crates.io release), UniFFI 0.32.2 and wasm-bindgen 0.2.129.
@@ -62,7 +75,9 @@ LTO (about a fifth smaller, five times slower to rebuild): `POP_CARGO_PROFILE=di
 selects it, and the release gate, compatibility capture, the release workflow and the
 Engines workflow set it. CI caches artifacts by toolchain, lockfile and source; a cache hit
 never substitutes for Cargo's dependency checks.
-Generated XCFramework and Swift bindings are disposable and excluded from Git. Rust owns
+Generated XCFramework and Swift bindings are disposable and excluded from Git. Import shared contracts directly from `pop-contracts`, rather than through host or storage
+facades. JSON/error/hex helpers live in contracts; mutex and randomness helpers live in core.
+Rust owns
 shared wire types and limits in `pop-contracts` and the sharing protocol; `tools/pop-bindgen` uses ts-rs to export
 TypeScript and UniFFI carries native types to Swift. App acceptance belongs to `pop-core`;
 file acceptance belongs to `pop-storage`. Run `bun run schema:generate`; never edit

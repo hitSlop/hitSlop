@@ -147,14 +147,22 @@ public struct PopFile: Sendable {
   }
 
   #if os(macOS)
-    /// User-requested relocation. The core holds the source lease through validated copy
-    /// and coordinated cleanup; a cleanup warning means both files were retained.
-    public static func moveToLocalFolder(_ source: URL) throws -> (url: URL, warning: String?) {
+    /// Saves an independent local copy while retaining the source.
+    public static func copyToLocalFolder(_ source: URL) throws -> URL {
       let folder = try PopSaveLocation.localFolder()
-      let result = try opening { try relocateDocument(source: source.path, folder: folder.path) }
-      let url = URL(fileURLWithPath: result.path)
-      PopSaveLocation.remember(url)
-      return (url, result.cleanupError)
+      let name = source.deletingPathExtension().lastPathComponent
+      for suffix in 1...10_000 {
+        let filename = suffix == 1 ? name : "\(name) \(suffix)"
+        let destination = folder.appendingPathComponent(filename).appendingPathExtension("pop")
+        do {
+          try importDocument(source: source.path, destination: destination.path)
+          PopSaveLocation.remember(destination)
+          return destination
+        } catch CoreError.Failure(let failure) where failure.reason == .exists {
+          continue
+        }
+      }
+      throw PopError.invalid("Cannot find an unused local document name")
     }
 
   #endif

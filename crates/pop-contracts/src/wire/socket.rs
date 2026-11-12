@@ -1,12 +1,12 @@
 //! Same-build owner socket messages; protocol refusal precedes payload decoding.
-use super::engine::{EngineRequest, check_path};
+use super::engine::{DocumentRequest, check_path};
 use crate::{Code, Error, err};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize)]
 pub struct SocketRequest {
     pub protocol: u64,
-    pub request: EngineRequest,
+    pub request: DocumentRequest,
 }
 impl SocketRequest {
     /// Bound the transport, negotiate before interpreting the request, then apply
@@ -23,10 +23,9 @@ impl SocketRequest {
             request: Box<serde_json::value::RawValue>,
         }
         let envelope: Envelope = serde_json::from_str(input).map_err(|e| err(Code::InvalidRequest, e))?;
-        let request = EngineRequest::parse(envelope.request.get()).map_err(|e| err(Code::InvalidRequest, e))?;
-        if !request.is_document() {
-            return Err(err(Code::InvalidRequest, "Not a document command"));
-        }
+        let request: DocumentRequest =
+            serde_json::from_str(envelope.request.get()).map_err(|e| err(Code::InvalidRequest, e))?;
+        request.check()?;
         if input.len() > request.socket_limit() {
             return Err(err(Code::InvalidRequest, "Oversized socket request"));
         }
@@ -78,24 +77,19 @@ pub enum HelloSuccess {
     Hello {
         #[serde(rename = "ok")]
         _ok: super::engine::True,
-        #[serde(rename = "documentLineage")]
-        document_lineage: u32,
+        #[serde(rename = "applicationId")]
+        application_id: u32,
     },
 }
 
 impl HelloSuccess {
-    /// A protocol-compatible owner must also belong to this product's document lineage;
-    /// an owner of any other lineage never receives a payload.
-    pub fn check_lineage(&self) -> Result<(), Error> {
-        let Self::Hello { document_lineage, .. } = self;
-        match document_lineage.cmp(&crate::lineage::DOCUMENT_LINEAGE) {
-            std::cmp::Ordering::Equal => Ok(()),
-            std::cmp::Ordering::Greater => {
-                Err(err(Code::RequiresUpdate, "This live document needs a newer pop CLI; update pop"))
-            }
-            std::cmp::Ordering::Less => {
-                Err(err(Code::InvalidRequest, "This live document belongs to an unsupported older pop lineage"))
-            }
+    /// Verify the owner identifies a pop document before sending a payload.
+    pub fn check_application_id(&self) -> Result<(), Error> {
+        let Self::Hello { application_id, .. } = self;
+        if *application_id == crate::format::APPLICATION_ID {
+            Ok(())
+        } else {
+            Err(err(Code::InvalidRequest, "This is not a pop document"))
         }
     }
 }

@@ -42,17 +42,18 @@ Transient failures retain the last known value. An optional presentation refresh
 not make an acknowledged upload fail. No authority request runs while rendering a cell
 or refreshing the local index.
 
-Standalone guest documents use their accepted document UUID and a matching valid
-credential. Rust interprets the opaque credential, including its ended state; filenames
-do not establish sharing. Native code caches this projection off the main thread at
-startup, foreground and credential changes. Account-generation checks fence late work.
+Rust projects sharing from the accepted document UUID, the current account and cached
+library relationship; filenames do not establish sharing. The long-lived Rust library
+fences account changes and reattaches registered live owners. Opening an arbitrary Mac
+file records it in Recents without adopting it into the library.
 
 ## Sync and accounts
 
 Cloud transport is event driven, with no polling of the service: one Rust account connection
-delivers the person's library metadata and each owner's connection reports its sync status. The
-native library also re-reads its local index every two seconds, with no network request,
-to notice changes made by another process. The Mac and iPhone use one default
+delivers the person's library metadata. Entries carry each document's sync phase, pause reason and detail; one library callback invalidates their snapshots. Native
+refreshes follow that callback, document save notifications and one managed-folder watcher
+using vnode notifications, including writes made by another process. Bursts are coalesced.
+Library work has its own queue, separate from document opening. The Mac and iPhone use one default
 Firebase app (Authentication, Analytics, Crashlytics); telemetry collection is
 on only in Release builds. Cloud documents are described in [cloud documents](cloud-documents.md).
 
@@ -86,8 +87,8 @@ previews, context menus and creation/opening behavior remain.
 ## Qualification
 
 Tests belong to Rust library persistence and the shared native presentation boundary.
-They cover private, shared and unknown state; state changes; cache reopening and
-migration; account isolation; Inbox persistence; badge priority; and accessibility text.
+They cover private, shared and unknown state; state changes; cache reopening; account
+isolation; Inbox persistence; badge priority; and accessibility text.
 No per-template tests are added.
 
 Visual qualification covers local, private-sync, shared, undownloaded, unavailable and

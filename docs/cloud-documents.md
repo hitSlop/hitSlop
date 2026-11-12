@@ -12,18 +12,24 @@ opaque Loro updates and never interprets them. Operators deploy it from
 - **Document ID.** An independent UUID allocated locally. Enabling sync, downloading and
   joining preserve it; an independent copy gets a new one. A template ID names an app
   family; it is neither a document nor an account ID.
-- **Owner.** One named Firebase account (Sign in with Apple). Only a named identity can
-  create a cloud document. The owner controls the invitation and deletion.
-- **Guests.** A link guest signs in with Firebase Anonymous Auth, automatically; local
-  editing needs no identity. Linking Apple upgrades a guest and keeps its UID. A guest
-  holds the editor role while the invitation generation they joined under is current.
+- **Owner.** One Firebase account (Sign in with Apple). Only the owner can create a cloud
+  document and control the invitation and deletion.
+- **Guests.** A guest joins by signing in with Apple; local editing needs no identity. A guest
+  holds the editor role until leaving, revocation or deletion. There is no per-member
+  management UI; Stop sharing removes all guests.
 - **Authority.** The per-document Durable Object (named by the UUID) owns permissions,
-  lifecycle, accepted updates and the resource inventory. A per-account Durable Object
+  lifecycle and accepted updates. A per-account Durable Object
   (named by the SHA-256 of the Firebase UID) registers the account's documents; that
-  registration is only a discovery hint. Joins, leaves and registry cleanup on one
-  document run one at a time: a join registers before it becomes a member, and a
-  retried cleanup releases hints left by failed joins but never a live member's. R2 holds
-  the seed, app resources and attachments under `{uuid}/…`. Every request is checked
+  projection is only a discovery hint. Membership and the latest desired library entry
+  commit in the document's local transaction. A durable outbox retries one internal
+  apply-entry route with monotonically increasing document revisions; each account applies
+  only newer revisions. Removal high-water marks persist for the account's lifetime,
+  because timed-out calls may arrive arbitrarily late. Uploading entries stay hidden.
+  Account deletion fences new entries and directly deletes or leaves known documents;
+  a late outbox upsert also performs that cleanup before acknowledgment. Pending creation
+  reservations share the account entries table so deletion covers uncertain init replies.
+  R2 holds
+  the seed and attachments under `{uuid}/…`. Every request is checked
   against Firebase identity and current membership; knowing a UUID grants nothing, and
   a link secret is exchanged once at `POST /members`, never reused as a credential.
 - **Limits.** Up to 64 members per document (429 beyond), 32 live sockets per document.
@@ -32,38 +38,40 @@ opaque Loro updates and never interprets them. Operators deploy it from
 ## API
 
 Every route is a row of `ROUTES` in
-`crates/pop-sharing-protocol/src/routes.rs`, which drives dispatch and per-IP rate limiting. An unlisted method,
+`apps/sharing/src/routes.rs`, which drives dispatch and per-IP rate limiting. An unlisted method,
 path or trailing segment is a 404 before any limiter, identity check or Durable Object.
-JSON bodies over their limit are 413 and malformed ones 400. Document sockets negotiate
-`pop.sync.v2`; the library uses `pop.library.v1`. An unsupported protocol gets 426 `requires_update`.
+JSON bodies over their limit are 413 and malformed ones 400. Identity is verified once
+at the edge and trusted caller context is forwarded to the objects. Native sockets
+upgrade without a subprotocol header. The `/v1` route and relay Hello identify the
+protocol; 2.0.0 subprotocol headers receive 426 `requires_update`.
 
 | Route | Who | Effect |
 |---|---|---|
 | `GET /health` | public | Liveness. |
-| `POST /v1/documents` | named identity | Idempotently reserve the UUID; 204 with no body. |
+| `POST /v1/documents` | identity | Idempotently reserve the UUID; 204 with no body. |
 | `GET /v1/account/library` | identity | WebSocket: complete library snapshot followed by metadata updates and removals. |
 | `DELETE /v1/account` | identity | Fence the account, delete owned documents, leave joined ones. |
 | `GET /v1/documents/{document}` | member | Phase, seed and app metadata, and whether compaction is due. It never carries the invitation. |
 | `PATCH /v1/documents/{document}` | owner | Store title and template ID. |
 | `DELETE /v1/documents/{document}` | owner | Revoke everyone, purge payloads, keep a tombstone. |
-| `GET /v1/documents/{document}/metadata` | member | Title and template ID. |
 | `GET`, `POST`, `DELETE …/sharing` | member (read), owner | The caller's current access, read from the document; enable (idempotent); revoke the invitation and its memberships. Only the owner receives the capability. |
 | `POST …/members` | identity | Exchange the invitation secret for editor membership. |
 | `DELETE …/members/me` | member | Leave without deleting the document. |
-| `PUT …/seed`, `GET …/seed` | owner, member | The seed snapshot, uploaded with its SHA-256, app digest and version in `X-Sharing-*` headers; immutable once live. Its version is the document's root. |
-| `GET`, `POST …/resources`; `PUT …/asset/{hash}` | member, owner | App resource manifest and its files. |
-| `POST …/open` | owner | Make the uploaded seed live. The body names it, `{"seedSha256": "<hex>"}`; any other seed is 409. Attachments are not checked. Replies with the document metadata. |
-| `GET …/blobs`; `GET`, `PUT …/blob/{hash}` | member | Immutable attachments. |
+| `GET …/seed` | member | Stream the recorded content-addressed seed blob; immutable once live. |
+| `POST …/open` | owner | Commit `{seed: hash, version, app: digest, attachments: [hash…]}`. Verify every named blob's recorded size and available R2 checksum, enforce attachment budgets, and remove unused staged blobs. Replies with document metadata. |
+| `GET …/blobs`; `GET`, `PUT …/blob/{hash}` | member (owner during upload) | Upload missing immutable seed and attachment blobs by SHA-256. The inventory lists all staged blobs before Open, and only attachments afterwards. |
 | `POST …/compact` | member | Replace the retained updates with one base; 204 with no body. |
 | `GET …/sync` | member | WebSocket carrying opaque update frames. |
 
 The invitation is `https://share.dotpop.click/join#{uuid}.{capability}`; the capability
-stays in the URL fragment. Browser guests edit through the same routes with a Firebase
-ID token; authored frames never receive credentials.
+stays in the URL fragment. The page opened by a link is static: it sends people to dotpop on Mac
+and iPhone and holds no credentials.
 
 ## Sync and compaction
 
-On connect a replica sends its version and receives what it lacks; pushes carry whole
+A socket accepts one Hello. Catch-up runs in alarm-driven slices bounded by bytes and
+rows, rechecking membership and phase before delivery. A replica sends its version and
+receives what it lacks; pushes carry whole
 causal changes, one in flight at a time. Live sharing carries the document's retained
 history, not a sanitized copy: a person who joins receives retained document history,
 including content since removed from view (**Share a Copy** sends a sanitized copy instead).
@@ -71,12 +79,20 @@ including content since removed from view (**Share a Copy** sends a sanitized co
 The first upload seeds the document with the creator's saved file, staged once as an
 immutable local snapshot. The seed is SQLite holding the complete embedded app and retained
 history; attachments and artwork are not part of it. From that snapshot the creator uploads
-the seed, the app resources and every attachment the seed references, then calls
-`POST …/open` with the seed's SHA-256. **The relay does not prove completeness**: Open
-checks that it names the stored seed and that the seed and app resources are in place, never
-the attachments, so uploading every required attachment first is the creator's contract. A failed upload
-leaves the document uploading and unbound; a retry stages again and sends only the blobs the
-relay lacks. Downloads fetch, verify and persist attachments before becoming ready.
+the seed and every attachment the seed references through `PUT …/blob/{hash}`, then calls
+`POST …/open` with the seed hash, version, app digest and exact attachment hashes. Open
+checks every named blob against its recorded size and any available R2 SHA-256 checksum,
+commits the set atomically and deletes unused staged blobs through a durable cleanup queue.
+The creator supplies the attachment list from the snapshot; the relay does not parse SQLite.
+Staging has a separate cap of twice one complete upload: 514 blobs and 232 MiB
+(two sets of 256 attachments totaling 100 MiB plus a 16 MiB seed). Exceeding either
+cap returns 413. While the document remains uploading, staged blobs expire 24 hours
+after the last staged upload; an alarm clears the inventory and retries failed blob
+deletions. The room stays uploading so the owner can start again. Open enforces the
+attachment budget separately, and the seed has its own 16 MiB limit.
+A failed upload leaves the document uploading and unbound; a retry stages again and sends
+only the blobs the relay lacks. Once live, the seed hash cannot change. Downloads fetch,
+verify and persist attachments before becoming ready.
 
 The seed is limited to 16 MiB of embedded app, history and SQLite overhead. A document
 beyond it cannot be shared; keep large media in attachments, which have their own limits
@@ -124,13 +140,11 @@ sharing changes or Join, it durably queues publication and an alarm. Bounded fan
 retries failed deliveries without requiring another edit. Leave and deletion remove
 account entries. Uploading documents stay hidden until Open succeeds.
 
-`GET /v1/account/library` negotiates `pop.library.v1` with a Firebase identity.
+`GET /v1/account/library` upgrades with a named Firebase identity and no subprotocol header.
 It sends byte/count-bounded snapshot pages, then upsert/remove messages. Clients apply
 absence only after a complete snapshot; interruption preserves the last known library.
 One account connection serves all library entries, and every device of that account
 has its own connection. Account entries never contain invitation secrets or document bytes.
-
-Existing registrations backfill from Document Object metadata when their account projection is missing; the cutover needs no cloud reset.
 
 Rust owns the subscription and local index. Foreground reconnect obtains a current
 snapshot; backgrounding stops the account socket. Account switches fence old callbacks.
@@ -143,5 +157,4 @@ continues using the existing version-vector protocol.
 ## Operations
 
 Deployment and local checks are in [apps/sharing/README.md](../apps/sharing/README.md).
-Verify the Rust Worker, SQLite Durable Objects and R2 with `bun run verify sharing`;
-use `bun run verify browser` for anonymous join, edit, offline reopen and export.
+Verify the Rust Worker, SQLite Durable Objects and R2 with `bun run verify sharing`.

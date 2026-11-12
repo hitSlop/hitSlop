@@ -23,29 +23,6 @@ does not supply inside the same `pack` request (see
 Add `--help` to a CLI command for its arguments. Package versions here reflect repository
 metadata, not npm availability; see [releasing](releasing.md).
 
-## Local browser copies (Chrome)
-
-```sh
-pop open --browser ./MyDocument.pop
-pop open --browser
-```
-
-The first command opens an independent copy in desktop Google Chrome. The second
-opens your saved browser copies. Keep the host terminal running; Ctrl-C stops it.
-Later invocations reuse the same host. No account or server upload is involved.
-
-Edits autosave in this browser profile on this device. **Download .pop** includes the
-current app, data, theme and attachments for opening in the desktop client. It opens
-Chrome’s Save As dialog; choosing a destination does not change the original document.
-The original file stays unchanged. Browser storage can be cleared or evicted: download
-copies you want to keep. Reload requires the local host to be running.
-
-Local copies support Chrome on desktop. Safari, private browsing and mobile browsers remain unqualified. Hosted edit links use the separate
-[live sharing](../architecture.md#relay). Fullscreen appears for apps declaring
-`fullscreenable`; **Keep awake** is a separate, initially off toggle. It displays
-**paused** when requested but the browser has released the screen wake lock.
-
-
 ## Operations
 
 `apply` takes one operation and `batch` an array committed all-or-nothing. A path walks the schema from the root: field names and record keys are strings, rows are `{"id": "$id from get"}`, and elements of a scalar list are `{"index": n}`. Never use array positions as row identity. [Document types](../reference/document-types.md) lists every kind's operations. Both print `{ids}`, the inserted row IDs; `pop get` prints the value. A refused batch exits 1 and prints `Refused ops[N] (reason): message` on stderr, naming the zero-based index of the operation to fix, then whether anything was applied.
@@ -71,17 +48,17 @@ map it to one `batch`, supplying row `id`s so a retried batch is refused as a du
 
 ## Ownership and retries
 
-An OS lock on the document's file in the account's registry (`~/.pop/live`) decides ownership. Closed editing runs the Rust owner in the engine process, without WebKit or authored app code. Busy documents route through their owner's Unix socket, which lives as long as the owner. Missing or failed discovery never permits a second writer. Each request names the command protocol it is written in; the owner checks it before anything else. A closed `export` renders the saved state without taking the lock, so it works while another process holds the document.
+An OS lock on the document's file in the account's registry (`~/.pop/live`) decides ownership. Closed editing runs the Rust owner in the engine process, without WebKit or authored app code. Busy documents route through their owner's Unix socket, which lives as long as the owner. Missing or failed discovery never permits a second writer. Each request names the command protocol it is written in; the owner checks it before anything else. An `export` probes the writer lock before trusting discovery, clearing a crashed owner’s discovery while holding the lock. Rendering reads an independent saved source without holding the writer lock, so a closed export also works while another process holds the document without publishing a session.
 
 Successful mutations acknowledge persistence. Generic edits are never automatically replayed and have no public retry flags. Named commands may reevaluate once after a definite pre-admission conflict, keeping their original time and seed. After an unknown outcome, run `pop get` before issuing another edit. A live `get` saves and returns owner-accepted state; text still being typed in an open window is not included. Edit ▸ Undo in the window reverts CLI edits made while the document is open, consecutive generic edits as one step and each named command as its own step. Save failures return an error. Theme, attachment and export commands follow the same rules; the socket deadlines are in the [runtime reference](../reference/runtime.md#security-boundaries).
 
 ## Engine requests
 
-`pop-engine --client-protocol N` reads one `EngineRequest` (`crates/pop-core/src/wire/engine.rs`, exported to TypeScript by ts-rs) from standard
+`pop-engine --client-protocol N` reads one `EngineRequest` (`crates/pop-contracts/src/wire/engine.rs`, exported to TypeScript by ts-rs) from standard
 input, bounded at 16 MiB, and prints one `EngineReply` line. The core keeps the 1 MiB
 limit for ordinary owner requests and the app metadata limit for `validateApp`.
 A request names no protocol: the engine adds the one it was called with. A success carries its
-method and required result fields (`EngineReply` in `crates/pop-core/src/wire/engine.rs`); the CLI treats a success
+method and required result fields (`EngineReply` in `crates/pop-contracts/src/wire/engine.rs`); the CLI treats a success
 without it as an unknown outcome. A refusal is a reply with
 `ok: false`, an outcome `code` and, for a refused edit, the core's `reason` and `opIndex`.
 `rejected`, `owner_replaced`, `closing` and `owner_invalidated` were not applied;
@@ -106,13 +83,14 @@ It opens the document with `/usr/bin/open -a` in the app that contains the runni
 engine, else the app `POP_APP` names, else `/Applications/dotpop.app`, then
 `~/Applications/dotpop.app`; a `POP_APP` that names no app is an error rather than a
 cue to try another copy. A document that is already open in the app is edited and
-exported by that app's owner, which the engine reaches through its socket. Everything
+exported by that app's Rust owner, which the engine reaches through its socket. The owner saves accepted edits and captures an independent source, then renders
+through the same capture path as a closed export. CLI export does not drain unsent page text. Everything
 else runs in the engine, including a closed document's export and the artwork a build
 renders. The one other thing read from an app is the bundled starter templates:
 `templates` and `create --from` list them from an app found the same way (a
 `POP_APP` without starters is skipped).
-The app contains its linked core and the restricted `pop-evaluator`; the engine ships
-only in npm.
+The Mac app contains its linked core and bundles the same `pop-engine` executable
+that ships in npm. Restricted children start through `--evaluate-command`.
 
 The CLI and Mac app update separately. The CLI names its command protocol on every
 engine call (`--client-protocol VERSION`), and the engine names it in every request to a
@@ -139,8 +117,7 @@ A bare template slug resolves installed templates before bundled ones.
 `inspect` returns file kind, requirements, metadata, window, resource/state sizes and
 the app digest (equal digests mean the same app);
 `schema` reads its stored descriptor. `get`, `describe`, `batch` and `call` route through
-the live or in-process owner and wait for persistence as required. `copy` makes a saved
-copy; `artwork.export` exports stored artwork. `attachments.ref` reads a local regular
+the live or in-process owner and wait for persistence as required. `artwork.export` exports stored artwork. `attachments.ref` reads a local regular
 file and returns its hash, byte length, name and detected MIME type without opening a
 document. `export` renders a closed document in the engine, and routes an open one to its
 owner on macOS. Closed export also works on Linux; `open` is macOS only and asks

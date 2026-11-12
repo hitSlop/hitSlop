@@ -1,7 +1,5 @@
 use super::*;
-fn fnv(text: &str) -> u64 {
-    text.bytes().fold(0xcbf29ce484222325, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3))
-}
+use pop_contracts::fnv;
 /// A valid row ID derived from `seed`: the same seed always gives the same ID, so packing
 /// an app twice writes the same template.
 pub(super) fn derived(seed: &str) -> String {
@@ -15,7 +13,7 @@ pub(super) fn derived(seed: &str) -> String {
 }
 pub(super) fn application_id() -> String {
     let mut bytes = [0u8; 16];
-    random(&mut bytes);
+    random(&mut bytes).expect("random bytes");
     let mut buffer = 0u32;
     let mut bits = 0;
     let mut out = String::new();

@@ -1,14 +1,15 @@
 //! An allowlist, installed before any authored JavaScript is evaluated. No filesystem,
 //! network, process creation or owner socket operations are available in the child.
+use crate::Error;
 
-pub fn restrict(cpu_seconds: u64) -> Result<(), String> {
+pub fn restrict(cpu_seconds: u64) -> Result<(), Error> {
     let directory = if cfg!(target_os = "macos") { "/dev/fd" } else { "/proc/self/fd" };
     let descriptors = std::fs::read_dir(directory)
-        .map_err(|e| e.to_string())?
+        .map_err(|e| Error::Sandbox(e.to_string()))?
         .map(|entry| {
-            entry
-                .map_err(|e| e.to_string())
-                .and_then(|entry| entry.file_name().to_string_lossy().parse::<i32>().map_err(|e| e.to_string()))
+            entry.map_err(|e| Error::Sandbox(e.to_string())).and_then(|entry| {
+                entry.file_name().to_string_lossy().parse::<i32>().map_err(|e| Error::Sandbox(e.to_string()))
+            })
         })
         .collect::<Result<Vec<_>, _>>()?;
     // SAFETY: these process-local calls operate on valid rlimit values. This process is
@@ -22,7 +23,7 @@ pub fn restrict(cpu_seconds: u64) -> Result<(), String> {
         {
             let limit = libc::rlimit { rlim_cur: value, rlim_max: value };
             if libc::setrlimit(resource, &limit) != 0 {
-                return Err("Cannot limit command process".into());
+                return Err(Error::Sandbox("Cannot limit command process".into()));
             }
         }
         // Darwin refuses finite RLIMIT_AS; its parent monitors resident memory instead.
@@ -30,7 +31,7 @@ pub fn restrict(cpu_seconds: u64) -> Result<(), String> {
         {
             let limit = libc::rlimit { rlim_cur: 2 << 30, rlim_max: 2 << 30 };
             if libc::setrlimit(libc::RLIMIT_AS, &limit) != 0 {
-                return Err("Cannot limit evaluator address space".into());
+                return Err(Error::Sandbox("Cannot limit evaluator address space".into()));
             }
         }
     }
@@ -38,7 +39,7 @@ pub fn restrict(cpu_seconds: u64) -> Result<(), String> {
 }
 
 #[cfg(target_os = "macos")]
-fn platform() -> Result<(), String> {
+fn platform() -> Result<(), Error> {
     use std::ffi::CStr;
     unsafe extern "C" {
         fn sandbox_init(profile: *const libc::c_char, flags: u64, error: *mut *mut libc::c_char) -> libc::c_int;
@@ -57,14 +58,14 @@ fn platform() -> Result<(), String> {
                 sandbox_free_error(error);
                 message
             };
-            return Err(message);
+            return Err(Error::Sandbox(message));
         }
     }
     Ok(())
 }
 
 #[cfg(target_os = "linux")]
-fn platform() -> Result<(), String> {
+fn platform() -> Result<(), Error> {
     use libc::*;
     use seccompiler::{BpfProgram, SeccompAction, SeccompFilter};
     let rules = [
@@ -102,19 +103,19 @@ fn platform() -> Result<(), String> {
         rules,
         SeccompAction::Errno(EPERM as u32),
         SeccompAction::Allow,
-        std::env::consts::ARCH.try_into().map_err(|e: seccompiler::BackendError| e.to_string())?,
+        std::env::consts::ARCH.try_into().map_err(|e: seccompiler::BackendError| Error::Sandbox(e.to_string()))?,
     )
-    .map_err(|e| e.to_string())?
+    .map_err(|e| Error::Sandbox(e.to_string()))?
     .try_into()
-    .map_err(|e: seccompiler::BackendError| e.to_string())?;
+    .map_err(|e: seccompiler::BackendError| Error::Sandbox(e.to_string()))?;
     // apply_filter sets PR_SET_NO_NEW_PRIVS before installing the filter. Either
     // failure refuses evaluation; the child never runs authored code unconfined.
-    seccompiler::apply_filter(&filter).map_err(|e| format!("Cannot sandbox command: {e}"))
+    seccompiler::apply_filter(&filter).map_err(|e| Error::Sandbox(format!("Cannot sandbox command: {e}")))
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-fn platform() -> Result<(), String> {
-    Err("Command isolation is unavailable on this platform".into())
+fn platform() -> Result<(), Error> {
+    Err(Error::Sandbox("Command isolation is unavailable on this platform".into()))
 }
 
 #[cfg(test)]

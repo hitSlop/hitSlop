@@ -1,5 +1,4 @@
-//! Small experimental HTTP inventory. No document state or semantic relay parsing.
-use crate::limits;
+//! Attachment inventory validation. No document state or semantic relay parsing.
 use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
@@ -9,61 +8,49 @@ pub struct Resource {
     pub size: u64,
     pub media_type: String,
 }
-#[derive(Clone, Debug, Serialize, Deserialize)]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "sharing.generated.ts"))]
-pub struct Manifest {
-    pub app: String,
-    pub resources: Vec<Resource>,
-}
-pub fn hash_id(id: &str) -> bool {
-    id.len() == 64 && id.bytes().all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
-}
-pub fn asset_key(key: &str) -> bool {
-    matches!(key, "ui.js" | "ui.css")
-        || key.strip_prefix("media/").is_some_and(|name| {
-            name.split_once('.').is_some_and(|(id, ext)| {
-                hash_id(id) && !ext.is_empty() && ext.bytes().all(|c| c.is_ascii_alphanumeric())
-            })
-        })
-}
-pub fn validate(items: &[Resource], attachments: bool) -> Result<(), String> {
-    let (count, file, bytes) = if attachments {
-        (limits::ATTACHMENT_COUNT, limits::ATTACHMENT_FILE_BYTES, limits::ATTACHMENT_BYTES)
-    } else {
-        (limits::ASSET_COUNT, limits::ASSET_FILE_BYTES, limits::ASSET_BYTES)
-    };
-    let mut keys = std::collections::HashSet::new();
+pub fn validate(items: &[Resource]) -> Result<(), pop_contracts::Error> {
+    validate_blobs(items)?;
+    if items.iter().any(|item| item.size > pop_contracts::wire::ATTACHMENT_FILE_BYTES as u64) {
+        return Err(invalid("Invalid resource inventory"));
+    }
     let mut total = 0u64;
     for item in items {
-        if !hash_id(&item.hash)
-            || item.size > file as u64
+        total = total.checked_add(item.size).ok_or_else(|| invalid("Resource inventory overflow"))?;
+    }
+    if items.len() > pop_contracts::wire::ATTACHMENT_COUNT || total > pop_contracts::wire::ATTACHMENT_BYTES as u64 {
+        return Err(invalid("Resource inventory exceeds document limits"));
+    }
+    Ok(())
+}
+/// Staged blobs include the seed and abandoned attempts, outside attachment budgets.
+pub fn validate_blobs(items: &[Resource]) -> Result<(), pop_contracts::Error> {
+    let mut keys = std::collections::HashSet::new();
+    for item in items {
+        if !pop_contracts::wire::valid_attachment_id(&item.hash)
+            || item.size > crate::SEED_BYTES as u64
             || !keys.insert(&item.key)
             || item.media_type.is_empty()
             || item.media_type.len() > 100
             || item.media_type.contains(['\r', '\n'])
-            || (attachments && (item.key != item.hash || !passive(&item.media_type)))
-            || (!attachments && !asset_key(&item.key))
+            || item.key != item.hash
+            || !pop_contracts::media::attachment_media_type(&item.media_type)
         {
-            return Err("Invalid resource inventory".into());
+            return Err(invalid("Invalid blob inventory"));
         }
-        total = total.checked_add(item.size).ok_or("Resource inventory overflow")?;
-    }
-    if items.len() > count || total > bytes as u64 {
-        return Err("Resource inventory exceeds document limits".into());
     }
     Ok(())
 }
 /// Transfer only absent immutable blobs. Both inventories are untrusted at this
 /// boundary; a matching hash with different metadata must never become a cache hit.
-pub fn missing_attachments(required: &[Resource], present: &[Resource]) -> Result<Vec<Resource>, String> {
-    validate(required, true)?;
-    validate(present, true)?;
+pub fn missing_attachments(required: &[Resource], present: &[Resource]) -> Result<Vec<Resource>, pop_contracts::Error> {
+    validate(required)?;
+    validate_blobs(present)?;
     let present: std::collections::HashMap<_, _> = present.iter().map(|item| (&item.hash, item)).collect();
     let mut missing = Vec::new();
     for item in required {
         if let Some(existing) = present.get(&item.hash) {
             if item.size != existing.size || item.media_type != existing.media_type {
-                return Err("Attachment inventory metadata mismatch".into());
+                return Err(invalid("Attachment inventory metadata mismatch"));
             }
         } else {
             missing.push(item.clone());
@@ -72,26 +59,8 @@ pub fn missing_attachments(required: &[Resource], present: &[Resource]) -> Resul
     Ok(missing)
 }
 
-fn passive(kind: &str) -> bool {
-    matches!(
-        kind,
-        "application/octet-stream"
-            | "application/pdf"
-            | "image/png"
-            | "image/jpeg"
-            | "image/webp"
-            | "image/gif"
-            | "image/avif"
-            | "image/heic"
-            | "image/heif"
-            | "audio/mpeg"
-            | "audio/mp4"
-            | "audio/wav"
-            | "audio/ogg"
-            | "audio/webm"
-            | "video/mp4"
-            | "video/webm"
-    )
+fn invalid(message: impl ToString) -> pop_contracts::Error {
+    pop_contracts::Error::new(pop_contracts::wire::Code::InvalidRequest, message)
 }
 
 #[cfg(test)]
@@ -100,6 +69,13 @@ mod transfer_tests {
     fn blob(hash: char) -> Resource {
         let hash = hash.to_string().repeat(64);
         Resource { key: hash.clone(), hash, size: 42, media_type: "image/png".into() }
+    }
+    #[test]
+    fn inventory_accepts_flac_and_quicktime_attachments() {
+        let mut items = vec![blob('a'), blob('b')];
+        items[0].media_type = "audio/flac".into();
+        items[1].media_type = "video/quicktime".into();
+        assert!(validate(&items).is_ok());
     }
     #[test]
     fn attachment_transfers_skip_remote_blobs_and_recover_lost_upload_replies() {

@@ -56,7 +56,6 @@ private struct AppSettingsView: View {
     return coordinator
   }()
   private var libraryChanges: AnyCancellable?
-  private var libraryWindows: AnyCancellable?
   private var recentMenu: NSMenu?
   private var recentMenuRefresh: Task<Void, Never>?
   private var exportMenuItem: NSMenuItem?
@@ -81,14 +80,8 @@ private struct AppSettingsView: View {
       try await self?.coordinator.closeAccountDocuments(paths)
     }
     DocumentSharing.installLibraryServices()
-    PopLibrary.shared.start()
-    libraryWindows = NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification).sink {
-      [weak self] _ in
-      PopLibrary.shared.editorOpen = self?.coordinator.hasOpenDocuments ?? false
-    }
     libraryChanges = PopLibrary.shared.$entries.sink { [weak self] entries in
       guard let self else { return }
-      PopLibrary.shared.editorOpen = self.coordinator.hasOpenDocuments
       for entry in entries where entry.deleted {
         for controller in self.coordinator.documentControllers
         where controller.session.file.url.path == entry.path && !controller.isHiddenForClose {
@@ -97,17 +90,12 @@ private struct AppSettingsView: View {
       }
     }
     PopWidgetPublisher.shared.start(
-      activeSelections: {
-        let configurations: [WidgetInfo] = await withCheckedContinuation { continuation in
-          WidgetCenter.shared.getCurrentConfigurations { continuation.resume(returning: (try? $0.get()) ?? []) }
-        }
-        return Set(
-          configurations.filter { $0.kind == WidgetCache.kind }
-            .compactMap { $0.widgetConfigurationIntent(of: PopWidgetIntent.self)?.pop?.id })
-      },
-      openSession: { [weak self] identity in
-        self?.coordinator.documentControllers.first { $0.widgetFileIdentity == identity && !$0.isHiddenForClose }?
-          .session
+      activeSelections: { await PopWidgetIntent.placedDocumentIDs() },
+      openSession: { [weak self] url in
+        self?.coordinator.documentControllers.first {
+          $0.session.file.url.standardizedFileURL == url.standardizedFileURL && !$0.isHiddenForClose
+        }?
+        .session
       })
     PopFirebase.telemetry.send(.launched)
     // A crashed session's discovery file would name a dead owner; clear it off the main
@@ -123,7 +111,6 @@ private struct AppSettingsView: View {
   }
   func applicationDidBecomeActive(_ notification: Notification) {
     NotificationCenter.default.post(name: .popSharingForeground, object: nil)
-    PopLibrary.shared.editorOpen = coordinator.hasOpenDocuments
     PopLibrary.shared.activated(true)
   }
   func applicationDidResignActive(_ notification: Notification) {
@@ -138,26 +125,16 @@ private struct AppSettingsView: View {
       guard url.scheme == "dotpop" else { continue }
       // Only an active ASWebAuthenticationSession may consume Apple credentials.
       if url.host == "auth" { continue }
+      if url.host == "join" {
+        openSharingLink(url)
+        continue
+      }
       if url.host == "widgets" {
         showCatalog()
         continue
       }
       guard let id = WidgetCache.selectionID(from: url) else { continue }
-      do {
-        let cache = try WidgetCache.shared()
-        guard let record = cache.record(id: id) else {
-          throw PopFailure(
-            "This widget's document is no longer available. Open the pop in pop, then choose it in Edit Widget.")
-        }
-        coordinator.openDocument(try cache.resolve(record))
-        NSApp.activate()
-      } catch {
-        showCatalog()
-        let alert = NSAlert()
-        alert.messageText = "Could not open this widget’s pop"
-        alert.informativeText = error.localizedDescription
-        alert.runModal()
-      }
+      coordinator.openLibraryDocument(id: id)
     }
   }
   func application(
@@ -167,6 +144,9 @@ private struct AppSettingsView: View {
     guard userActivity.activityType == NSUserActivityTypeBrowsingWeb,
       let url = userActivity.webpageURL
     else { return false }
+    return openSharingLink(url)
+  }
+  @discardableResult private func openSharingLink(_ url: URL) -> Bool {
     do {
       guard let link = try SharingLinks.incomingLink(url) else { return false }
       showCatalog()

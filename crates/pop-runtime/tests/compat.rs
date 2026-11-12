@@ -2,18 +2,15 @@
 //! this core and reads as that release recorded, takes the release's recorded edit, saves,
 //! trims its history on close and reopens to the recorded result. See docs/testing.md.
 use crate::support;
-use pop_runtime::store::{Mode, Store};
-use pop_runtime::{
-    Origin,
-    file::{ResourceRoute, resource_response},
-    owner::{Failure, Owner, Reply, Request},
-};
+use pop_contracts::resources::{ResourceRoute, resource_response};
+use pop_core::Origin;
+use pop_runtime::owner::{CommandResult, Owner};
+use pop_storage::store::{Mode, Store};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, mpsc};
-use std::time::Duration;
+use std::sync::Arc;
 use support::ApplyJson;
 
 fn entries(path: &Path) -> Vec<PathBuf> {
@@ -59,7 +56,7 @@ fn every_template_keeps_its_recorded_app_digest() {
         let recorded = release["templateAppDigests"].as_object().expect("missing template app digests");
         for template in entries(&entry.join("templates")) {
             let slug = template.file_stem().unwrap().to_string_lossy();
-            let digest = pop_runtime::file::inspect(&template).unwrap().app_digest;
+            let digest = pop_storage::file::inspect(&template).unwrap().app_digest;
             assert_eq!(digest, recorded[slug.as_ref()].as_str().unwrap(), "{}: app digest changed", template.display());
             cases += 1;
         }
@@ -138,17 +135,7 @@ fn resources(root: &Path, expected: &Value) {
         check(ResourceRoute::Attachment, id, a["mimeType"].as_str().unwrap(), bytes);
     }
 }
-fn owner_request(owner: &Owner, request: Request) -> Result<Reply, Failure> {
-    let (tx, rx) = mpsc::channel();
-    owner.submit(
-        request,
-        None,
-        Box::new(move |reply| {
-            tx.send(reply).unwrap();
-        }),
-    );
-    rx.recv_timeout(Duration::from_secs(10)).expect("owner did not reply")
-}
+use pop_testkit::owner::call as owner_request;
 
 #[test]
 fn every_saved_document_reads_edits_and_reopens_as_its_release_recorded() {
@@ -165,9 +152,9 @@ fn every_saved_document_reads_edits_and_reopens_as_its_release_recorded() {
             let root = dir.path().join("Document.pop");
             std::fs::copy(&saved, &root).unwrap();
             std::fs::set_permissions(&root, std::fs::Permissions::from_mode(0o600)).unwrap();
-            pop_runtime::file::open(&root, true).unwrap_or_else(|e| panic!("{label}: the document is refused: {e}"));
+            pop_storage::file::open(&root, true).unwrap_or_else(|e| panic!("{label}: the document is refused: {e}"));
             assert_eq!(
-                pop_runtime::file::inspect(&root).unwrap().app_digest,
+                pop_storage::file::inspect(&root).unwrap().app_digest,
                 expected["appDigest"].as_str().expect("missing document app digest"),
                 "{label}: app digest changed"
             );
@@ -181,7 +168,7 @@ fn every_saved_document_reads_edits_and_reopens_as_its_release_recorded() {
                 .unwrap_or_else(|| panic!("{label}: missing CLI scenario"));
             {
                 let store = Store::open(&root, Mode::Document).unwrap();
-                let mut doc = store.document().unwrap();
+                let mut doc = store.open_document().unwrap();
                 doc.apply_json(&json!({"intents": scenario["ops"]}).to_string(), Origin::Agent)
                     .unwrap_or_else(|e| panic!("{label}: the recorded edit was refused: {e}"));
                 assert_eq!(
@@ -210,7 +197,7 @@ fn every_saved_document_reads_edits_and_reopens_as_its_release_recorded() {
                 let (state, _) = read(&root);
                 assert_eq!(state, scenario["value"], "{label}: the edit did not reopen");
                 assert_eq!(
-                    pop_runtime::file::inspect(&root).unwrap().app_digest,
+                    pop_storage::file::inspect(&root).unwrap().app_digest,
                     expected["appDigest"].as_str().unwrap(),
                     "{label}: app digest after edit/save/close/reopen"
                 );
@@ -227,58 +214,6 @@ fn every_saved_document_reads_edits_and_reopens_as_its_release_recorded() {
     assert!(
         cases > 0 || std::env::var("POP_COMPAT_BOOTSTRAP").is_ok_and(|value| value == "1"),
         "Prepared compatibility corpus has no documents to replay"
-    );
-}
-
-#[test]
-fn no_recorded_open_limit_becomes_stricter_or_disappears() {
-    let mut cases = 0;
-    for entry in entries(&support::compat_root()).into_iter().filter(|path| path.join("release.json").exists()) {
-        let release = json_file(&entry.join("release.json")).unwrap();
-        pop_runtime::app::AppDefinition::check_recorded_limits(&release["limits"].to_string())
-            .unwrap_or_else(|error| panic!("{}: {error}", entry.display()));
-        cases += 1;
-    }
-    assert!(
-        cases > 0 || std::env::var("POP_COMPAT_BOOTSTRAP").is_ok_and(|value| value == "1"),
-        "Prepared compatibility corpus has no recorded limits"
-    );
-}
-
-#[test]
-fn every_stored_acceptance_vector_still_decodes_and_reencodes_equally() {
-    check_stored_acceptance_vectors(false);
-}
-
-#[test]
-fn large_acceptance_vectors_still_decode_and_reencode_equally() {
-    check_stored_acceptance_vectors(true);
-}
-
-fn check_stored_acceptance_vectors(large: bool) {
-    let mut cases = 0;
-    for entry in entries(&support::compat_root()).into_iter().filter(|path| path.join("release.json").exists()) {
-        let vectors: Vec<_> = entries(&entry.join("acceptance"))
-            .into_iter()
-            .filter(|path| path.extension().is_some_and(|extension| extension == "json"))
-            .collect();
-        assert!(!vectors.is_empty(), "{}: missing acceptance vectors", entry.display());
-        for path in vectors {
-            let stored = std::fs::read_to_string(&path).unwrap();
-            if pop_runtime::app::AppDefinition::acceptance_vector_is_large(&stored)
-                .unwrap_or_else(|error| panic!("{}: {error}", path.display()))
-                != large
-            {
-                continue;
-            }
-            pop_runtime::app::AppDefinition::check_acceptance_vector(&stored)
-                .unwrap_or_else(|error| panic!("{}: {error}", path.display()));
-            cases += 1;
-        }
-    }
-    assert!(
-        cases > 0 || std::env::var("POP_COMPAT_BOOTSTRAP").is_ok_and(|value| value == "1"),
-        "Prepared compatibility corpus has no acceptance vectors"
     );
 }
 
@@ -375,14 +310,15 @@ fn every_stored_command_probe_evaluates_and_passes_owner_admission() {
                 .unwrap();
                 let owner =
                     Owner::open_with_evaluator(&root, Mode::Document, Arc::new(|_| {}), Some(evaluator)).unwrap();
-                let reply = owner_request(
-                    &owner,
-                    Request::Command {
-                        name: probe["name"].as_str().unwrap().into(),
-                        args_json: probe["args"].to_string(),
-                        origin: Origin::Agent,
-                    },
-                );
+                let reply = owner_request(&owner, |owner: &Owner, options, callback| {
+                    owner.command(
+                        probe["name"].as_str().unwrap().into(),
+                        probe["args"].to_string(),
+                        Origin::Agent,
+                        options,
+                        callback,
+                    )
+                });
                 assert_eq!(reply.is_ok(), probe["expected"]["ok"].as_bool().unwrap(), "{name}: {reply:?}");
                 if output.is_some() {
                     let input = json_file(&input_path).expect("owner did not invoke evaluator");
@@ -396,23 +332,23 @@ fn every_stored_command_probe_evaluates_and_passes_owner_admission() {
                     assert!(!input_path.exists(), "invalid arguments reached the evaluator");
                 }
                 match reply {
-                    Ok(Reply::Command { result_json, .. }) => {
+                    Ok(CommandResult { result_json, .. }) => {
                         assert_eq!(serde_json::from_str::<Value>(&result_json).unwrap(), probe["evaluated"]["result"])
                     }
-                    Ok(other) => panic!("unexpected command reply: {other:?}"),
                     Err(error) => {
                         if probe["expected"]["code"] == "rejected" {
                             assert_eq!(error.kind, pop_runtime::owner::FailureKind::Rejected);
                         }
                         if probe["expected"]["refused"] == true {
-                            assert_eq!(error.reason, Some(pop_runtime::Code::Refused));
+                            assert_eq!(error.reason, Some(pop_contracts::wire::Code::Refused));
                         }
                         if let Some(text) = probe["expected"]["errorIncludes"].as_str() {
                             assert!(error.message.contains(text), "{error:?}");
                         }
                     }
                 }
-                owner_request(&owner, Request::Close { preview: None, icon: None }).unwrap();
+                owner_request(&owner, |owner: &Owner, options, callback| owner.close(None, None, options, callback))
+                    .unwrap();
                 assert_eq!(read(&root).0, probe["value"], "{name}: command saved value");
                 if probe["expected"]["ok"] == false {
                     assert_eq!(read(&root).0, before, "refusal changed state");

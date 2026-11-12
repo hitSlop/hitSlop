@@ -132,7 +132,6 @@ public struct PopDocumentRouting {
 @MainActor
 public final class PopDocumentWindowController: NSWindowController, NSWindowDelegate, DocumentSessionDelegate {
   public let url: URL
-  public let widgetFileIdentity: String?
   public let session: DocumentSession
   let routing: PopDocumentRouting
   public let telemetry: PopTelemetry
@@ -213,7 +212,6 @@ public final class PopDocumentWindowController: NSWindowController, NSWindowDele
     self.telemetry = telemetry
     presentation = WindowPresentation(started: started)
     self.url = url.standardizedFileURL
-    widgetFileIdentity = try? WidgetCache.identity(self.url)
     self.session = session
     // Start WebKit before building native chrome; bridge messages arrive only
     // after this initializer returns to the run loop.
@@ -247,11 +245,6 @@ public final class PopDocumentWindowController: NSWindowController, NSWindowDele
     super.init(window: window)
     window.delegate = self
     session.delegate = self
-    // `pop export` of this open document exports its live view, as the window does.
-    session.onExport = { [weak self] format, output, deadline in
-      guard let self else { throw PopFailure("Document closed") }
-      try await self.exportDocument(format: format, to: output, deadline: deadline)
-    }
     container.changed = { [weak self] _ in self?.toolbar.refresh() }
     _ = toolbar  // It follows the pointer from now on.
     // Editor discovery queries Launch Services; warm it before the first hover.
@@ -404,7 +397,7 @@ public final class PopDocumentWindowController: NSWindowController, NSWindowDele
       if refreshedLibraryArtwork {
         Task {
           await PopLibrary.shared.refresh()
-          await PopLibrary.shared.saveToCloud()
+          await PopLibrary.shared.syncNow()
         }
       }
       telemetry.send(.breadcrumb(operation, .completed))
@@ -424,7 +417,7 @@ public final class PopDocumentWindowController: NSWindowController, NSWindowDele
     let edited = session.edited
     let preview = edited ? nil : await session.artwork(.preview)
     let managed = PopLibrary.shared.entry(at: url)
-    let needsArtwork = edited || preview == nil || managed.map { $0.artworkVersion != $0.version } == true
+    let needsArtwork = edited || preview == nil || managed.map { $0.artworkVersion.isEmpty } == true
     let needsWidget =
       session.file.views.widget != nil
       && PopWidgetPublisher.shared.needsCapture(url: url, edited: edited)

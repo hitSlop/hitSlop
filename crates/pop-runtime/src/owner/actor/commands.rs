@@ -1,6 +1,6 @@
 //! Agent commands evaluate off the serial owner in a native child process.
 use super::*;
-use crate::engine::{False, True};
+use pop_contracts::wire::engine::{False, True};
 use serde::Deserialize;
 use serde_json::Value;
 
@@ -15,17 +15,19 @@ pub(in crate::owner) struct Invocation {
     seed: [u32; 4],
     origin: Origin,
     attempt: u8,
-    callback: Option<Completion>,
+    callback: Option<Completion<CommandResult>>,
 }
 impl Invocation {
-    pub(super) fn take_callback(&mut self) -> Completion {
+    pub(super) fn take_callback(&mut self) -> Completion<CommandResult> {
         take(&mut self.callback)
     }
 }
-const _: () =
-    assert!(crate::RUNTIME_ABI == pop_runner::RUNTIME_ABI, "add the new evaluator ABI arm before raising the marker");
+const _: () = assert!(
+    pop_contracts::wire::RUNTIME_ABI == pop_contracts::evaluator::RUNTIME_ABI,
+    "add the new evaluator ABI arm before raising the marker"
+);
 
-const _: () = assert!(crate::RUNTIME_ABI == 1, "add a current_intents arm before raising RUNTIME_ABI");
+const _: () = assert!(pop_contracts::wire::RUNTIME_ABI == 1, "add a current_intents arm before raising RUNTIME_ABI");
 
 pub(super) struct Work {
     runtime_abi: u64,
@@ -54,7 +56,7 @@ struct Refusal {
 /// vocabulary differs translates its own reply here before decoding. ABI 1's are today's:
 /// they change only additively (see the engineering contract), and the core never loosens
 /// what it accepts to admit them.
-fn current_intents(abi: u64, intents: Vec<Value>) -> Result<Vec<crate::Intent>> {
+fn current_intents(abi: u64, intents: Vec<Value>) -> Result<Vec<pop_contracts::wire::Intent>> {
     match abi {
         1 => intents
             .into_iter()
@@ -72,13 +74,13 @@ fn rejected(error: impl ToString) -> Failure {
 }
 
 pub(super) fn worker(
-    run: impl Fn(u64, &str, &str) -> std::result::Result<String, String>,
+    run: impl Fn(u64, &str, &str) -> std::result::Result<String, pop_runner::Error>,
     work: mpsc::Receiver<Work>,
     sender: mpsc::Sender<Message>,
 ) {
     for work in work {
         let output = catch_unwind(AssertUnwindSafe(|| run(work.runtime_abi, &work.bundle, &work.input)))
-            .unwrap_or_else(|_| Err("the evaluator panicked".into()));
+            .unwrap_or_else(|_| Err(pop_runner::Error::Spawn("the evaluator panicked".into())));
         let done = work.finish(output);
         if let Err(mpsc::SendError(Message::Evaluated { mut invocation, .. })) = sender.send(done) {
             complete(take(&mut invocation.callback), Err(closed()));
@@ -87,10 +89,13 @@ pub(super) fn worker(
 }
 
 impl Work {
-    pub(super) fn finish(self, output: std::result::Result<String, String>) -> Message {
+    pub(super) fn finish(self, output: std::result::Result<String, pop_runner::Error>) -> Message {
         let result = contained(|| {
-            let output = output.map_err(host_fault)?;
-            if output.len() > pop_runner::OUTPUT {
+            let output = output.map_err(|error| match error {
+                pop_runner::Error::Program(message) => rejected(message),
+                other => host_fault(other),
+            })?;
+            if output.len() > pop_contracts::evaluator::OUTPUT {
                 return Err(host_fault("Command output is too large"));
             }
             serde_json::from_str(&output).map_err(|_| match serde_json::from_str::<Refusal>(&output) {
@@ -111,7 +116,7 @@ impl Actor {
         origin: Origin,
         view: Option<String>,
         deadline: Option<Duration>,
-        callback: &mut Option<Completion>,
+        callback: &mut Option<Completion<CommandResult>>,
     ) -> Result<()> {
         self.mutation()?;
         if self.evaluating {
@@ -119,8 +124,7 @@ impl Actor {
         }
         let mut args: Value = crate::parse(&args_json)?;
         let command = self
-            .store
-            .app()
+            .app
             .app
             .commands()
             .iter()
@@ -134,7 +138,7 @@ impl Actor {
         }
         let now = self.unix_ms;
         let mut bytes = [0; 16];
-        getrandom::getrandom(&mut bytes).map_err(rejected)?;
+        pop_core::random(&mut bytes).map_err(rejected)?;
         let seed = std::array::from_fn(|i| u32::from_le_bytes(bytes[i * 4..i * 4 + 4].try_into().expect("four bytes")));
         self.evaluate_command(Invocation {
             generation: self.generation,
@@ -153,7 +157,7 @@ impl Actor {
     }
     fn evaluate_command(&mut self, mut invocation: Invocation) {
         let prepare = || -> Result<(Arc<String>, String)> {
-            let app = self.store.app();
+            let app = self.app.as_ref();
             let bundle = app.commands.clone().ok_or_else(|| rejected("This app has no command program"))?;
             #[derive(serde::Serialize)]
             struct Input<'a> {
@@ -190,7 +194,7 @@ impl Actor {
         };
         self.evaluating = true;
         if let Err(mpsc::SendError(Work { mut invocation, .. })) =
-            evaluate.send(Work { runtime_abi: self.store.app().runtime_abi, invocation, bundle, input })
+            evaluate.send(Work { runtime_abi: self.app.as_ref().runtime_abi, invocation, bundle, input })
         {
             self.evaluating = false;
             complete(invocation.take_callback(), Err(closed()));
@@ -200,7 +204,7 @@ impl Actor {
         self.evaluating = false;
         // A runtime failure is a definite refusal: no intents have been admitted.
         // Only a stale version retries, once, with the same clock and random seed.
-        let applied = catch_unwind(AssertUnwindSafe(|| -> Result<Reply> {
+        let applied = catch_unwind(AssertUnwindSafe(|| -> Result<CommandResult> {
             self.admit(false, invocation.view.as_deref())?;
             self.mutation()?;
             if invocation.generation != self.generation {
@@ -210,15 +214,11 @@ impl Actor {
                 return Err(rejected("Command expired before its intents were admitted"));
             }
             let output = result?;
-            let intents = current_intents(self.store.app().runtime_abi, output.intents)?;
-            let batch = crate::Batch { intents, if_version: Some(invocation.version.clone()) };
+            let intents = current_intents(self.app.as_ref().runtime_abi, output.intents)?;
+            let batch = pop_contracts::wire::Batch { intents, if_version: Some(invocation.version.clone()) };
             let accepted = self.edited(|core| core.apply_command(batch, invocation.origin, &invocation.name))?;
             self.accepted(accepted.sequence, accepted.publication, accepted.theme_changed);
-            Ok(Reply::Command {
-                sequence: accepted.sequence,
-                ids: accepted.ids,
-                result_json: output.result.to_string(),
-            })
+            Ok(CommandResult { sequence: accepted.sequence, ids: accepted.ids, result_json: output.result.to_string() })
         }))
         .unwrap_or_else(|_| {
             self.invalidated = true;
@@ -244,8 +244,8 @@ mod tests {
     use super::*;
     use serde_json::json;
 
-    fn fixture() -> (tempfile::TempDir, Arc<store::Store>) {
-        crate::registry::use_folder(&std::env::temp_dir().join("pop-test-registry")).unwrap();
+    fn fixture() -> (tempfile::TempDir, store::Store) {
+        pop_storage::registry::use_folder(&std::env::temp_dir().join("pop-test-registry")).unwrap();
         let dir = tempfile::tempdir().unwrap();
         let assets = dir.path().join("assets");
         std::fs::create_dir(&assets).unwrap();
@@ -273,10 +273,10 @@ mod tests {
             "artwork":{}
         });
         let template = dir.path().join("Template.pop");
-        crate::file::pack(&input.to_string(), dir.path(), &template, None).unwrap();
+        pop_storage::file::pack(&input.to_string(), dir.path(), &template, None).unwrap();
         let document = dir.path().join("Document.pop");
-        crate::file::create_document(&template, &document).unwrap();
-        let store = Arc::new(store::Store::open(&document, store::Mode::Document).unwrap());
+        pop_storage::file::create_document(&template, &document).unwrap();
+        let store = store::Store::open(&document, store::Mode::Document).unwrap();
         (dir, store)
     }
 
@@ -285,7 +285,7 @@ mod tests {
         let (_dir, store) = fixture();
         store.set_share(&store::Share { endpoint: "https://relay.example".into() }).unwrap();
         let (persist, storage) = mpsc::channel();
-        let mut actor = Actor::new(store.clone(), store::Mode::Document, Arc::new(|_| {}), persist).unwrap();
+        let mut actor = Actor::new(&store, store::Mode::Document, Arc::new(|_| {}), persist).unwrap();
         actor.view = Some("old-page".into());
         let (reconnect, notices) = mpsc::channel();
         actor.sync(SyncMessage::Attach {
@@ -300,12 +300,13 @@ mod tests {
         actor.invalidated = true;
         let (reply, result) = mpsc::channel();
         actor.dispatch(
-            Request::Discard,
+            Operation::Discard {
+                callback: Box::new(move |answer| {
+                    let _ = reply.send(answer);
+                }),
+            },
             None,
             None,
-            Box::new(move |answer| {
-                let _ = reply.send(answer);
-            }),
         );
         if let Ok(answer) = result.try_recv() {
             assert!(answer.is_ok(), "a poisoned shared owner must allow saved-state recovery: {answer:?}");
@@ -316,25 +317,32 @@ mod tests {
         assert!(matches!(notices.recv_timeout(Duration::from_secs(2)).unwrap(), SyncEvent::Reconnect));
         let (reply, old_page) = mpsc::channel();
         actor.dispatch(
-            Request::State,
+            Operation::State {
+                callback: Box::new(move |answer| {
+                    let _ = reply.send(answer);
+                }),
+            },
             Some("old-page".into()),
             None,
-            Box::new(move |answer| {
-                let _ = reply.send(answer);
-            }),
         );
         assert_eq!(old_page.recv_timeout(Duration::from_secs(2)).unwrap().unwrap_err().kind, FailureKind::Replaced);
         let (reply, closed) = mpsc::channel();
         actor.dispatch(
-            Request::Close { preview: None, icon: None },
+            Operation::Close {
+                preview: None,
+                icon: None,
+                callback: Box::new(move |answer| {
+                    let _ = reply.send(answer);
+                }),
+            },
             None,
             None,
-            Box::new(move |answer| {
-                let _ = reply.send(answer);
-            }),
         );
         let work = storage.recv_timeout(Duration::from_secs(2)).unwrap();
         actor.step(super::super::persistence::perform(&store, work));
+        if let Some((callback, result)) = actor.finished.take() {
+            complete(callback, result);
+        }
         assert!(closed.recv_timeout(Duration::from_secs(2)).unwrap().is_ok());
     }
 
@@ -342,7 +350,7 @@ mod tests {
     fn an_evaluator_panic_completes_and_the_worker_runs_the_next_command() {
         let (_dir, store) = fixture();
         let (persist, _storage) = mpsc::channel();
-        let mut actor = Actor::new(store, store::Mode::Document, Arc::new(|_| {}), persist).unwrap();
+        let mut actor = Actor::new(&store, store::Mode::Document, Arc::new(|_| {}), persist).unwrap();
         let (evaluate, work) = mpsc::channel();
         let (sender, messages) = mpsc::channel();
         actor.evaluate = Some(evaluate);
@@ -389,13 +397,13 @@ mod tests {
                 assert_eq!(failure.message, "The command evaluator failed: the evaluator panicked");
             } else {
                 assert!(
-                    matches!(answer.unwrap(), Reply::Command { result_json, .. } if result_json == r#""second command""#)
+                    matches!(answer.unwrap(), CommandResult { result_json, .. } if result_json == r#""second command""#)
                 );
             }
         }
         let (reply, flushed) = mpsc::channel();
-        actor.dispatch(Request::Flush, None, None, Box::new(move |answer| reply.send(answer).unwrap()));
-        assert!(matches!(flushed.recv_timeout(Duration::from_secs(2)).unwrap().unwrap(), Reply::Unit));
+        actor.dispatch(Operation::Flush { callback: Box::new(move |answer| reply.send(answer).unwrap()) }, None, None);
+        assert!(matches!(flushed.recv_timeout(Duration::from_secs(2)).unwrap().unwrap(), ()));
         actor.evaluate = None;
         thread.join().unwrap();
     }

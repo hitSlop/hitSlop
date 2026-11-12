@@ -1,6 +1,6 @@
-# Sharing fixtures: the 2.0.0 baseline
+# Sharing fixtures: the `/v1` routes
 
-These examples are the pop 2.0.0 sharing contract under the `/v1` routes. They freeze with
+These examples are the sharing contract under the `/v1` routes. They freeze with
 the first public release: from then on, add fixtures and never regenerate, replace or delete
 existing ones or their expectations. A change an old client cannot read needs a new route
 version. Until that release, a contract change rewrites the fixture it changes.
@@ -11,13 +11,8 @@ equality (object key order and whitespace do not matter); all known field names,
 omission/null behavior and values must survive.
 `invitation.txt` is a pinned-origin invitation link (`/join#<document UUID>.<64 hex>`) that
 parses and regenerates byte for byte.
-`frames.json` freezes the hand-written frame codec (`hex`) that sockets carry, with one
-example per variant, all permissions and all acks, varint boundaries, u64 peers/ids and
-UTF-8. Each decodes to the documented `frame` value and re-encodes byte-for-byte. The
-fixture bytes are independent expectations, not produced by tests.
-
-`unknown.json` holds fail-closed behavior: unknown JSON phases, control/event tags, frame
-tags, permissions and acknowledgements are rejected, and a value missing a required field
-(`incomplete`) is refused rather than completed with a default. Unknown HTTP failure codes
-remain strings; unknown binary Error codes remain bytes. Extra JSON reply fields are
-ignored, including resource inventory fields. Binary trailing bytes are rejected.
+`unknown.json` holds fail-closed behavior: unknown JSON phases are rejected, and a value
+missing a required field (`incomplete`) is refused rather than completed with a default.
+Unknown HTTP failure codes remain strings. Extra JSON reply fields are ignored, including
+resource inventory fields. The socket frames' fixtures are in
+`crates/pop-contracts/tests/fixtures/relay`.

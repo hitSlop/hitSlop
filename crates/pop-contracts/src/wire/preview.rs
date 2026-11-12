@@ -28,7 +28,7 @@ pub enum PreviewEvent<P = super::page::PagePush> {
         pushes: Vec<P>,
     },
     Save {
-        status: super::browser::BrowserSaveStatus,
+        status: PreviewSaveStatus,
         error: Option<String>,
     },
     Resource {
@@ -51,4 +51,13 @@ pub enum PreviewEvent<P = super::page::PagePush> {
 pub struct PreviewResource {
     pub size: u64,
     pub mime_type: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+#[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(export_to = "preview.generated.ts"))]
+pub enum PreviewSaveStatus {
+    Saved,
+    Saving,
+    Failed,
 }

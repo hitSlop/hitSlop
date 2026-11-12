@@ -32,7 +32,6 @@ pub enum Silhouette {
 use crate::wire::present_option;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS), ts(optional_fields, export_to = "app.generated.ts"))]
 pub struct PathShape {
     pub path: String,

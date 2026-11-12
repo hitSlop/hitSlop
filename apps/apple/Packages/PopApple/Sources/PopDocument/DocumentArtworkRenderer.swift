@@ -12,10 +12,12 @@ import UniformTypeIdentifiers
     #if os(iOS)
       guard let path = Bundle.main.executableURL?.path else { throw PopFailure("Artwork renderer is unavailable") }
     #else
-      guard let path = DocumentOwner.evaluatorPath else { throw PopFailure("Artwork renderer is unavailable") }
+      guard let path = DocumentOwner.enginePath else { throw PopFailure("Artwork renderer is unavailable") }
     #endif
     return try CaptureRuntime(evaluatorPath: path)
   }
+
+  public static func captureRuntime() throws -> CaptureRuntime { try runtime.get() }
 
   public static func libraryIndex(entries: [LibraryEntry]) async throws -> [WidgetLibraryEntry] {
     try await PopPreparation.run(on: queue) {
@@ -39,7 +41,7 @@ import UniformTypeIdentifiers
             if CGImageDestinationFinalize(destination) { icon = data as Data }
           }
         }
-        return WidgetLibraryEntry(id: entry.id, title: entry.title, icon: icon)
+        return WidgetLibraryEntry(id: entry.id, title: entry.title, icon: icon, accountBound: entry.accountBound)
       }
     }
   }
@@ -63,7 +65,7 @@ import UniformTypeIdentifiers
   @discardableResult public static func refresh(session: DocumentSession) async throws -> Bool {
     guard session.isReady else { return false }
     let entry = PopLibrary.shared.entry(at: session.file.url)
-    let stale = entry.map { $0.artworkVersion != $0.version } ?? false
+    let stale = entry.map { $0.artworkVersion.isEmpty } ?? false
     let missing = await session.artwork(.preview) == nil
     guard session.edited || stale || missing else { return false }
     let renderer = try runtime.get()

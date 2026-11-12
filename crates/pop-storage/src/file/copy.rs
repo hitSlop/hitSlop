@@ -2,8 +2,8 @@
 //! anything; documents created from templates and copied from documents.
 
 use super::{Kind, check, checked, configure_writer, opened, reader, resolve, rows, writer};
-use crate::Code;
 use crate::error::{Error, Result, failed, invalid, rejected, sqlite};
+use pop_contracts::wire::Code;
 use rusqlite::Connection;
 use std::ffi::CString;
 use std::fs;
@@ -39,7 +39,10 @@ pub(crate) struct Staged {
 impl Staged {
     pub(crate) fn beside(dest: &Path) -> Result<Self> {
         let dest = resolve(dest)?;
-        Ok(Self { path: dest.with_file_name(format!(".pop-{}.tmp", crate::random_hex(8))), published: false })
+        Ok(Self {
+            path: dest.with_file_name(format!(".pop-{}.tmp", crate::random_hex(8).expect("random bytes"))),
+            published: false,
+        })
     }
     pub(crate) fn path(&self) -> &Path {
         &self.path
@@ -69,7 +72,7 @@ impl Staged {
             return Err(if error.raw_os_error() == Some(libc::EEXIST) {
                 rejected(Code::Exists, "A file already exists there")
             } else {
-                failed(format!("Cannot save the document: {error}"))
+                crate::error::caused(format!("Cannot save the document: {error}"), error)
             });
         }
         self.published = true;
@@ -87,7 +90,8 @@ impl Staged {
             if checked(dest)?.1 != Kind::Template {
                 return Err(rejected(Code::Exists, "Refusing to replace a document with a template"));
             }
-            fs::rename(&self.path, resolve(dest)?).map_err(|e| failed(format!("Cannot save the template: {e}")))?;
+            fs::rename(&self.path, resolve(dest)?)
+                .map_err(|e| crate::error::caused(format!("Cannot save the template: {e}"), e))?;
             self.published = true;
             sync_folder(dest)?;
             return Ok(());
@@ -104,7 +108,7 @@ impl Drop for Staged {
     }
 }
 fn cstring(path: &Path) -> Result<CString> {
-    CString::new(path.as_os_str().as_bytes()).map_err(|_| failed("Invalid path"))
+    CString::new(path.as_os_str().as_bytes()).map_err(|error| crate::error::caused("Invalid path", error))
 }
 fn sync_folder(path: &Path) -> Result<()> {
     // The rename already published the file. Report an uncertain durability outcome,
@@ -112,12 +116,15 @@ fn sync_folder(path: &Path) -> Result<()> {
     let sync = || -> Result<()> {
         let resolved = resolve(path)?;
         let folder = resolved.parent().ok_or_else(|| failed("Invalid destination folder"))?;
-        fs::File::open(folder).and_then(|file| file.sync_all()).map_err(failed)
+        fs::File::open(folder).and_then(|file| file.sync_all()).map_err(crate::error::from_error)
     };
     sync().map_err(|error| {
-        failed(format!(
-            "The destination exists, but its durability could not be confirmed: {error}. Inspect it before retrying"
-        ))
+        crate::error::caused(
+            format!(
+                "The destination exists, but its durability could not be confirmed: {error}. Inspect it before retrying"
+            ),
+            error,
+        )
     })
 }
 
@@ -189,7 +196,7 @@ pub fn publish_output(bytes: &[u8], output: &Path, is_active: impl FnOnce() -> b
         file.write_all(bytes)?;
         file.sync_all()
     };
-    write().map_err(|e| failed(format!("Cannot write the export: {e}")))?;
+    write().map_err(|e| crate::error::caused(format!("Cannot write the export: {e}"), e))?;
     if !is_active() {
         return Err(failed("Command timed out; output was not published"));
     }
@@ -201,7 +208,8 @@ pub fn publish_output(bytes: &[u8], output: &Path, is_active: impl FnOnce() -> b
 pub fn create_document(template: &Path, dest: &Path) -> Result<()> {
     super::places::document_destination(dest)?;
     if let Some(folder) = dest.parent().filter(|folder| !folder.as_os_str().is_empty()) {
-        fs::create_dir_all(folder).map_err(|e| failed(format!("Cannot make the document's folder: {e}")))?;
+        fs::create_dir_all(folder)
+            .map_err(|e| crate::error::caused(format!("Cannot make the document's folder: {e}"), e))?;
     }
     let source = reader(template)?;
     // The app and its complete saved state are checked in the same read as the copy:
@@ -227,7 +235,7 @@ mod tests {
         let publication = Publication::after_sync(Err(failed("Published; durability unconfirmed")));
         assert!(matches!(&publication, Publication::DurabilityUnconfirmed(_)));
         assert!(
-            matches!(publication.confirmed(), Err(Error::Failed(message)) if message.contains("durability unconfirmed"))
+            matches!(publication.confirmed(), Err(Error::Failed { message, .. }) if message.contains("durability unconfirmed"))
         );
         assert!(Publication::after_sync(Ok(())).confirmed().is_ok());
     }

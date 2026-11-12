@@ -1,0 +1,161 @@
+{
+  "color-space-for-untagged-svg-colors": "display-p3",
+  "features": [
+    "refractivity"
+  ],
+  "fill": {
+    "solid": "srgb:0.98,0.985,1,1"
+  },
+  "supported-platforms": {
+    "squares": "shared"
+  },
+  "groups": [
+    {
+      "name": "03 · Polished raised glass",
+      "layers": [
+        {
+          "image-name": "03-raised-lens.svg",
+          "name": "raised lens",
+          "glass": true,
+          "opacity": 0.1,
+          "position": {
+            "scale": 1,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          },
+          "opacity-specializations": [
+            {
+              "appearance": "dark",
+              "value": 0.06
+            },
+            {
+              "appearance": "tinted",
+              "value": 0.1
+            }
+          ]
+        }
+      ],
+      "specular": true,
+      "lighting": "combined",
+      "blur-material": 0.025,
+      "translucency": {
+        "enabled": true,
+        "value": 0.94
+      },
+      "refractivity": {
+        "enabled": true,
+        "strength": 0.7,
+        "depth": 0.52
+      },
+      "shadow": {
+        "kind": "layer-color",
+        "opacity": 0.08
+      }
+    },
+    {
+      "name": "02 · Soft flowing glass",
+      "layers": [
+        {
+          "image-name": "02-soft-glass-current.svg",
+          "name": "soft glass current",
+          "glass": true,
+          "opacity": 0.52,
+          "position": {
+            "scale": 1,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          },
+          "fill-specializations": [
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "gray:0.65,1"
+              }
+            }
+          ]
+        }
+      ],
+      "specular": false,
+      "lighting": "combined",
+      "blur-material": 0.16,
+      "translucency": {
+        "enabled": true,
+        "value": 0.72
+      },
+      "refractivity": {
+        "enabled": true,
+        "strength": 0.38,
+        "depth": 0.3
+      },
+      "shadow": {
+        "kind": "layer-color",
+        "opacity": 0.025
+      }
+    },
+    {
+      "name": "01 · Blended blue violet pink",
+      "layers": [
+        {
+          "image-name": "01-blended-color.svg",
+          "name": "blended color",
+          "glass": true,
+          "opacity": 1,
+          "position": {
+            "scale": 1,
+            "translation-in-points": [
+              0,
+              0
+            ]
+          },
+          "fill-specializations": [
+            {
+              "appearance": "tinted",
+              "value": {
+                "solid": "gray:0.35,1"
+              }
+            }
+          ]
+        }
+      ],
+      "specular": true,
+      "lighting": "combined",
+      "blur-material": 0.055,
+      "translucency": {
+        "enabled": true,
+        "value": 0.1
+      },
+      "refractivity": {
+        "enabled": true,
+        "strength": 0.25,
+        "depth": 0.22
+      },
+      "shadow": {
+        "kind": "layer-color",
+        "opacity": 0.15
+      }
+    }
+  ],
+  "fill-specializations": [
+    {
+      "value": {
+        "solid": "srgb:0.98,0.985,1,1"
+      }
+    },
+    {
+      "appearance": "dark",
+      "value": {
+        "solid": "srgb:0.90,0.925,0.98,1"
+      }
+    },
+    {
+      "appearance": "tinted",
+      "value": {
+        "solid": "gray:1,1"
+      }
+    }
+  ]
+}

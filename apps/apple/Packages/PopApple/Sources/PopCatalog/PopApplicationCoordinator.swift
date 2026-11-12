@@ -124,6 +124,28 @@ import SwiftUI
   /// A document's page is ready; the catalog that opened it steps aside.
   func hideCatalog() { catalogWindow?.window?.orderOut(nil) }
 
+  public func openLibraryDocument(id: String) {
+    Task {
+      let library = PopLibrary.shared
+      await library.refresh()
+      do {
+        guard let entry = library.visibleEntries.first(where: { $0.id == id }) else {
+          throw PopFailure("This widget’s document is no longer in the library. Choose a document in Edit Widget.")
+        }
+        let account = library.accountIdentity
+        if !entry.downloaded { try await library.download(entry) }
+        guard library.accountIdentity == account,
+          let current = library.visibleEntries.first(where: { $0.id == id }), current.downloaded
+        else { return }
+        openDocument(URL(fileURLWithPath: current.path))
+        NSApp.activate()
+      } catch {
+        showCatalog()
+        present(.failure(libraryMessage(error)), for: nil)
+      }
+    }
+  }
+
   public func openDocument(_ url: URL) {
     guard model.quitPhase == .running else { return }
     // A template opens by creating a document from it, wherever it lives. Its header
@@ -147,23 +169,18 @@ import SwiftUI
         let local = try await PopPreparation.run { (try? PopLocalDocument.requireLocal(canonical)) != nil }
         if local { return model.open(canonical) }
         guard presentsWindows else {
-          return present(.failure("Move this document to ~/pop to edit it locally."), for: nil)
+          return present(.failure("Save a local copy in ~/pop to edit it."), for: nil)
         }
         let alert = NSAlert()
-        alert.messageText = "Move this document to local storage?"
+        alert.messageText = "Save a local copy to edit?"
         alert.informativeText =
-          "pop keeps active documents outside iCloud. A verified local copy will be saved in ~/pop, then the original will be moved to Trash."
-        alert.addButton(withTitle: "Move to ~/pop and Open")
+          "pop keeps active documents outside iCloud. A copy will be saved in ~/pop; the original stays where it is."
+        alert.addButton(withTitle: "Save Copy and Open")
         alert.addButton(withTitle: "Cancel")
         guard alert.runModal() == .alertFirstButtonReturn, model.quitPhase == .running else { return }
-        let moved = try await PopPreparation.run { try PopFile.moveToLocalFolder(canonical) }
-        if let warning = moved.warning {
-          present(
-            .failure("The local document was saved at \(moved.url.path). The original was retained: \(warning)"),
-            for: nil)
-        }
+        let copy = try await PopPreparation.run { try PopFile.copyToLocalFolder(canonical) }
         guard model.quitPhase == .running else { return }
-        model.open(moved.url)
+        model.open(copy)
       } catch {
         present(.failure(error.localizedDescription), for: nil)
       }

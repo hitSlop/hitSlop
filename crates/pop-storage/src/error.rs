@@ -22,23 +22,27 @@ pub enum Error {
     Closed,
     /// The request breaks a document rule (a theme value, for example); nothing changed.
     #[error("{0}")]
-    Rejected(crate::Error),
-    #[error("{0}")]
-    Failed(String),
+    Rejected(pop_contracts::Error),
+    #[error("{message}")]
+    Failed {
+        message: String,
+        #[source]
+        source: Option<std::sync::Arc<dyn std::error::Error + Send + Sync>>,
+    },
 }
 pub type Result<T> = std::result::Result<T, Error>;
-pub(crate) fn failed(message: impl ToString) -> Error {
-    Error::Failed(message.to_string())
+pub fn failed(message: impl ToString) -> Error {
+    Error::Failed { message: message.to_string(), source: None }
 }
 /// A refusal under a core error code; nothing changed.
-pub(crate) fn rejected(code: crate::Code, message: impl ToString) -> Error {
+pub fn rejected(code: pop_contracts::wire::Code, message: impl ToString) -> Error {
     Error::Rejected(crate::err(code, message))
 }
-pub(crate) fn invalid(message: impl ToString) -> Error {
-    rejected(crate::Code::InvalidRequest, message)
+pub fn invalid(message: impl ToString) -> Error {
+    rejected(pop_contracts::wire::Code::InvalidRequest, message)
 }
 pub(crate) fn requires_update(message: impl ToString) -> Error {
-    rejected(crate::Code::RequiresUpdate, message)
+    rejected(pop_contracts::wire::Code::RequiresUpdate, message)
 }
 /// A SQLite failure as a storage outcome: full, busy, moved, or failed doing `action`.
 pub(crate) fn sqlite(action: &str) -> impl FnOnce(rusqlite::Error) -> Error + '_ {
@@ -51,6 +55,15 @@ pub(crate) fn sqlite(action: &str) -> impl FnOnce(rusqlite::Error) -> Error + '_
         Some(ErrorCode::NotADatabase) => invalid("This is not a pop document"),
         // Apple's SQLite: the file was renamed, or gained and lost a hard link, while open.
         _ if e.sqlite_error().is_some_and(|e| e.extended_code == rusqlite::ffi::SQLITE_IOERR_VNODE) => Error::Moved,
-        _ => failed(format!("{action}: {e}")),
+        _ => caused(format!("{action}: {e}"), e),
     }
+}
+
+/// Retains the cause while adding storage context.
+pub fn caused(message: impl ToString, source: impl std::error::Error + Send + Sync + 'static) -> Error {
+    Error::Failed { message: message.to_string(), source: Some(std::sync::Arc::new(source)) }
+}
+/// A storage failure retaining the original cause.
+pub fn from_error(source: impl std::error::Error + Send + Sync + 'static) -> Error {
+    caused(source.to_string(), source)
 }

@@ -3,13 +3,11 @@ import { resolve, join } from "node:path";
 import { stageEngines } from "./engines";
 import { buildSkills } from "../../packages/pop/src/cli/skills-build";
 import { buildEngine, cargoOutput } from "./core";
-import { buildBrowser } from "./browser";
 import { buildShell } from "./shell";
 /** The npm package (`generated/npm`), carrying the file engines it ships. */
 export async function packPackages(prepared = false) {
   if (!prepared) {
     await buildShell();
-    await buildBrowser();
     await buildEngine();
   }
   await buildSkills();
@@ -23,12 +21,12 @@ export async function packPackages(prepared = false) {
     await stageEngines(engines, resolve("generated/engines"), cargoOutput("pop-engine"), commit);
     const notices = join(engines, "font-licenses");
     await mkdir(notices);
-    const fonts = resolve("crates/pop-renderer/fonts");
+    const fonts = resolve("crates/pop-runner/fonts");
     for (const name of await readdir(fonts))
       if (name.includes("LICENSE") || name === "README.md") await copyFile(join(fonts, name), join(notices, name));
     const rendererNotices = join(engines, "renderer-licenses");
     await mkdir(rendererNotices);
-    const rendererLicenseSource = resolve("crates/pop-renderer/renderer-licenses");
+    const rendererLicenseSource = resolve("crates/pop-runner/renderer-licenses");
     for (const name of await readdir(rendererLicenseSource))
       await copyFile(join(rendererLicenseSource, name), join(rendererNotices, name));
     const directory = resolve("packages/pop");

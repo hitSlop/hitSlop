@@ -9,7 +9,6 @@ pub mod page;
 pub use page::*;
 pub mod socket;
 pub use socket::*;
-pub mod browser;
 pub mod build;
 pub mod engine;
 pub mod preview;

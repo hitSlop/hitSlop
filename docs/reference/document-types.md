@@ -156,7 +156,7 @@ outcome `code`. `DocumentError.reason` exposes them to apps.
 Opening, authoring and storage use further codes: `invalid_schema` (a descriptor the
 core refuses), `invalid_bytes` and `missing_dependencies` (saved updates that cannot be
 imported), `invalid_shape` (a window shape), `requires_update` (an app format,
-storage or document layout newer than this build), `is_template` (a template opened as a
+storage version newer than this build), `is_template` (a template opened as a
 document: create a document from it) and `engine_error` (an unexpected Loro failure). Reasons may grow; `isDocumentError` recognizes the document-error envelope, while
 `isRejected` identifies a semantic refusal.
 
@@ -358,10 +358,9 @@ widths by column. Values are scalars or objects.
 
 ## Storage layout
 
-How kinds map to Loro containers is a persisted contract: every saved document records
-its layout in the root map `meta` (`{"layout": 1}`), written with the initial values. A
-build reads the layout it has shipped and refuses a newer one
-with `requires_update` ([engineering contract](../engineering-contract.md#compatibility)).
+How kinds map to Loro containers is a persisted contract implied by the app’s
+`packageFormat`. Opening applies the stored descriptor’s acceptance to the saved state
+([engineering contract](../engineering-contract.md#compatibility)).
 
 | Kind | Stored as |
 |---|---|
@@ -416,7 +415,7 @@ rows `order` misses, by `$id`. Merging valid edits from several devices can leav
 naming a row twice (two restores of one row), naming a removed row, or missing a row;
 every reading resolves those the same way, and `replace` writes a clean order.
 
-Opening checks accepted state using its saved layout: container kinds, scalar rules,
+Opening checks accepted state using its app’s package format: container kinds, scalar rules,
 valid row IDs and record keys, finite counters, and maps holding only declared fields.
 Local edits and imported history use the same Rust semantic acceptance. Creation limits
 are distinct from acceptance of valid merged state: concurrent inserts can exceed an

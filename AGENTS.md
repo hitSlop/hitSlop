@@ -1,8 +1,7 @@
 # dotpop
 
-dotpop is document lineage 2, released under `@hitslop/pop` (2.0.0 and up). Nothing written
-before it is supported: hitSlop `.slop` files and APIs, and files from earlier products, are
-refused at open and never modified.
+dotpop’s current document format begins with `@hitslop/pop` 3.0.0. A `.pop` opens in
+the Mac and iPhone apps. Files with another SQLite application ID are refused without edits.
 
 Architecture: [architecture](docs/architecture.md). Status and open work:
 [direction](docs/roadmap.md); proposals in [ideas](docs/ideas.md).
@@ -11,12 +10,14 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
 
 ## Non-negotiable
 
-- **From the first public lineage-2 release, every released pop stays openable.** See
+- **From the first public release of this format, every released pop stays openable.** See
   [Compatibility](#compatibility).
 - `pop-core` (Rust on Loro) owns document semantics and app acceptance. `pop-storage`
   owns durable `.pop` storage (one SQLite database holding the app and its saved state),
   the writer lock and save policy; `pop-runtime` owns the serial owner, persistence worker
-  and socket routing. Swift `DocumentOwner`
+  and socket routing, with capture in `pop-runtime::capture`. `pop-runner::render` owns
+  rendering; `pop-sharing-protocol::supervisor` owns pure sync decisions. `pop-cloud`
+  owns native transport and the device library. Swift `DocumentOwner`
   is the native façade; `DocumentSession` delivers events to the page. Loro bytes never reach Swift. The page shell
   (`packages/pop/src/shell`) holds no CRDT; `packages/pop/src/sdk` is the author SDK, and pop
   contain only their app.
@@ -24,8 +25,9 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
   cloud state and permissions. Document Objects publish derived library metadata to
   per-account Durable Objects; clients subscribe through one account connection and
   retain an offline local index. Library metadata never grants document access.
-  One default `FirebaseApp` serves Auth, Analytics and Crashlytics; guests use
-  Firebase Anonymous Auth. See [cloud documents](docs/cloud-documents.md).
+  One default `FirebaseApp` serves Auth, Analytics and Crashlytics. Creating cloud
+  documents and joining require a named sign-in with Apple; local documents need no
+  account. See [cloud documents](docs/cloud-documents.md).
 - **One edit path.** The CLI forwards to the live owner or takes the lock and runs the
   owner in-process. Never bypass a busy lock or remove a lock file from the registry
   (`~/.pop/live`). Closed owner edits never start WebKit or run authored code; named commands evaluate in a restricted child that returns intents to the owner.
@@ -41,39 +43,38 @@ Contracts: [engineering contract](docs/engineering-contract.md). Tests:
 - Descriptor kinds exist in the types only once Rust, the SDK and a fixture implement
   them.
 - No JSON copy of the document, JSON mirrors or reconciliation, JavaScriptCore engine or second
-  document engine. The WASM core serves SDK tests and local Chrome browser copies using the same Rust owner and SQLite store. `pop dev` uses the native Rust owner; native engine validation owns authoring checks.
+  document engine. The WASM core serves SDK tests only. `pop dev` uses the native Rust owner; native engine validation owns authoring checks.
 - Preserve the macOS client (catalog/Recents, windows, PNG/PDF export, Analytics/
   Crashlytics, Sparkle). Masters are immutable; edit copies.
 
 ## Compatibility
 
-Lineage 2 is a fresh start. The compatibility promise begins with its first public release:
+The compatibility promise begins with this format’s first public release, 3.0.0:
 from then on a newer pop must open, render, edit, save and reopen every document a
 released build wrote. Downgrades are not supported. The full rules, by boundary and marker,
 are in the [engineering contract](docs/engineering-contract.md#compatibility).
 
-- **Lineage is one check**: the SQLite `application_id`, read at open. A file from an older
-  product or lineage is refused ("made by an older version") and nothing is written; SQLite
-  may first recover a crashed transaction's hot journal, a policy to preserve. A newer lineage
-  is refused with `requires_update`. The live-owner hello carries
-  the same constant, so a new CLI never forwards edits into an old running app. Cloud
-  isolation from the earlier product comes from fresh infrastructure names, not code.
+- **Identity is one check**: SQLite `application_id` (`0x504F_5003`), read at open.
+  A mismatch is refused as “This is not a pop document” and nothing is written. SQLite
+  may first recover a crashed transaction’s hot journal, a policy to preserve. The
+  live-owner hello carries the same application ID so the CLI checks the owner’s format.
 - **Markers** are `packageFormat` (the stored definition), `runtimeABI` (app-facing
-  behavior), the storage version (tables, columns, triggers) and the document layout. All
-  start at 1. Persisted formats change only additively, or behind the marker that owns the
+  behavior), and the storage version (tables, columns, triggers). The package format
+  implies the Loro container layout. All start at 1. Persisted formats change only additively, or behind the marker that owns the
   change. A newer marker is refused with `requires_update` and nothing is written. Markers
   are requirements, not release numbers; refactors and mechanical extractions never raise
   them. There are no adapters for values below 1; raising a marker adds a reader and keeps
   the released one.
 - Every public release carries its frozen compatibility corpus as an immutable release
-  asset. Affected builds replay all published lineage-2 corpora. Never replace,
+  asset. Affected builds replay all published corpora for this format. Never replace,
   regenerate or delete one, its expectations or the command prelude it froze. Capture is
   part of the candidate workflow ([releasing](docs/guides/releasing.md)). Pin the first
   release's corpus hash in `scripts/compat/dotpop-required-history.json` permanently.
 - Opening a file applies only its format's acceptance, which never tightens. Authoring
   rules run at `pack` and `init` and may tighten freely; they never judge a saved file.
-- Installing pop never replaces the app inside an existing document. Only a write
-  under the writer lock migrates a file; display reads never do.
+- Installing pop never replaces the app inside an existing document. Future storage
+  changes run only on a write under the writer lock; display reads never change a
+  file’s format.
 - Public boundaries (`ctx`, handles, error codes, `--pop-*`, host markup, the embed relay,
   the command protocol's refusal path, capture program requests and replies) grow additively.
   A change an old app cannot run raises `runtimeABI` and keeps the old behavior through an adapter.

@@ -6,11 +6,11 @@ use super::{
     APPLICATION_ID, Artwork, Kind, SCHEMA, STORAGE_VERSION, begin_write, configure_writer, opened, pack_artwork,
     reader, rows, writer,
 };
-use crate::engine::{ArtworkSource, PackedArtwork};
 use crate::error::{Error, Result, failed, invalid, sqlite};
+use pop_contracts::wire::engine::{ArtworkSource, PackedArtwork};
 use std::path::Path;
 
-pub const APP_INPUT_BYTES: usize = crate::wire::SOCKET_ATTACHMENT;
+pub const APP_INPUT_BYTES: usize = pop_contracts::wire::SOCKET_ATTACHMENT;
 
 fn write_template(path: &Path, build: &AcceptedBuild) -> Result<()> {
     let conn = writer(path, true)?;
@@ -96,13 +96,16 @@ pub fn pack(input: &str, stage: &Path, dest: &Path, render: Option<RenderArtwork
     Ok(packed)
 }
 /// The accepted window and declared capabilities, which the development preview applies.
-pub fn validate_app(input: &str, stage: &Path) -> Result<(crate::app::WindowDefinition, Vec<crate::app::Capability>)> {
-    accept(input, stage).map(|build| (build.app.window().clone(), build.app.capabilities().to_vec()))
+pub fn validate_app(
+    input: &str,
+    stage: &Path,
+) -> Result<(pop_contracts::app::WindowDefinition, Vec<pop_contracts::app::Capability>)> {
+    accept(input, stage).map(|build| (build.app.window(), build.app.capabilities()))
 }
 
-pub(super) fn initial_checkpoint(app: &crate::AppSpec, initial: &str) -> Result<Vec<u8>> {
-    let checkpoint = crate::Document::initial_checkpoint(app, initial).map_err(Error::Rejected)?;
-    if checkpoint.len() + crate::wire::STORAGE_ROW_OVERHEAD > crate::STORAGE_BYTES {
+pub(super) fn initial_checkpoint(app: &pop_core::AppSpec, initial: &str) -> Result<Vec<u8>> {
+    let checkpoint = pop_core::Document::initial_checkpoint(app, initial).map_err(Error::Rejected)?;
+    if checkpoint.len() + pop_contracts::wire::STORAGE_ROW_OVERHEAD > pop_contracts::wire::STORAGE_BYTES {
         return Err(invalid("The app's initial values are too large"));
     }
     Ok(checkpoint)

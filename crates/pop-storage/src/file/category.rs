@@ -1,4 +1,4 @@
-use crate::app::Category;
+use pop_contracts::app::Category;
 const CATEGORY_COLUMNS: [(Category, &str); 14] = [
     (Category::Popular, "popular"),
     (Category::Productivity, "productivity"),
@@ -15,7 +15,6 @@ const CATEGORY_COLUMNS: [(Category, &str); 14] = [
     (Category::Music, "music"),
     (Category::Other, "other"),
 ];
-#[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn category_column(category: Category) -> &'static str {
     CATEGORY_COLUMNS.iter().find(|(c, _)| *c == category).map(|(_, name)| *name).expect("every category has a column")
 }

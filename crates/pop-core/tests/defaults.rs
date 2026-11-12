@@ -1,5 +1,6 @@
 use crate::support;
-use pop_core::{AppSpec, Code, Document, Origin};
+use pop_contracts::wire::Code;
+use pop_core::{AppSpec, Document, Origin};
 use serde_json::{Value, json};
 use support::ApplyJson;
 
@@ -30,7 +31,7 @@ fn value(document: &Document) -> Value {
 
 #[test]
 fn omitted_fields_take_their_defaults_when_created() {
-    let app = AppSpec::data(&schema().to_string()).unwrap();
+    let app = AppSpec::new(&schema().to_string(), "", "{}").unwrap();
     let initial = json!({"tasks":[{"text":"Walk"}]}).to_string();
     pop_core::validate(&schema().to_string(), &initial).unwrap();
     let document = Document::create(&app, &initial).unwrap();
@@ -48,7 +49,7 @@ fn omitted_fields_take_their_defaults_when_created() {
 
 #[test]
 fn inserts_and_absent_puts_and_sets_fill_omitted_fields() {
-    let app = AppSpec::data(&schema().to_string()).unwrap();
+    let app = AppSpec::new(&schema().to_string(), "", "{}").unwrap();
     let mut document = Document::create(&app, "{}").unwrap();
     document
         .apply_json(
@@ -69,7 +70,7 @@ fn inserts_and_absent_puts_and_sets_fill_omitted_fields() {
 
 #[test]
 fn replacement_never_fills_creation_defaults() {
-    let app = AppSpec::data(&schema().to_string()).unwrap();
+    let app = AppSpec::new(&schema().to_string(), "", "{}").unwrap();
     let initial = json!({"title":"Keep", "tasks":[{"$id":"a","text":"Keep task","done":true}],
         "notes":{"n":{"body":"Keep note","pinned":true}}, "extra":{"label":"Keep label"}});
     for (operation, path, supplied, pointer) in [
@@ -99,7 +100,7 @@ fn fields_without_defaults_are_still_required() {
     }});
     let error = pop_core::validate(&schema.to_string(), r#"{"rows":[]}"#).unwrap_err();
     assert_eq!((error.code, error.pointer()), (Code::TypeMismatch, "/box".into()));
-    let app = AppSpec::data(&schema.to_string()).unwrap();
+    let app = AppSpec::new(&schema.to_string(), "", "{}").unwrap();
     let mut document = Document::create(&app, r#"{"box":{"size":1}}"#).unwrap();
     let error =
         document.apply_json(r#"{"intents":[{"type":"insert","path":["rows"],"value":{}}]}"#, Origin::Page).unwrap_err();
@@ -108,7 +109,7 @@ fn fields_without_defaults_are_still_required() {
 
 #[test]
 fn explicit_invalid_values_are_never_replaced_by_creation_defaults() {
-    let app = AppSpec::data(&schema().to_string()).unwrap();
+    let app = AppSpec::new(&schema().to_string(), "", "{}").unwrap();
     for supplied in [json!({"done":null}), json!({"done":"yes"}), json!({"size":0})] {
         assert!(Document::create(&app, &json!({"tasks":[supplied]}).to_string()).is_err());
         let mut document = Document::create(&app, "{}").unwrap();
@@ -137,6 +138,6 @@ fn defaults_must_fit_their_field_and_belong_to_object_fields() {
         (json!({"kind":"record","value":{"kind":"integer","default":0}}), "record entry"),
     ] {
         let schema = json!({"kind":"object","properties":{"value":node}});
-        assert!(AppSpec::data(&schema.to_string()).is_err(), "{reason}: {schema}");
+        assert!(AppSpec::new(&schema.to_string(), "", "{}").is_err(), "{reason}: {schema}");
     }
 }

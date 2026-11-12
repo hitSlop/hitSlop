@@ -6,30 +6,16 @@
 //! what its version lacks. Nothing about sync is saved: each connection starts with a
 //! Hello carrying the document's version, and the relay's answer says what to send. A lost
 //! acknowledgement, a dropped socket or a crash heals with the next Hello.
-mod frame;
-pub use frame::{Ack, Frame, MAX_FRAME, PROTOCOL, Permission, Record, Span, Version};
-pub use pop_sharing_protocol::http::SyncPhase;
+use pop_contracts::relay::{
+    PauseKind, SyncPhase,
+    frame::{Ack, ErrorCode, Frame, PROTOCOL, Permission, Record, Span, Version},
+};
 
-use crate::{Applied, Code, Document};
+use crate::{Applied, Document};
 use loro::VersionVector;
+use pop_contracts::wire::Code;
 use serde::{Deserialize, Serialize};
 
-/// Stable recovery choices shared by every transport and UI.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-#[cfg_attr(feature = "ts", derive(ts_rs::TS))]
-#[cfg_attr(feature = "ts", ts(export_to = "sharing.generated.ts"))]
-pub enum PauseKind {
-    RoomFull,
-    /// Folding cannot make the room fit, or one retained change cannot be relayed.
-    /// Local edits keep saving; the person can save an unshared copy.
-    Outgrown,
-    NeedsUpdate,
-    Refused,
-    MissingHistory,
-    FilesFull,
-    Ended,
-}
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[cfg_attr(feature = "ts", derive(ts_rs::TS))]
 #[cfg_attr(feature = "ts", ts(export_to = "sharing.generated.ts"))]
@@ -107,7 +93,7 @@ pub struct Step {
 
 /// One owner's sync state, in memory only.
 pub struct Session {
-    app_digest: [u8; 32],
+    app_digest: pop_contracts::AppDigest,
     status: Status,
     /// Set by the relay's Welcome: what it holds, as far as this connection knows. Records
     /// received and acknowledged pushes add to it.
@@ -123,7 +109,7 @@ pub struct Session {
 impl Session {
     /// A session for a document whose app definition hashes to `app_digest`: a relay
     /// admits only replicas of the app its room was created with.
-    pub fn new(app_digest: [u8; 32]) -> Self {
+    pub fn new(app_digest: pop_contracts::AppDigest) -> Self {
         Self {
             app_digest,
             status: Status::Offline,
@@ -198,7 +184,7 @@ impl Session {
             .collect();
         let id = self.next_id;
         let frame = Frame::Push { id, records: vec![Record { spans: spans.clone(), bytes }] }.encode();
-        if frame.len() > pop_sharing_protocol::limits::SOCKET_PUSH_BYTES_PER_MINUTE {
+        if frame.len() > pop_contracts::relay::limits::SOCKET_PUSH_BYTES_PER_MINUTE {
             self.pause(PauseKind::Outgrown, "This change is too large to share".into());
             return None;
         }
@@ -217,10 +203,20 @@ impl Session {
         {
             return Step::default();
         }
-        let frame = match Frame::decode(bytes) {
+        self.receive_frame(doc, Frame::decode(bytes))
+    }
+    /// Apply a frame already decoded at the socket boundary.
+    pub fn receive_frame(&mut self, doc: &mut Document, frame: Result<Frame, pop_contracts::Error>) -> Step {
+        if (matches!(self.status, Status::Paused { .. })
+            && !matches!(self.status, Status::Paused { kind: PauseKind::RoomFull, .. }))
+            || self.status == Status::Offline
+        {
+            return Step::default();
+        }
+        let frame = match frame {
             Ok(frame) => frame,
             Err(error) => {
-                self.pause(PauseKind::Refused, error.message);
+                self.pause(PauseKind::Refused, refused(&error));
                 return Step::default();
             }
         };
@@ -296,12 +292,10 @@ impl Session {
                 }
             }
             Frame::Error { code, message } => self.pause(
-                if code == pop_sharing_protocol::frame::ERROR_PROTOCOL {
-                    PauseKind::NeedsUpdate
-                } else if code == pop_sharing_protocol::frame::ERROR_ENDED {
-                    PauseKind::Ended
-                } else {
-                    PauseKind::Refused
+                match ErrorCode::try_from(code) {
+                    Ok(ErrorCode::Protocol) => PauseKind::NeedsUpdate,
+                    Ok(ErrorCode::Ended) => PauseKind::Ended,
+                    Ok(ErrorCode::App | ErrorCode::Malformed) | Err(_) => PauseKind::Refused,
                 },
                 message,
             ),
@@ -315,15 +309,6 @@ impl Session {
     /// Normal compaction requires all local operations to be acknowledged. After Quota,
     /// compact only the confirmed relay frontier, excluding the rejected local push.
     /// A base over `BASE_BYTES` is the `Outgrown` pause.
-    pub fn base(&self, doc: &Document) -> Result<Option<Base>, Pause> {
-        match self.maintenance_base(doc)? {
-            BaseRead::Pending => Ok(None),
-            BaseRead::Ready(base) => Ok(Some(base)),
-            BaseRead::TooLarge => {
-                Err(Pause { kind: PauseKind::Outgrown, reason: "This document has outgrown sharing".into() })
-            }
-        }
-    }
     pub fn maintenance_base(&self, doc: &Document) -> Result<BaseRead, Pause> {
         let waiting = matches!(self.status, Status::Paused { kind: PauseKind::RoomFull, .. });
         if !self.write
@@ -363,7 +348,7 @@ impl Session {
         }
     }
 }
-fn refused(error: &crate::Error) -> String {
+fn refused(error: &pop_contracts::Error) -> String {
     match error.code {
         Code::RequiresUpdate => format!("Another copy needs a newer pop: {}", error.message),
         _ => format!("A shared change was refused: {}", error.message),

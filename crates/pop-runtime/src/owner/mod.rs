@@ -4,22 +4,18 @@
 mod actor;
 mod admission;
 mod failure;
-use crate::file::{self, Artwork};
-use crate::{Origin, store, theme};
-#[cfg(target_arch = "wasm32")]
-pub use actor::BrowserDriver;
 use actor::Message;
-pub use actor::{SyncConnection, SyncEvent, SyncSink};
+pub use actor::{ReceivedFrame, SyncConnection, SyncEvent, SyncSink};
 pub(crate) use admission::{Permit, serialized_size};
 pub use failure::{Failure, FailureKind};
-#[cfg(not(target_arch = "wasm32"))]
+use pop_core::{Origin, theme};
 pub use pop_runner::Evaluator;
+use pop_storage::file::Artwork;
+use pop_storage::{file, store};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, mpsc};
-use std::time::Duration;
-#[cfg(not(target_arch = "wasm32"))]
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 type Result<T> = std::result::Result<T, Failure>;
 /// Native theme controls use this typed adapter to the same batch path as page edits.
@@ -28,143 +24,59 @@ pub enum ThemeChange {
     ResetAll,
     ImportFile { file: String },
 }
-pub fn theme_request(change: ThemeChange) -> Request {
+fn theme_batch(change: ThemeChange) -> pop_contracts::wire::Batch {
     let intent = match change {
-        ThemeChange::Set { values } => {
-            crate::Intent::SetTheme { values: values.into_iter().map(|(k, v)| (k, Some(v))).collect(), replace: None }
+        ThemeChange::Set { values } => pop_contracts::wire::Intent::SetTheme {
+            values: values.into_iter().map(|(k, v)| (k, Some(v))).collect(),
+            replace: None,
+        },
+        ThemeChange::ResetAll => {
+            pop_contracts::wire::Intent::SetTheme { values: Default::default(), replace: Some(true) }
         }
-        ThemeChange::ResetAll => crate::Intent::SetTheme { values: Default::default(), replace: Some(true) },
-        ThemeChange::ImportFile { file } => crate::Intent::ImportTheme { file },
+        ThemeChange::ImportFile { file } => pop_contracts::wire::Intent::ImportTheme { file },
     };
-    Request::Apply { batch: crate::Batch { intents: vec![intent], if_version: None }, origin: Origin::Window }
+    pop_contracts::wire::Batch { intents: vec![intent], if_version: None }
 }
-
-pub enum Request {
-    /// The document as it reads (`Document::reading`), and its publication sequence.
-    State,
-    #[cfg(not(target_arch = "wasm32"))]
-    MergeSnapshot {
-        bytes: Vec<u8>,
-    },
-    Apply {
-        batch: crate::Batch,
-        origin: Origin,
-    },
-    Undo {
-        redo: bool,
-    },
-    Command {
-        name: String,
-        args_json: String,
-        origin: Origin,
-    },
-    Flush,
-    /// Reload durable state and replace the page session. Shared documents refuse
-    /// ordinary discard; an invalidated owner may explicitly recover its saved state.
-    Discard,
-    Close {
-        preview: Option<Vec<u8>>,
-        icon: Option<Vec<u8>>,
-    },
-    /// Moves a document that cannot save (a shared one that is full) to a new file: writes
-    /// the accepted live state beside `dest` as `Copy` does, checks that it opens as a
-    /// document whose state and palette equal the live ones, publishes it at `dest`
-    /// without replacing anything, then releases the writer lock without saving. The host
-    /// fences edits first (the close barrier), so the state cannot move under the copy. Any
-    /// failure removes only the temporary file this request made and leaves the owner open
-    /// with every edit.
-    #[cfg(not(target_arch = "wasm32"))]
-    Handoff {
-        dest: PathBuf,
-        preview: Option<Vec<u8>>,
-        icon: Option<Vec<u8>>,
-    },
-    /// The accepted live state as a document of its own, without saving the source's
-    /// history first (`Store::copy_clean`), with the artwork its window rendered for it.
-    Copy {
-        destination: PathBuf,
-        preview: Option<Vec<u8>>,
-        icon: Option<Vec<u8>>,
-    },
-    /// The saved document as stored, copied after a flush for a capture to render once.
-    CaptureSource {
-        destination: PathBuf,
-    },
-    /// The saved document as stored, copied after a flush: the same document, with its
-    /// identity, history and artwork (`Store::backup`). Native hosts only.
-    Backup {
-        destination: PathBuf,
-    },
-    /// The saved document as a sharing seed, copied after a flush: its identity, its
-    /// history as one checkpoint, only the attachments it references and no artwork
-    /// (`Store::stage_seed`). The live document and its file are untouched. Native hosts only.
-    StageSeed {
-        destination: PathBuf,
-    },
-    Artwork {
-        name: Artwork,
-    },
-    /// Derived images are admitted only for the saved state they were rendered from.
-    #[cfg(not(target_arch = "wasm32"))]
-    SetArtwork {
-        source_version: String,
-        preview: Option<Vec<u8>>,
-        icon: Option<Vec<u8>>,
-    },
-    Attachments,
-    ReadAttachment {
-        id: String,
-    },
-    PutAttachment {
-        bytes: Vec<u8>,
-    },
-    /// Shares the document through a relay endpoint: from then on it keeps its whole
-    /// history and every attachment, and the host may attach a connection to that relay.
-    Share {
-        share: store::Share,
-    },
-    Unshare,
-    /// The palette; changes are batch intents.
-    Theme,
-    ExportTheme,
-}
+/// One document reading and its publication sequence.
 #[derive(Debug)]
-pub enum Reply {
-    Command {
-        sequence: u64,
-        ids: Vec<String>,
-        result_json: String,
-    },
-    Unit,
-    /// One reading and its publication sequence.
-    State {
-        reading: crate::Reading,
-        sequence: u64,
-    },
-    /// A theme file, the bytes every export writes.
-    ThemeFile {
-        json: String,
-    },
-    /// `text` answers the page's text edit.
-    Applied {
-        sequence: u64,
-        ids: Vec<String>,
-        text: Option<crate::TextEdit>,
-    },
-    Theme {
-        state: theme::ThemeState,
-        sequence: u64,
-    },
-    Bytes {
-        bytes: Option<Vec<u8>>,
-    },
-    Attachments {
-        items: Vec<store::Attachment>,
-    },
-    Attachment {
-        item: store::Attachment,
-    },
+pub struct Reading {
+    pub reading: pop_contracts::wire::Reading,
+    pub sequence: u64,
 }
+/// A version probe that does not materialize the document value.
+#[derive(Debug)]
+pub struct Version {
+    pub version: String,
+    pub sequence: u64,
+}
+/// An accepted edit and its publication sequence.
+#[derive(Debug)]
+pub struct Applied {
+    pub sequence: u64,
+    pub ids: Vec<String>,
+    pub text: Option<pop_core::TextEdit>,
+}
+/// An evaluated and accepted command.
+#[derive(Debug)]
+pub struct CommandResult {
+    pub sequence: u64,
+    pub ids: Vec<String>,
+    pub result_json: String,
+}
+/// The palette and its publication sequence.
+#[derive(Debug)]
+pub struct Theme {
+    pub state: theme::ThemeState,
+    pub sequence: u64,
+}
+/// Optional session fence and admission deadline for one operation.
+#[derive(Debug, Default)]
+pub struct CallOptions {
+    pub view: Option<String>,
+    pub deadline: Option<Instant>,
+}
+mod operation;
+use operation::Operation;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveStatus {
     Saved,
@@ -191,28 +103,28 @@ pub enum Event {
     },
     ThemeChanged,
 }
-pub type Completion = Box<dyn FnOnce(Result<Reply>) + Send>;
+pub type Completion<T> = Box<dyn FnOnce(Result<T>) + Send>;
 pub type Listener = Arc<dyn Fn(Event) + Send + Sync>;
-fn complete(callback: Completion, value: Result<Reply>) {
+fn complete<T>(callback: Completion<T>, value: Result<T>) {
     let _ = catch_unwind(AssertUnwindSafe(|| callback(value)));
 }
 /// A queued request must settle even when shutdown drops its mailbox or worker job.
 /// Taking the callback before invocation also prevents a panicking caller from answering twice.
-struct PendingCompletion(Option<Completion>);
-impl PendingCompletion {
-    fn finish(mut self, value: Result<Reply>) {
+struct PendingCompletion<T>(Option<Completion<T>>);
+impl<T> PendingCompletion<T> {
+    fn finish(mut self, value: Result<T>) {
         let callback = self.0.take().expect("pending completion is answered once");
         complete(callback, value);
     }
 }
-impl Drop for PendingCompletion {
+impl<T> Drop for PendingCompletion<T> {
     fn drop(&mut self) {
         if let Some(callback) = self.0.take() {
             complete(callback, Err(closed()));
         }
     }
 }
-fn settle_on_drop(callback: Completion) -> Completion {
+fn settle_on_drop<T: Send + 'static>(callback: Completion<T>) -> Completion<T> {
     let pending = PendingCompletion(Some(callback));
     Box::new(move |value| pending.finish(value))
 }
@@ -230,7 +142,7 @@ fn contained<T>(work: impl FnOnce() -> Result<T>) -> Result<T> {
     catch_unwind(AssertUnwindSafe(work)).unwrap_or_else(|_| Err(poisoned()))
 }
 /// The request's callback, which the request answers or hands on exactly once.
-fn take(callback: &mut Option<Completion>) -> Completion {
+fn take<T>(callback: &mut Option<Completion<T>>) -> Completion<T> {
     callback.take().expect("a request's callback is taken once")
 }
 
@@ -240,17 +152,17 @@ pub struct Owner {
     admission: Arc<admission::Admission>,
     sync_admission: Arc<std::sync::Mutex<actor::Admission>>,
     sender: mpsc::Sender<Message>,
-    store: Arc<store::Store>,
+    app: Arc<file::OpenedApp>,
+    resources: store::ResourceSource,
+    thread: std::sync::Mutex<Option<std::thread::JoinHandle<()>>>,
     path: PathBuf,
-    #[cfg(not(target_arch = "wasm32"))]
     started: Instant,
+    evaluator: Option<Evaluator>,
 }
 impl Owner {
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn open(path: &Path, mode: store::Mode, listener: Listener) -> Result<Self> {
         Self::open_with_evaluator(path, mode, listener, None)
     }
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn open_with_evaluator(
         path: &Path,
         mode: store::Mode,
@@ -258,34 +170,49 @@ impl Owner {
         evaluator: Option<Evaluator>,
     ) -> Result<Self> {
         let path = file::resolve(path)?;
-        let store = Arc::new(store::Store::open(&path, mode)?);
+        let store = store::Store::open(&path, mode)?;
         Self::from_store(path, store, mode, listener, evaluator)
     }
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn from_store(
+    fn from_store(
         path: PathBuf,
-        store: Arc<store::Store>,
+        store: store::Store,
         mode: store::Mode,
         listener: Listener,
         evaluator: Option<Evaluator>,
     ) -> Result<Self> {
-        let (sender, started, admission) = match actor::spawn(store.clone(), mode, listener, evaluator) {
-            Ok(started) => started,
-            Err(failure) => {
-                // No actor admitted work. A worker may still hold an Arc while its
-                // channel shuts down; release ownership before returning the failure.
-                store.close()?;
-                return Err(failure);
-            }
-        };
-        Ok(Self { sender, store, path, started, sync_admission: Arc::default(), admission })
+        let app = store.opened_app();
+        let resources = store.resource_source();
+        let actor::Started { sender, started, admission, thread } =
+            actor::spawn(store, mode, listener, evaluator.clone())?;
+        Ok(Self {
+            evaluator,
+            sender,
+            app,
+            resources,
+            thread: std::sync::Mutex::new(Some(thread)),
+            path,
+            started,
+            sync_admission: Arc::default(),
+            admission,
+        })
+    }
+    pub(crate) fn evaluator(&self) -> Option<&Evaluator> {
+        self.evaluator.as_ref()
+    }
+    fn storage_control<T>(
+        &self,
+        control: impl FnOnce(mpsc::Sender<Result<T>>) -> actor::persistence::Control,
+    ) -> Result<T> {
+        let (reply, result) = mpsc::channel();
+        self.sender.send(Message::Control(control(reply))).map_err(|_| closed())?;
+        result.recv().map_err(|_| closed())?
     }
     /// Serial admission for host actions, including immutable page configuration.
     /// The host still fences the WebView when the asynchronous result arrives.
     pub(crate) fn reserve_page(&self, view_bytes: usize, payload_bytes: usize) -> Result<Permit> {
         self.admission.reserve_page(view_bytes, payload_bytes).ok_or_else(busy)
     }
-    pub(crate) fn admit_page(&self, view: String, permit: Permit, callback: Completion) {
+    pub(crate) fn admit_page(&self, view: String, permit: Permit, callback: Completion<()>) {
         let callback = admitted_callback(callback, permit);
         if let Err(mpsc::SendError(Message::PageAdmission { callback, .. })) =
             self.sender.send(Message::PageAdmission { view, callback })
@@ -297,50 +224,39 @@ impl Owner {
         &self.path
     }
     pub fn app(&self) -> &file::OpenedApp {
-        self.store.app()
+        &self.app
     }
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn resource_reader(&self) -> Result<file::ResourceReader> {
-        Ok(self.store.resource_reader()?)
+        Ok(self.resources.reader()?)
     }
     pub fn attach(&self, view: String) {
         let _ = self.sender.send(Message::Attach(view));
     }
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn publish_discovery(&self, json: &str) -> Result<()> {
-        Ok(self.store.publish_discovery(json)?)
+        self.storage_control(|reply| actor::persistence::Control::Publish(json.to_owned(), reply))
     }
-    #[cfg(not(target_arch = "wasm32"))]
     pub fn withdraw_discovery(&self) {
-        self.store.withdraw_discovery();
+        let _ = self.storage_control(actor::persistence::Control::Withdraw);
     }
-    /// Enqueue without waiting. Exhausted request count or payload budgets answer Busy
-    /// without applying the request; lifecycle requests have reserved admission capacity.
-    pub fn submit(&self, request: Request, view: Option<String>, callback: Completion) {
-        self.enqueue(request, view, None, callback);
-    }
-    /// The deadline is checked on the edit worker, before the command is admitted.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn submit_until(&self, request: Request, view: Option<String>, deadline: Instant, callback: Completion) {
-        self.enqueue(request, view, Some(deadline.saturating_duration_since(self.started)), callback);
-    }
-    fn enqueue(&self, request: Request, view: Option<String>, deadline: Option<Duration>, callback: Completion) {
-        let Some(permit) = self.admission.reserve(&request, &view) else {
-            complete(callback, Err(busy()));
+    fn enqueue(&self, operation: Operation, options: CallOptions) {
+        let bytes = operation.payload_bytes().saturating_add(options.view.as_ref().map_or(0, String::len));
+        let Some(permit) = self.admission.reserve(bytes, operation.properties().control) else {
+            operation.reject(busy());
             return;
         };
-        let callback = admitted_callback(callback, permit);
-        if let Err(mpsc::SendError(Message::Request { callback, .. })) =
-            self.sender.send(Message::Request { request, view, deadline, callback })
-        {
-            complete(callback, Err(closed()));
-        }
+        let operation = operation.admitted(permit);
+        let deadline = options.deadline.map(|d| d.saturating_duration_since(self.started));
+        let _ = self.sender.send(Message::Request { operation, view: options.view, deadline });
+    }
+    /// Native palette changes follow the same edit path as page batches.
+    pub fn change_theme(&self, change: ThemeChange, options: CallOptions, callback: Completion<Applied>) {
+        self.apply(theme_batch(change), Origin::Window, options, callback);
     }
 }
 fn busy() -> Failure {
     Failure::new(FailureKind::Busy, "Pending document work exceeds its admission budget")
 }
-fn admitted_callback(callback: Completion, permit: Permit) -> Completion {
+fn admitted_callback<T: Send + 'static>(callback: Completion<T>, permit: Permit) -> Completion<T> {
     settle_on_drop(Box::new(move |result| {
         drop(permit);
         callback(result);
@@ -349,5 +265,11 @@ fn admitted_callback(callback: Completion, permit: Permit) -> Completion {
 impl Drop for Owner {
     fn drop(&mut self) {
         let _ = self.sender.send(Message::Stop);
+        if let Some(thread) = crate::lock(&self.thread).take() {
+            // A callback can release its final handle on the owner thread itself.
+            if thread.thread().id() != std::thread::current().id() {
+                let _ = thread.join();
+            }
+        }
     }
 }

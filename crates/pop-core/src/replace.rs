@@ -91,22 +91,22 @@ impl Reconcile<'_> {
                     map.insert(key, loro_scalar(scalar, value)).map_err(engine)?;
                 }
             }
-            (Node::Counter {}, ValueOrContainer::Container(Container::Counter(counter))) => {
+            (Node::Counter { .. }, ValueOrContainer::Container(Container::Counter(counter))) => {
                 layout::set_counter(&counter, value.as_i64().expect("validated counter"))?;
             }
-            (Node::Text {}, ValueOrContainer::Container(Container::Text(text))) => {
+            (Node::Text { .. }, ValueOrContainer::Container(Container::Text(text))) => {
                 layout::set_text(&text, value.as_str().expect("validated text"))?;
             }
             (Node::Object { .. }, ValueOrContainer::Container(Container::Map(child))) => {
                 self.object(&child, kind, value)?
             }
-            (Node::Record { value: entry }, ValueOrContainer::Container(Container::Map(record))) => {
+            (Node::Record { value: entry, .. }, ValueOrContainer::Container(Container::Map(record))) => {
                 self.record(&record, entry, value)?;
             }
-            (Node::List { item }, ValueOrContainer::Container(Container::MovableList(list))) if is_scalar(item) => {
+            (Node::List { item, .. }, ValueOrContainer::Container(Container::MovableList(list))) if is_scalar(item) => {
                 rewrite_list(&list, item, value.as_array().expect("validated list"))?;
             }
-            (Node::List { item }, current) => {
+            (Node::List { item, .. }, current) => {
                 self.list(&RowList::of(&current)?, item, value.as_array().expect("validated list"))?;
             }
             _ => return Err(unexpected()),
@@ -115,7 +115,7 @@ impl Reconcile<'_> {
     }
     /// Each declared field; an optional the value leaves out is removed.
     fn object(&mut self, map: &LoroMap, node: &Node, value: &Value) -> Result<()> {
-        let Node::Object { properties } = node else {
+        let Node::Object { properties, .. } = node else {
             return Err(unexpected());
         };
         for (key, child) in properties {

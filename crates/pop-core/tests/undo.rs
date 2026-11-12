@@ -6,8 +6,7 @@
 use crate::support;
 use pop_core::{Document, Origin};
 use serde_json::{Value, json};
-use support::ApplyJson;
-use support::{View, app, fixture, type_text, value};
+use support::{ApplyJson, View, app, fixture, type_text, value};
 
 const ROW: &str = "00000000000000000000000000000001";
 fn schema() -> String {
@@ -30,7 +29,7 @@ fn commands_are_individual_guarded_undo_steps_between_agent_edits() {
         let batch =
             json!({"ifVersion":d.version(),"intents":[{"type":"set","path":["title"],"value":title}]}).to_string();
         let publication = d
-            .apply_command(pop_core::Batch::decode(&batch).unwrap(), Origin::Agent, "rename")
+            .apply_command(pop_contracts::wire::Batch::decode(&batch).unwrap(), Origin::Agent, "rename")
             .unwrap()
             .publication
             .unwrap();
@@ -40,8 +39,8 @@ fn commands_are_individual_guarded_undo_steps_between_agent_edits() {
     let stale =
         json!({"ifVersion":old_version,"intents":[{"type":"set","path":["title"],"value":"Lost edit"}]}).to_string();
     assert_eq!(
-        d.apply_command(pop_core::Batch::decode(&stale).unwrap(), Origin::Agent, "rename").unwrap_err().code,
-        pop_core::Code::StaleBase
+        d.apply_command(pop_contracts::wire::Batch::decode(&stale).unwrap(), Origin::Agent, "rename").unwrap_err().code,
+        pop_contracts::wire::Code::StaleBase
     );
     assert_eq!(value(&d), latest);
     assert!(undo(&mut d, &mut view));
@@ -58,7 +57,7 @@ fn only_the_owner_names_a_command_step() {
     for origin in [Origin::Page, Origin::Agent] {
         let forged =
             json!({"command":"rename","intents":[{"type":"set","path":["title"],"value":"Forged"}]}).to_string();
-        assert_eq!(d.apply_json(&forged, origin).unwrap_err().code, pop_core::Code::InvalidRequest);
+        assert_eq!(d.apply_json(&forged, origin).unwrap_err().code, pop_contracts::wire::Code::InvalidRequest);
     }
 }
 fn batch(intents: Value) -> String {
